@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+apps/web/node_modules/
+services/api/node_modules/
+
+# production build outputs
+dist/
+apps/web/dist/
+
+# environment variables
+.env
+.env.local
+*.env
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

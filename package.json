@@ -1,0 +1,27 @@
+{
+  "name": "buzzz",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @buzzz/web",
+    "dev:api": "npm run dev --workspace @buzzz/api",
+    "build": "npm run build --workspace @buzzz/web",
+    "test": "node scripts/render-test.mjs && node scripts/client-test.mjs && node scripts/flow-test.mjs && node scripts/deep-test.mjs && node scripts/discovery-test.mjs && node scripts/cdm-test.mjs && node scripts/virtual-appt-test.mjs && node scripts/quiet-hours-test.mjs && node scripts/governance-test.mjs && node scripts/i18n-test.mjs && node scripts/currency-test.mjs && node scripts/auth-gate-test.mjs && node scripts/perf-test.mjs && node scripts/reasoning-test.mjs && node scripts/llm-reasoning-test.mjs && node services/api/src/lib/llm.test.mjs && node services/api/src/lib/router.test.mjs && node scripts/model-choice-test.mjs && node scripts/assistant-test.mjs && node scripts/admin-test.mjs && node scripts/metrics-test.mjs && node services/api/src/lib/db.test.mjs && node services/api/src/lib/tenant-isolation.test.mjs && node scripts/ai-security-test.mjs && node scripts/workflow-security-test.mjs && node scripts/api-routes-test.mjs && node services/api/src/lib/auth.test.mjs && node services/api/src/lib/mfa.test.mjs && node services/api/src/lib/oauth.test.mjs && node services/api/src/lib/teamchat.test.mjs && node services/api/src/lib/mrassistant.test.mjs && node services/api/src/lib/google.test.mjs && python3 scripts/check-symbols.py",
+    "check": "npm run test",
+    "migrate": "psql \"$DATABASE_URL\" -f database/migrations/0001_init.sql",
+    "preview:admin": "npm run build && node scripts/build-admin-preview.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "jsdom": "^30.0.1"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}

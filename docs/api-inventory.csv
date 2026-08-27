@@ -1,0 +1,295 @@
+Domain,Endpoint,Method,Auth,Status,Notes
+Authentication,/api/v1/auth/register,POST,none,SPECIFIED — not implemented,Creates the owner account and its first workspace.
+Authentication,/api/v1/auth/login,POST,none,SPECIFIED — not implemented,Returns an access token and sets a refresh cookie.
+Authentication,/api/v1/auth/logout,POST,none,SPECIFIED — not implemented,Revokes the current session.
+Authentication,/api/v1/auth/refresh,POST,none,SPECIFIED — not implemented,Rotates the refresh token; reuse of an old token revokes the family.
+Authentication,/api/v1/auth/password/reset,POST,none,SPECIFIED — not implemented,Always returns 202 so the endpoint cannot enumerate accounts.
+Authentication,/api/v1/auth/verify,POST,none,SPECIFIED — not implemented,Verify an email address
+Authentication,/api/v1/auth/mfa/enroll,POST,none,SPECIFIED — not implemented,Begin MFA enrolment
+Authentication,/api/v1/auth/mfa/verify,POST,none,SPECIFIED — not implemented,Confirm an MFA challenge
+Authentication,/api/v1/auth/sessions,GET,bearer,SPECIFIED — not implemented,List active sessions
+Authentication,/api/v1/auth/sessions,DELETE,bearer,SPECIFIED — not implemented,Revoke all other sessions
+CRM,/api/v1/contacts,GET,bearer,SPECIFIED — not implemented,List Contacts
+CRM,/api/v1/contacts,POST,bearer,SPECIFIED — not implemented,Create a Contact
+CRM,/api/v1/contacts/{id},GET,bearer,SPECIFIED — not implemented,Get a Contact
+CRM,/api/v1/contacts/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Contact
+CRM,/api/v1/contacts/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+CRM,/api/v1/contacts/bulk,POST,bearer,SPECIFIED — not implemented,Accepts up to 500 per request; partial success is reported per row.
+CRM,/api/v1/contacts/import,POST,bearer,SPECIFIED — not implemented,Asynchronous. Returns a job id.
+CRM,/api/v1/contacts/export,GET,bearer,SPECIFIED — not implemented,Respects the current filter and the caller's field permissions.
+CRM,/api/v1/contacts/merge,POST,bearer,SPECIFIED — not implemented,Requires both ids and a surviving id. Never merges automatically.
+CRM,/api/v1/contacts/{id}/timeline,GET,bearer,SPECIFIED — not implemented,"Messages, calls, appointments, deals, campaigns and AI actions in one chronological feed."
+CRM,/api/v1/contacts/{id}/360,GET,bearer,SPECIFIED — not implemented,Everything the workspace knows about this person.
+CRM,/api/v1/contacts/{id}/memory,GET,bearer,SPECIFIED — not implemented,"Facts with source, confidence and provenance."
+CRM,/api/v1/contacts/{id}/memory,POST,bearer,SPECIFIED — not implemented,Record a customer fact
+CRM,/api/v1/contacts/{id}/score,GET,bearer,SPECIFIED — not implemented,"Computed on read, never stored."
+CRM,/api/v1/contacts/{id}/health,GET,bearer,SPECIFIED — not implemented,Customer health with its factors
+CRM,/api/v1/contacts/{id}/next-action,GET,bearer,SPECIFIED — not implemented,"Returns the action, evidence, channel and urgency."
+CRM,/api/v1/companies,GET,bearer,SPECIFIED — not implemented,List Companys
+CRM,/api/v1/companies,POST,bearer,SPECIFIED — not implemented,Create a Company
+CRM,/api/v1/companies/{id},GET,bearer,SPECIFIED — not implemented,Get a Company
+CRM,/api/v1/companies/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Company
+CRM,/api/v1/companies/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+CRM,/api/v1/deals,GET,bearer,SPECIFIED — not implemented,List Deals
+CRM,/api/v1/deals,POST,bearer,SPECIFIED — not implemented,Create a Deal
+CRM,/api/v1/deals/{id},GET,bearer,SPECIFIED — not implemented,Get a Deal
+CRM,/api/v1/deals/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Deal
+CRM,/api/v1/deals/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+CRM,/api/v1/deals/{id}/stage,POST,bearer,SPECIFIED — not implemented,Writes an audit entry with the previous stage.
+CRM,/api/v1/pipelines,GET,bearer,SPECIFIED — not implemented,List Pipelines
+CRM,/api/v1/pipelines,POST,bearer,SPECIFIED — not implemented,Create a Pipeline
+CRM,/api/v1/pipelines/{id},GET,bearer,SPECIFIED — not implemented,Get a Pipeline
+CRM,/api/v1/pipelines/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Pipeline
+CRM,/api/v1/pipelines/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+CRM,/api/v1/tasks,GET,bearer,SPECIFIED — not implemented,List Tasks
+CRM,/api/v1/tasks,POST,bearer,SPECIFIED — not implemented,Create a Task
+CRM,/api/v1/tasks/{id},GET,bearer,SPECIFIED — not implemented,Get a Task
+CRM,/api/v1/tasks/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Task
+CRM,/api/v1/tasks/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+CRM,/api/v1/segments,GET,bearer,SPECIFIED — not implemented,List Segments
+CRM,/api/v1/segments,POST,bearer,SPECIFIED — not implemented,Create a Segment
+CRM,/api/v1/segments/{id},GET,bearer,SPECIFIED — not implemented,Get a Segment
+CRM,/api/v1/segments/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Segment
+CRM,/api/v1/segments/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+CRM,/api/v1/custom-fields,GET,bearer,SPECIFIED — not implemented,List CustomFields
+CRM,/api/v1/custom-fields,POST,bearer,SPECIFIED — not implemented,Create a CustomField
+CRM,/api/v1/custom-fields/{id},GET,bearer,SPECIFIED — not implemented,Get a CustomField
+CRM,/api/v1/custom-fields/{id},PATCH,bearer,SPECIFIED — not implemented,Update a CustomField
+CRM,/api/v1/custom-fields/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Identity,/api/v1/identities,GET,bearer,SPECIFIED — not implemented,List Identitys
+Identity,/api/v1/identities,POST,bearer,SPECIFIED — not implemented,Create a Identity
+Identity,/api/v1/identities/{id},GET,bearer,SPECIFIED — not implemented,Get a Identity
+Identity,/api/v1/identities/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Identity
+Identity,/api/v1/identities/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Identity,/api/v1/identities/resolve,POST,bearer,SPECIFIED — not implemented,"Returns match, suggest or create with a confidence score. Never merges below the high threshold."
+Identity,/api/v1/identities/duplicates,GET,bearer,SPECIFIED — not implemented,Ranked by confidence with the matching signals listed.
+Identity,/api/v1/identities/{id}/merge,POST,bearer,SPECIFIED — not implemented,Requires explicit confirmation.
+Identity,/api/v1/identities/{id}/split,POST,bearer,SPECIFIED — not implemented,Split a wrongly merged identity
+Inbox,/api/v1/conversations,GET,bearer,SPECIFIED — not implemented,List Conversations
+Inbox,/api/v1/conversations,POST,bearer,SPECIFIED — not implemented,Create a Conversation
+Inbox,/api/v1/conversations/{id},GET,bearer,SPECIFIED — not implemented,Get a Conversation
+Inbox,/api/v1/conversations/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Conversation
+Inbox,/api/v1/conversations/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Inbox,/api/v1/conversations/{id}/messages,GET,bearer,SPECIFIED — not implemented,List messages in a conversation
+Inbox,/api/v1/conversations/{id}/messages,POST,bearer,SPECIFIED — not implemented,"Runs the communication orchestrator: consent, preference, quiet hours, frequency and agent governance."
+Inbox,/api/v1/conversations/{id}/assign,POST,bearer,SPECIFIED — not implemented,Assign to a person or agent
+Inbox,/api/v1/conversations/{id}/handoff,POST,bearer,SPECIFIED — not implemented,"Attaches the transcript, summary, CRM record and reason."
+Inbox,/api/v1/conversations/{id}/read,POST,bearer,SPECIFIED — not implemented,Mark as read
+Inbox,/api/v1/conversations/{id}/notes,POST,bearer,SPECIFIED — not implemented,Never visible to the customer.
+Calls,/api/v1/calls,GET,bearer,SPECIFIED — not implemented,List Calls
+Calls,/api/v1/calls,POST,bearer,SPECIFIED — not implemented,Create a Call
+Calls,/api/v1/calls/{id},GET,bearer,SPECIFIED — not implemented,Get a Call
+Calls,/api/v1/calls/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Call
+Calls,/api/v1/calls/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Calls,/api/v1/calls/{id}/recording,GET,bearer,SPECIFIED — not implemented,Signed and short lived; re-issued per request.
+Calls,/api/v1/calls/{id}/transcript,GET,bearer,SPECIFIED — not implemented,Full transcript with timestamps
+Calls,/api/v1/calls/{id}/summary,GET,bearer,SPECIFIED — not implemented,AI summary
+Calls,/api/v1/calls/{id}/summary,POST,bearer,SPECIFIED — not implemented,Regenerate the summary
+Calls,/api/v1/calls/outbound,POST,bearer,SPECIFIED — not implemented,Checks agent permission and autonomy before dialling.
+Calls,/api/v1/calls/{id}/control,POST,bearer,SPECIFIED — not implemented,"Mute, transfer or end a live call"
+Appointments,/api/v1/appointments,GET,bearer,SPECIFIED — not implemented,List Appointments
+Appointments,/api/v1/appointments,POST,bearer,SPECIFIED — not implemented,Create a Appointment
+Appointments,/api/v1/appointments/{id},GET,bearer,SPECIFIED — not implemented,Get a Appointment
+Appointments,/api/v1/appointments/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Appointment
+Appointments,/api/v1/appointments/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Appointments,/api/v1/appointments/availability,GET,bearer,SPECIFIED — not implemented,"Applies location hours, staff hours, breaks, time off, buffers, notice, daily caps and room capacity."
+Appointments,/api/v1/appointments/{id}/confirm,POST,bearer,SPECIFIED — not implemented,Confirm an appointment
+Appointments,/api/v1/appointments/{id}/reschedule,POST,bearer,SPECIFIED — not implemented,Re-checks availability; refuses on conflict.
+Appointments,/api/v1/appointments/{id}/cancel,POST,bearer,SPECIFIED — not implemented,Honours the cancellation window policy.
+Appointments,/api/v1/appointments/{id}/no-show,POST,bearer,SPECIFIED — not implemented,Mark as a no show
+Agents,/api/v1/agents,GET,bearer,SPECIFIED — not implemented,List Agents
+Agents,/api/v1/agents,POST,bearer,SPECIFIED — not implemented,Create a Agent
+Agents,/api/v1/agents/{id},GET,bearer,SPECIFIED — not implemented,Get a Agent
+Agents,/api/v1/agents/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Agent
+Agents,/api/v1/agents/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Agents,/api/v1/agents/{id}/activate,POST,bearer,SPECIFIED — not implemented,Blocked unless the readiness checks pass.
+Agents,/api/v1/agents/{id}/pause,POST,bearer,SPECIFIED — not implemented,Pause an agent
+Agents,/api/v1/agents/{id}/duplicate,POST,bearer,SPECIFIED — not implemented,The copy is always created paused.
+Agents,/api/v1/agents/{id}/test,POST,bearer,SPECIFIED — not implemented,Uses real config and permissions; touches no customer data.
+Agents,/api/v1/agents/{id}/versions,GET,bearer,SPECIFIED — not implemented,Configuration history
+Agents,/api/v1/agents/{id}/rollback,POST,bearer,SPECIFIED — not implemented,Roll back to a version
+Agents,/api/v1/agents/{id}/analytics,GET,bearer,SPECIFIED — not implemented,Agent performance
+Agent Library,/api/v1/agent-library,GET,bearer,SPECIFIED — not implemented,List AgentTemplates
+Agent Library,/api/v1/agent-library,POST,bearer,SPECIFIED — not implemented,Create a AgentTemplate
+Agent Library,/api/v1/agent-library/{id},GET,bearer,SPECIFIED — not implemented,Get a AgentTemplate
+Agent Library,/api/v1/agent-library/{id},PATCH,bearer,SPECIFIED — not implemented,Update a AgentTemplate
+Agent Library,/api/v1/agent-library/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Agent Library,/api/v1/agent-library/{id}/deploy,POST,bearer,SPECIFIED — not implemented,"Transactional: creates the agent, workflows and CRM configuration together, or rolls back entirely."
+Agent Library,/api/v1/agent-library/{id}/readiness,GET,bearer,SPECIFIED — not implemented,"Integrations, autonomy ceiling, plan limits and knowledge availability."
+Automations,/api/v1/workflows,GET,bearer,SPECIFIED — not implemented,List Workflows
+Automations,/api/v1/workflows,POST,bearer,SPECIFIED — not implemented,Create a Workflow
+Automations,/api/v1/workflows/{id},GET,bearer,SPECIFIED — not implemented,Get a Workflow
+Automations,/api/v1/workflows/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Workflow
+Automations,/api/v1/workflows/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Automations,/api/v1/workflows/{id}/publish,POST,bearer,SPECIFIED — not implemented,Validates the graph; in-flight runs stay on their original version.
+Automations,/api/v1/workflows/{id}/pause,POST,bearer,SPECIFIED — not implemented,New events stop starting runs.
+Automations,/api/v1/workflows/{id}/test,POST,bearer,SPECIFIED — not implemented,Executes the real graph without external side effects.
+Automations,/api/v1/workflows/{id}/runs,GET,bearer,SPECIFIED — not implemented,Run history
+Automations,/api/v1/workflow-runs/{id},GET,bearer,SPECIFIED — not implemented,Run detail with the full step timeline
+Automations,/api/v1/workflow-runs/{id}/cancel,POST,bearer,SPECIFIED — not implemented,Cancel a run
+Automations,/api/v1/workflow-runs/{id}/retry,POST,bearer,SPECIFIED — not implemented,Creates a new run; the original is kept.
+Automations,/api/v1/workflow-runs/{id}/resume,POST,bearer,SPECIFIED — not implemented,Used when an approval is granted.
+Campaigns,/api/v1/campaigns,GET,bearer,SPECIFIED — not implemented,List Campaigns
+Campaigns,/api/v1/campaigns,POST,bearer,SPECIFIED — not implemented,Create a Campaign
+Campaigns,/api/v1/campaigns/{id},GET,bearer,SPECIFIED — not implemented,Get a Campaign
+Campaigns,/api/v1/campaigns/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Campaign
+Campaigns,/api/v1/campaigns/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Campaigns,/api/v1/campaigns/{id}/audience,GET,bearer,SPECIFIED — not implemented,Shows who is eligible and why each excluded contact was excluded.
+Campaigns,/api/v1/campaigns/{id}/launch,POST,bearer,SPECIFIED — not implemented,Requires approval above the configured recipient threshold.
+Campaigns,/api/v1/campaigns/{id}/pause,POST,bearer,SPECIFIED — not implemented,Pause sending
+Campaigns,/api/v1/campaigns/{id}/resume,POST,bearer,SPECIFIED — not implemented,Resume sending
+Campaigns,/api/v1/campaigns/{id}/recipients,GET,bearer,SPECIFIED — not implemented,Recipient level delivery log
+Knowledge,/api/v1/knowledge/sources,GET,bearer,SPECIFIED — not implemented,List KnowledgeSources
+Knowledge,/api/v1/knowledge/sources,POST,bearer,SPECIFIED — not implemented,Create a KnowledgeSource
+Knowledge,/api/v1/knowledge/sources/{id},GET,bearer,SPECIFIED — not implemented,Get a KnowledgeSource
+Knowledge,/api/v1/knowledge/sources/{id},PATCH,bearer,SPECIFIED — not implemented,Update a KnowledgeSource
+Knowledge,/api/v1/knowledge/sources/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Knowledge,/api/v1/knowledge/sources/{id}/reindex,POST,bearer,SPECIFIED — not implemented,Asynchronous.
+Knowledge,/api/v1/knowledge/sources/{id}/versions,GET,bearer,SPECIFIED — not implemented,Version history
+Knowledge,/api/v1/knowledge/sources/{id}/rollback,POST,bearer,SPECIFIED — not implemented,Roll back to a version
+Knowledge,/api/v1/knowledge/upload,POST,bearer,SPECIFIED — not implemented,"Asynchronous ingestion: parse, chunk, embed, index. Returns a job id."
+Knowledge,/api/v1/knowledge/crawl,POST,bearer,SPECIFIED — not implemented,"Respects robots.txt, depth and page limits."
+Knowledge,/api/v1/knowledge/search,POST,bearer,SPECIFIED — not implemented,Scoped to the calling agent's granted sources; returns citations and confidence.
+Knowledge,/api/v1/knowledge/gaps,GET,bearer,SPECIFIED — not implemented,Questions with no reliable source
+Approvals,/api/v1/approvals,GET,bearer,SPECIFIED — not implemented,List Approvals
+Approvals,/api/v1/approvals,POST,bearer,SPECIFIED — not implemented,Create a Approval
+Approvals,/api/v1/approvals/{id},GET,bearer,SPECIFIED — not implemented,Get a Approval
+Approvals,/api/v1/approvals/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Approval
+Approvals,/api/v1/approvals/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Approvals,/api/v1/approvals/{id}/approve,POST,bearer,SPECIFIED — not implemented,"Executes the exact reviewed payload, once. Enforces the required role."
+Approvals,/api/v1/approvals/{id}/reject,POST,bearer,SPECIFIED — not implemented,Records the reason; nothing executes.
+Approvals,/api/v1/approvals/{id}/edit-approve,POST,bearer,SPECIFIED — not implemented,The edited payload executes; the original is retained.
+Integrations,/api/v1/integrations,GET,bearer,SPECIFIED — not implemented,List Integrations
+Integrations,/api/v1/integrations,POST,bearer,SPECIFIED — not implemented,Create a Integration
+Integrations,/api/v1/integrations/{id},GET,bearer,SPECIFIED — not implemented,Get a Integration
+Integrations,/api/v1/integrations/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Integration
+Integrations,/api/v1/integrations/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Integrations,/api/v1/integrations/{id}/connect,POST,bearer,SPECIFIED — not implemented,OAuth or API key depending on the provider.
+Integrations,/api/v1/integrations/{id}/disconnect,POST,bearer,SPECIFIED — not implemented,"Lists the agents, workflows and campaigns that will be affected."
+Integrations,/api/v1/integrations/{id}/health,GET,bearer,SPECIFIED — not implemented,Live health check
+Integrations,/api/v1/integrations/{id}/sync,POST,bearer,SPECIFIED — not implemented,"Returns created, updated, skipped and failed with reasons."
+Integrations,/api/v1/integrations/{id}/logs,GET,bearer,SPECIFIED — not implemented,Sanitised; never includes credentials.
+Social,/api/v1/posts,GET,bearer,SPECIFIED — not implemented,List Posts
+Social,/api/v1/posts,POST,bearer,SPECIFIED — not implemented,Create a Post
+Social,/api/v1/posts/{id},GET,bearer,SPECIFIED — not implemented,Get a Post
+Social,/api/v1/posts/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Post
+Social,/api/v1/posts/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Social,/api/v1/posts/{id}/publish,POST,bearer,SPECIFIED — not implemented,Requires the publish permission and a connected account.
+Notifications,/api/v1/notifications,GET,bearer,SPECIFIED — not implemented,List Notifications
+Notifications,/api/v1/notifications,POST,bearer,SPECIFIED — not implemented,Create a Notification
+Notifications,/api/v1/notifications/{id},GET,bearer,SPECIFIED — not implemented,Get a Notification
+Notifications,/api/v1/notifications/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Notification
+Notifications,/api/v1/notifications/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Notifications,/api/v1/notifications/read-all,POST,bearer,SPECIFIED — not implemented,Mark everything read
+BUZZZ AI,/api/v1/buzz/chat,POST,bearer,SPECIFIED — not implemented,"Streams via SSE. Every tool call passes the same permission, autonomy and approval checks as a human action."
+BUZZZ AI,/api/v1/buzz/execute,POST,bearer,SPECIFIED — not implemented,Requires the preview token returned by /buzz/chat for medium risk and above.
+BUZZZ AI,/api/v1/buzz/voice/transcribe,POST,bearer,SPECIFIED — not implemented,Speech to text
+BUZZZ AI,/api/v1/buzz/voice/synthesize,POST,bearer,SPECIFIED — not implemented,Text to speech
+BUZZZ AI,/api/v1/buzz/context,GET,bearer,SPECIFIED — not implemented,Scoped to the caller's permissions.
+BUZZZ AI,/api/v1/buzz/recommendations,GET,bearer,SPECIFIED — not implemented,"Derived from live records: stalled deals, uncontacted leads, unconfirmed appointments, churn risk, failures."
+Analytics,/api/v1/analytics/overview,GET,bearer,SPECIFIED — not implemented,Executive metrics with period comparison
+Analytics,/api/v1/analytics/funnel,GET,bearer,SPECIFIED — not implemented,Conversion funnel with drop-off
+Analytics,/api/v1/analytics/attribution,GET,bearer,SPECIFIED — not implemented,"Revenue attribution (first, last or linear)"
+Analytics,/api/v1/analytics/channels,GET,bearer,SPECIFIED — not implemented,Channel performance
+Analytics,/api/v1/analytics/agents,GET,bearer,SPECIFIED — not implemented,Agent performance
+Analytics,/api/v1/analytics/campaigns,GET,bearer,SPECIFIED — not implemented,Campaign performance
+Analytics,/api/v1/analytics/calls,GET,bearer,SPECIFIED — not implemented,Call performance
+Analytics,/api/v1/analytics/economics,GET,bearer,SPECIFIED — not implemented,"Cost, return and cost per outcome"
+Events,/api/v1/events,GET,bearer,SPECIFIED — not implemented,Query the event stream
+Events,/api/v1/events/subscriptions,GET,bearer,SPECIFIED — not implemented,List outbound webhook subscriptions
+Events,/api/v1/events/subscriptions,POST,bearer,SPECIFIED — not implemented,Deliveries are HMAC signed and retried with backoff.
+Audit,/api/v1/audit,GET,bearer,SPECIFIED — not implemented,"Append only. Filter by actor, actor type, mode (autonomous, approved, human), category, outcome, severity, cus"
+Audit,/api/v1/audit/export,POST,bearer,SPECIFIED — not implemented,Asynchronous. The export itself is audited.
+Billing,/api/v1/billing/subscription,GET,bearer,SPECIFIED — not implemented,Current subscription
+Billing,/api/v1/billing/plans,GET,bearer,SPECIFIED — not implemented,The server resolves the region from the billing country. Client supplied prices are ignored.
+Billing,/api/v1/billing/checkout,POST,bearer,SPECIFIED — not implemented,The server resolves the price id; never accepted from the client.
+Billing,/api/v1/billing/portal,POST,bearer,SPECIFIED — not implemented,Open the billing portal
+Billing,/api/v1/billing/change-plan,POST,bearer,SPECIFIED — not implemented,Upgrade or downgrade
+Billing,/api/v1/billing/cancel,POST,bearer,SPECIFIED — not implemented,Cancel the subscription
+Billing,/api/v1/billing/invoices,GET,bearer,SPECIFIED — not implemented,Invoice history
+Billing,/api/v1/billing/usage,GET,bearer,SPECIFIED — not implemented,Metered usage against the allowance
+Search,/api/v1/search,GET,bearer,SPECIFIED — not implemented,"Across contacts, companies, deals, conversations, calls, appointments, agents, workflows and campaigns. Result"
+Files,/api/v1/files,POST,bearer,SPECIFIED — not implemented,Type and size validated. Files are stored per workspace and never served from a public bucket.
+Files,/api/v1/files/{id},GET,bearer,SPECIFIED — not implemented,Signed download URL
+Files,/api/v1/files/{id},DELETE,bearer,SPECIFIED — not implemented,Delete a file
+Webhooks,/api/v1/webhooks/gowhats,POST,none,SPECIFIED — not implemented,Signature verified. Idempotent on the provider event id.
+Webhooks,/api/v1/webhooks/mrassistant,POST,none,SPECIFIED — not implemented,Signature verified. Idempotent.
+Webhooks,/api/v1/webhooks/stripe,POST,none,SPECIFIED — not implemented,Signature verified. Idempotent; a replay cannot double-credit an allowance.
+Admin,/api/v1/admin/workspaces,GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Admin,/api/v1/admin/workspaces/{id},GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Admin,/api/v1/admin/usage,GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Admin,/api/v1/admin/health,GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Admin,/api/v1/admin/jobs,GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Admin,/api/v1/admin/errors,GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Admin,/api/v1/admin/feature-flags,GET,bearer,SPECIFIED — not implemented,Requires platform administrator authority; separate from workspace roles.
+Workspace,/api/v1/workspaces/{id}/settings,GET,bearer,SPECIFIED — not implemented,Workspace settings
+Workspace,/api/v1/workspaces/{id}/settings,PATCH,bearer,SPECIFIED — not implemented,"Timezone, currency, business hours, autonomy ceiling, escalation and notification rules. Every change is audit"
+Users,/api/v1/users,GET,bearer,SPECIFIED — not implemented,List Users
+Users,/api/v1/users,POST,bearer,SPECIFIED — not implemented,Create a User
+Users,/api/v1/users/{id},GET,bearer,SPECIFIED — not implemented,Get a User
+Users,/api/v1/users/{id},PATCH,bearer,SPECIFIED — not implemented,Update a User
+Users,/api/v1/users/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Users,/api/v1/teams,GET,bearer,SPECIFIED — not implemented,List Teams
+Users,/api/v1/teams,POST,bearer,SPECIFIED — not implemented,Create a Team
+Users,/api/v1/teams/{id},GET,bearer,SPECIFIED — not implemented,Get a Team
+Users,/api/v1/teams/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Team
+Users,/api/v1/teams/{id},DELETE,bearer,SPECIFIED — not implemented,Soft delete. Records are retained for audit and can be restored.
+Users,/api/v1/teams/{id}/members,POST,bearer,SPECIFIED — not implemented,Add a member
+Users,/api/v1/teams/{id}/invitations,POST,bearer,SPECIFIED — not implemented,Invite someone
+Revenue,/api/v1/products,GET,bearer,SPECIFIED — not implemented,List Products
+Revenue,/api/v1/products,POST,bearer,SPECIFIED — not implemented,Create a Product
+Revenue,/api/v1/products/{id},GET,bearer,SPECIFIED — not implemented,Get a Product
+Revenue,/api/v1/products/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Product
+Revenue,/api/v1/products/{id},DELETE,bearer,SPECIFIED — not implemented,Archive a Product
+Revenue,/api/v1/quotes,GET,bearer,SPECIFIED — not implemented,List Quotes
+Revenue,/api/v1/quotes,POST,bearer,SPECIFIED — not implemented,Create a Quote
+Revenue,/api/v1/quotes/{id},GET,bearer,SPECIFIED — not implemented,Get a Quote
+Revenue,/api/v1/quotes/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Quote
+Revenue,/api/v1/quotes/{id},DELETE,bearer,SPECIFIED — not implemented,Archive a Quote
+Revenue,/api/v1/quotes/{id}/send,POST,bearer,SPECIFIED — not implemented,"Validates the discount ceiling and margin floor, then runs the communication orchestrator before sending."
+Revenue,/api/v1/quotes/{id}/accept,POST,bearer,SPECIFIED — not implemented,Closes the linked deal at the quote total and converts the contact. Idempotent.
+Revenue,/api/v1/quotes/{id}/decline,POST,bearer,SPECIFIED — not implemented,Mark a quote declined
+Revenue,/api/v1/quotes/{id}/pdf,GET,bearer,SPECIFIED — not implemented,"Signed, short lived URL."
+Revenue,/api/v1/quotes/{id}/versions,GET,bearer,SPECIFIED — not implemented,An accepted quote is a commercial record and cannot be edited in place.
+Revenue,/api/v1/sequences,GET,bearer,SPECIFIED — not implemented,List Sequences
+Revenue,/api/v1/sequences,POST,bearer,SPECIFIED — not implemented,Create a Sequence
+Revenue,/api/v1/sequences/{id},GET,bearer,SPECIFIED — not implemented,Get a Sequence
+Revenue,/api/v1/sequences/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Sequence
+Revenue,/api/v1/sequences/{id},DELETE,bearer,SPECIFIED — not implemented,Archive a Sequence
+Revenue,/api/v1/sequences/{id}/enroll,POST,bearer,SPECIFIED — not implemented,"Refused if the contact is opted out, inside quiet hours, over the frequency cap or has an open escalation."
+Revenue,/api/v1/sequences/{id}/enrollments,GET,bearer,SPECIFIED — not implemented,Current enrolments with the next due step
+Revenue,/api/v1/enrollments/{id}/stop,POST,bearer,SPECIFIED — not implemented,Stop an enrolment
+Revenue,/api/v1/forms,GET,bearer,SPECIFIED — not implemented,List Forms
+Revenue,/api/v1/forms,POST,bearer,SPECIFIED — not implemented,Create a Form
+Revenue,/api/v1/forms/{id},GET,bearer,SPECIFIED — not implemented,Get a Form
+Revenue,/api/v1/forms/{id},PATCH,bearer,SPECIFIED — not implemented,Update a Form
+Revenue,/api/v1/forms/{id},DELETE,bearer,SPECIFIED — not implemented,Archive a Form
+Revenue,/api/v1/forms/{id}/embed,GET,bearer,SPECIFIED — not implemented,Embed snippet for the customer's website
+Revenue,/api/v1/forms/{id}/submit,POST,none,SPECIFIED — not implemented,"Rate limited per IP. Resolves identity before creating a contact so a repeat enquiry does not duplicate, assig"
+Revenue,/api/v1/forecast,GET,bearer,SPECIFIED — not implemented,"Closed, weighted, projected, quota and gap. Weighted uses each deal's own probability."
+Revenue,/api/v1/quotas,GET,bearer,SPECIFIED — not implemented,Sales quotas
+Revenue,/api/v1/quotas,PUT,bearer,SPECIFIED — not implemented,Set quotas
+Revenue,/api/v1/assignment-rule,GET,bearer,SPECIFIED — not implemented,Lead assignment rule
+Revenue,/api/v1/assignment-rule,PUT,bearer,SPECIFIED — not implemented,"round_robin, load, territory or fixed."
+Enterprise,/api/v1/fx-rates,GET,bearer,SPECIFIED — not implemented,Latest rate per currency with the date it was captured.
+Enterprise,/api/v1/fx-rates,PUT,bearer,SPECIFIED — not implemented,Rates are versioned by date; conversions store the rate they used.
+Enterprise,/api/v1/companies/tree,GET,bearer,SPECIFIED — not implemented,Full tree with group rollups converted into the reporting currency.
+Enterprise,/api/v1/companies/{id}/rollup,GET,bearer,SPECIFIED — not implemented,Own value and group value across every company beneath this one.
+Enterprise,/api/v1/companies/{id}/parent,PUT,bearer,SPECIFIED — not implemented,Rejected if it would create a cycle; enforced by a database trigger as well as the API.
+Enterprise,/api/v1/field-policies,GET,bearer,SPECIFIED — not implemented,"Which fields are public, contact, internal or financial."
+Enterprise,/api/v1/field-policies,PUT,bearer,SPECIFIED — not implemented,Update field sensitivity
+Enterprise,/api/v1/role-field-access,GET,bearer,SPECIFIED — not implemented,Role access matrix
+Enterprise,/api/v1/role-field-access,PUT,bearer,SPECIFIED — not implemented,"A role that cannot view a class never receives those fields, including through export."
+Enterprise,/api/v1/locales,GET,bearer,SPECIFIED — not implemented,Includes text direction so right to left languages flip the layout.
+Enterprise,/api/v1/queues,GET,bearer,SPECIFIED — not implemented,Routing queues
+Enterprise,/api/v1/queues,POST,bearer,SPECIFIED — not implemented,Create a queue
+Enterprise,/api/v1/queues/{id},PATCH,bearer,SPECIFIED — not implemented,Update a queue
+Enterprise,/api/v1/shifts,GET,bearer,SPECIFIED — not implemented,Shift roster
+Enterprise,/api/v1/shifts,POST,bearer,SPECIFIED — not implemented,Create a shift
+Enterprise,/api/v1/shifts/on-duty,GET,bearer,SPECIFIED — not implemented,Used by routing so conversations are never assigned to someone who is off.
+Enterprise,/api/v1/conversations/{id}/route,POST,bearer,SPECIFIED — not implemented,"Matches a queue by channel and intent, then a member who is on shift. Escalates to the queue fallback when nob"
+Enterprise,/api/v1/conversations/{id}/viewers,GET,bearer,SPECIFIED — not implemented,Collision detection so two agents do not reply at once.
+Enterprise,/api/v1/conversations/{id}/viewers,POST,bearer,SPECIFIED — not implemented,Register as viewing
+Enterprise,/api/v1/appointments/recurrence,POST,bearer,SPECIFIED — not implemented,Expands to individual appointments; each occurrence can be detached and edited without changing the series.
+Enterprise,/api/v1/appointments/{id}/detach,POST,bearer,SPECIFIED — not implemented,Detach one occurrence
+Enterprise,/api/v1/appointments/recurrence/{id},DELETE,bearer,SPECIFIED — not implemented,Future occurrences only; past ones are kept as history.

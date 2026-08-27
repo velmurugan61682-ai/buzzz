@@ -1,0 +1,5450 @@
+openapi: 3.1.0
+info:
+  title: BUZZZ Platform API
+  version: 1.0.0
+  description: 'The single backend interface for BUZZZ. Every endpoint is workspace scoped, permission checked and audited.
+    Side-effecting endpoints accept an idempotency key.
+
+
+    **Status: specification.** No endpoint below is implemented yet; the current product is a browser artifact with zero server
+    routes. This document defines the target so implementation is consistent.'
+  contact:
+    name: BUZZZ
+    url: https://buzzzbuzzz.com
+servers:
+- url: https://api.buzzzbuzzz.com/api/v1
+  description: Production
+- url: https://staging-api.buzzzbuzzz.com/api/v1
+  description: Staging
+security:
+- bearerAuth: []
+tags:
+- name: Authentication
+- name: Users
+- name: Workspace
+- name: CRM
+- name: Identity
+- name: Inbox
+- name: Calls
+- name: Appointments
+- name: Agents
+- name: Agent Library
+- name: Automations
+- name: Campaigns
+- name: Knowledge
+- name: Approvals
+- name: BUZZZ AI
+- name: Analytics
+- name: Events
+- name: Audit
+- name: Integrations
+- name: Social
+- name: Billing
+- name: Notifications
+- name: Search
+- name: Files
+- name: Webhooks
+- name: Admin
+- name: Revenue
+- name: Enterprise
+paths:
+  /auth/register:
+    post:
+      tags:
+      - Authentication
+      summary: Register a user and create a workspace
+      description: Creates the owner account and its first workspace.
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/login:
+    post:
+      tags:
+      - Authentication
+      summary: Log in
+      description: Returns an access token and sets a refresh cookie.
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/logout:
+    post:
+      tags:
+      - Authentication
+      summary: Log out
+      description: Revokes the current session.
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/refresh:
+    post:
+      tags:
+      - Authentication
+      summary: Refresh the access token
+      description: Rotates the refresh token; reuse of an old token revokes the family.
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/password/reset:
+    post:
+      tags:
+      - Authentication
+      summary: Request a password reset
+      description: Always returns 202 so the endpoint cannot enumerate accounts.
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/verify:
+    post:
+      tags:
+      - Authentication
+      summary: Verify an email address
+      description: ''
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/mfa/enroll:
+    post:
+      tags:
+      - Authentication
+      summary: Begin MFA enrolment
+      description: ''
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/mfa/verify:
+    post:
+      tags:
+      - Authentication
+      summary: Confirm an MFA challenge
+      description: ''
+      security: []
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Accepted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /auth/sessions:
+    get:
+      tags:
+      - Authentication
+      summary: List active sessions
+      responses:
+        '200':
+          description: Sessions
+    delete:
+      tags:
+      - Authentication
+      summary: Revoke all other sessions
+      responses:
+        '204':
+          description: Revoked
+  /contacts:
+    get:
+      tags:
+      - CRM
+      summary: List Contacts
+      operationId: listContacts
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Contacts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a Contact
+      operationId: createContact
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Contact'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /contacts/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a Contact
+      operationId: getContact
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Contact
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contact'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a Contact
+      operationId: updateContact
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Contact'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a Contact
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteContact
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /contacts/bulk:
+    post:
+      tags:
+      - CRM
+      summary: Bulk create or update contacts
+      description: Accepts up to 500 per request; partial success is reported per row.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/import:
+    post:
+      tags:
+      - CRM
+      summary: Import contacts from a file
+      description: Asynchronous. Returns a job id.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/export:
+    get:
+      tags:
+      - CRM
+      summary: Export contacts
+      description: Respects the current filter and the caller's field permissions.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/merge:
+    post:
+      tags:
+      - CRM
+      summary: Merge two contacts
+      description: Requires both ids and a surviving id. Never merges automatically.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/{id}/timeline:
+    get:
+      tags:
+      - CRM
+      summary: Unified customer timeline
+      description: Messages, calls, appointments, deals, campaigns and AI actions in one chronological feed.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/{id}/360:
+    get:
+      tags:
+      - CRM
+      summary: Full customer record
+      description: Everything the workspace knows about this person.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/{id}/memory:
+    get:
+      tags:
+      - CRM
+      summary: Customer memory
+      description: Facts with source, confidence and provenance.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags:
+      - CRM
+      summary: Record a customer fact
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/{id}/score:
+    get:
+      tags:
+      - CRM
+      summary: Lead score with its factors
+      description: Computed on read, never stored.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/{id}/health:
+    get:
+      tags:
+      - CRM
+      summary: Customer health with its factors
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /contacts/{id}/next-action:
+    get:
+      tags:
+      - CRM
+      summary: Next best action
+      description: Returns the action, evidence, channel and urgency.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /companies:
+    get:
+      tags:
+      - CRM
+      summary: List Companys
+      operationId: listCompanys
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Companys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a Company
+      operationId: createCompany
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Company'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /companies/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a Company
+      operationId: getCompany
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Company
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a Company
+      operationId: updateCompany
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Company'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a Company
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteCompany
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /deals:
+    get:
+      tags:
+      - CRM
+      summary: List Deals
+      operationId: listDeals
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Deals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a Deal
+      operationId: createDeal
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Deal'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deal'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /deals/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a Deal
+      operationId: getDeal
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Deal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deal'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a Deal
+      operationId: updateDeal
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Deal'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a Deal
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteDeal
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /deals/{id}/stage:
+    post:
+      tags:
+      - CRM
+      summary: Move a deal to a stage
+      description: Writes an audit entry with the previous stage.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /pipelines:
+    get:
+      tags:
+      - CRM
+      summary: List Pipelines
+      operationId: listPipelines
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Pipelines
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a Pipeline
+      operationId: createPipeline
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pipeline'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pipeline'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /pipelines/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a Pipeline
+      operationId: getPipeline
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Pipeline
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pipeline'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a Pipeline
+      operationId: updatePipeline
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pipeline'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a Pipeline
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deletePipeline
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tasks:
+    get:
+      tags:
+      - CRM
+      summary: List Tasks
+      operationId: listTasks
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a Task
+      operationId: createTask
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /tasks/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a Task
+      operationId: getTask
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a Task
+      operationId: updateTask
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a Task
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteTask
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /segments:
+    get:
+      tags:
+      - CRM
+      summary: List Segments
+      operationId: listSegments
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Segments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a Segment
+      operationId: createSegment
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Segment'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Segment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /segments/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a Segment
+      operationId: getSegment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Segment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Segment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a Segment
+      operationId: updateSegment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Segment'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a Segment
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteSegment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /custom-fields:
+    get:
+      tags:
+      - CRM
+      summary: List CustomFields
+      operationId: listCustomFields
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of CustomFields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - CRM
+      summary: Create a CustomField
+      operationId: createCustomField
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomField'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomField'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /custom-fields/{id}:
+    get:
+      tags:
+      - CRM
+      summary: Get a CustomField
+      operationId: getCustomField
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: CustomField
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomField'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - CRM
+      summary: Update a CustomField
+      operationId: updateCustomField
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomField'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - CRM
+      summary: Archive a CustomField
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteCustomField
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /identities:
+    get:
+      tags:
+      - Identity
+      summary: List Identitys
+      operationId: listIdentitys
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Identitys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Identity
+      summary: Create a Identity
+      operationId: createIdentity
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Identity'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /identities/{id}:
+    get:
+      tags:
+      - Identity
+      summary: Get a Identity
+      operationId: getIdentity
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Identity'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Identity
+      summary: Update a Identity
+      operationId: updateIdentity
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Identity'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Identity
+      summary: Archive a Identity
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteIdentity
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /identities/resolve:
+    post:
+      tags:
+      - Identity
+      summary: Resolve an inbound identity
+      description: Returns match, suggest or create with a confidence score. Never merges below the high threshold.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /identities/duplicates:
+    get:
+      tags:
+      - Identity
+      summary: Detected duplicate contacts
+      description: Ranked by confidence with the matching signals listed.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /identities/{id}/merge:
+    post:
+      tags:
+      - Identity
+      summary: Merge identities
+      description: Requires explicit confirmation.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /identities/{id}/split:
+    post:
+      tags:
+      - Identity
+      summary: Split a wrongly merged identity
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /conversations:
+    get:
+      tags:
+      - Inbox
+      summary: List Conversations
+      operationId: listConversations
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Conversations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Inbox
+      summary: Create a Conversation
+      operationId: createConversation
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Conversation'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /conversations/{id}:
+    get:
+      tags:
+      - Inbox
+      summary: Get a Conversation
+      operationId: getConversation
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Conversation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Inbox
+      summary: Update a Conversation
+      operationId: updateConversation
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Conversation'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Inbox
+      summary: Archive a Conversation
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteConversation
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /conversations/{id}/messages:
+    get:
+      tags:
+      - Inbox
+      summary: List messages in a conversation
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags:
+      - Inbox
+      summary: Send a message
+      description: 'Runs the communication orchestrator: consent, preference, quiet hours, frequency and agent governance.'
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /conversations/{id}/assign:
+    post:
+      tags:
+      - Inbox
+      summary: Assign to a person or agent
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /conversations/{id}/handoff:
+    post:
+      tags:
+      - Inbox
+      summary: Hand to a human
+      description: Attaches the transcript, summary, CRM record and reason.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /conversations/{id}/read:
+    post:
+      tags:
+      - Inbox
+      summary: Mark as read
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /conversations/{id}/notes:
+    post:
+      tags:
+      - Inbox
+      summary: Add an internal note
+      description: Never visible to the customer.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /calls:
+    get:
+      tags:
+      - Calls
+      summary: List Calls
+      operationId: listCalls
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Calls
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Calls
+      summary: Create a Call
+      operationId: createCall
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Call'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Call'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /calls/{id}:
+    get:
+      tags:
+      - Calls
+      summary: Get a Call
+      operationId: getCall
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Call
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Call'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Calls
+      summary: Update a Call
+      operationId: updateCall
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Call'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Calls
+      summary: Archive a Call
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteCall
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /calls/{id}/recording:
+    get:
+      tags:
+      - Calls
+      summary: Recording download URL
+      description: Signed and short lived; re-issued per request.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /calls/{id}/transcript:
+    get:
+      tags:
+      - Calls
+      summary: Full transcript with timestamps
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /calls/{id}/summary:
+    get:
+      tags:
+      - Calls
+      summary: AI summary
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    post:
+      tags:
+      - Calls
+      summary: Regenerate the summary
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /calls/outbound:
+    post:
+      tags:
+      - Calls
+      summary: Place an outbound call
+      description: Checks agent permission and autonomy before dialling.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /calls/{id}/control:
+    post:
+      tags:
+      - Calls
+      summary: Mute, transfer or end a live call
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /appointments:
+    get:
+      tags:
+      - Appointments
+      summary: List Appointments
+      operationId: listAppointments
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Appointments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Appointments
+      summary: Create a Appointment
+      operationId: createAppointment
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Appointment'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /appointments/{id}:
+    get:
+      tags:
+      - Appointments
+      summary: Get a Appointment
+      operationId: getAppointment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Appointment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Appointment'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Appointments
+      summary: Update a Appointment
+      operationId: updateAppointment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Appointment'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Appointments
+      summary: Archive a Appointment
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteAppointment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /appointments/availability:
+    get:
+      tags:
+      - Appointments
+      summary: Real availability
+      description: Applies location hours, staff hours, breaks, time off, buffers, notice, daily caps and room capacity.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /appointments/{id}/confirm:
+    post:
+      tags:
+      - Appointments
+      summary: Confirm an appointment
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /appointments/{id}/reschedule:
+    post:
+      tags:
+      - Appointments
+      summary: Reschedule
+      description: Re-checks availability; refuses on conflict.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /appointments/{id}/cancel:
+    post:
+      tags:
+      - Appointments
+      summary: Cancel
+      description: Honours the cancellation window policy.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /appointments/{id}/no-show:
+    post:
+      tags:
+      - Appointments
+      summary: Mark as a no show
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents:
+    get:
+      tags:
+      - Agents
+      summary: List Agents
+      operationId: listAgents
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Agents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Agents
+      summary: Create a Agent
+      operationId: createAgent
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Agent'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /agents/{id}:
+    get:
+      tags:
+      - Agents
+      summary: Get a Agent
+      operationId: getAgent
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Agents
+      summary: Update a Agent
+      operationId: updateAgent
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Agent'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Agents
+      summary: Archive a Agent
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteAgent
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /agents/{id}/activate:
+    post:
+      tags:
+      - Agents
+      summary: Activate an agent
+      description: Blocked unless the readiness checks pass.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents/{id}/pause:
+    post:
+      tags:
+      - Agents
+      summary: Pause an agent
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents/{id}/duplicate:
+    post:
+      tags:
+      - Agents
+      summary: Duplicate an agent
+      description: The copy is always created paused.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents/{id}/test:
+    post:
+      tags:
+      - Agents
+      summary: Run a sandbox conversation
+      description: Uses real config and permissions; touches no customer data.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents/{id}/versions:
+    get:
+      tags:
+      - Agents
+      summary: Configuration history
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents/{id}/rollback:
+    post:
+      tags:
+      - Agents
+      summary: Roll back to a version
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agents/{id}/analytics:
+    get:
+      tags:
+      - Agents
+      summary: Agent performance
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agent-library:
+    get:
+      tags:
+      - Agent Library
+      summary: List AgentTemplates
+      operationId: listAgentTemplates
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of AgentTemplates
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Agent Library
+      summary: Create a AgentTemplate
+      operationId: createAgentTemplate
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTemplate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTemplate'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /agent-library/{id}:
+    get:
+      tags:
+      - Agent Library
+      summary: Get a AgentTemplate
+      operationId: getAgentTemplate
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: AgentTemplate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentTemplate'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Agent Library
+      summary: Update a AgentTemplate
+      operationId: updateAgentTemplate
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentTemplate'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Agent Library
+      summary: Archive a AgentTemplate
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteAgentTemplate
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /agent-library/{id}/deploy:
+    post:
+      tags:
+      - Agent Library
+      summary: Deploy a template
+      description: 'Transactional: creates the agent, workflows and CRM configuration together, or rolls back entirely.'
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /agent-library/{id}/readiness:
+    get:
+      tags:
+      - Agent Library
+      summary: Pre-deployment check
+      description: Integrations, autonomy ceiling, plan limits and knowledge availability.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /workflows:
+    get:
+      tags:
+      - Automations
+      summary: List Workflows
+      operationId: listWorkflows
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Workflows
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Automations
+      summary: Create a Workflow
+      operationId: createWorkflow
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workflow'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /workflows/{id}:
+    get:
+      tags:
+      - Automations
+      summary: Get a Workflow
+      operationId: getWorkflow
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Workflow
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workflow'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Automations
+      summary: Update a Workflow
+      operationId: updateWorkflow
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Workflow'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Automations
+      summary: Archive a Workflow
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteWorkflow
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /workflows/{id}/publish:
+    post:
+      tags:
+      - Automations
+      summary: Publish a version
+      description: Validates the graph; in-flight runs stay on their original version.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /workflows/{id}/pause:
+    post:
+      tags:
+      - Automations
+      summary: Pause a workflow
+      description: New events stop starting runs.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /workflows/{id}/test:
+    post:
+      tags:
+      - Automations
+      summary: Test run
+      description: Executes the real graph without external side effects.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /workflows/{id}/runs:
+    get:
+      tags:
+      - Automations
+      summary: Run history
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /workflow-runs/{id}:
+    get:
+      tags:
+      - Automations
+      summary: Run detail with the full step timeline
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Run
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /workflow-runs/{id}/cancel:
+    post:
+      tags:
+      - Automations
+      summary: Cancel a run
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+  /workflow-runs/{id}/retry:
+    post:
+      tags:
+      - Automations
+      summary: Retry a failed run
+      description: Creates a new run; the original is kept.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+  /workflow-runs/{id}/resume:
+    post:
+      tags:
+      - Automations
+      summary: Resume a paused run
+      description: Used when an approval is granted.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+  /campaigns:
+    get:
+      tags:
+      - Campaigns
+      summary: List Campaigns
+      operationId: listCampaigns
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Campaigns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Campaigns
+      summary: Create a Campaign
+      operationId: createCampaign
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Campaign'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /campaigns/{id}:
+    get:
+      tags:
+      - Campaigns
+      summary: Get a Campaign
+      operationId: getCampaign
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Campaign
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Campaigns
+      summary: Update a Campaign
+      operationId: updateCampaign
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Campaign'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Campaigns
+      summary: Archive a Campaign
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteCampaign
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /campaigns/{id}/audience:
+    get:
+      tags:
+      - Campaigns
+      summary: Resolved recipients
+      description: Shows who is eligible and why each excluded contact was excluded.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /campaigns/{id}/launch:
+    post:
+      tags:
+      - Campaigns
+      summary: Launch a campaign
+      description: Requires approval above the configured recipient threshold.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /campaigns/{id}/pause:
+    post:
+      tags:
+      - Campaigns
+      summary: Pause sending
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /campaigns/{id}/resume:
+    post:
+      tags:
+      - Campaigns
+      summary: Resume sending
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /campaigns/{id}/recipients:
+    get:
+      tags:
+      - Campaigns
+      summary: Recipient level delivery log
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /knowledge/sources:
+    get:
+      tags:
+      - Knowledge
+      summary: List KnowledgeSources
+      operationId: listKnowledgeSources
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of KnowledgeSources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Knowledge
+      summary: Create a KnowledgeSource
+      operationId: createKnowledgeSource
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeSource'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeSource'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /knowledge/sources/{id}:
+    get:
+      tags:
+      - Knowledge
+      summary: Get a KnowledgeSource
+      operationId: getKnowledgeSource
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: KnowledgeSource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeSource'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Knowledge
+      summary: Update a KnowledgeSource
+      operationId: updateKnowledgeSource
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KnowledgeSource'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Knowledge
+      summary: Archive a KnowledgeSource
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteKnowledgeSource
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /knowledge/sources/{id}/reindex:
+    post:
+      tags:
+      - Knowledge
+      summary: Re-index a source
+      description: Asynchronous.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /knowledge/sources/{id}/versions:
+    get:
+      tags:
+      - Knowledge
+      summary: Version history
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /knowledge/sources/{id}/rollback:
+    post:
+      tags:
+      - Knowledge
+      summary: Roll back to a version
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /knowledge/upload:
+    post:
+      tags:
+      - Knowledge
+      summary: Upload a document
+      description: 'Asynchronous ingestion: parse, chunk, embed, index. Returns a job id.'
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Job accepted
+  /knowledge/crawl:
+    post:
+      tags:
+      - Knowledge
+      summary: Crawl a website
+      description: Respects robots.txt, depth and page limits.
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Job accepted
+  /knowledge/search:
+    post:
+      tags:
+      - Knowledge
+      summary: Retrieve passages
+      description: Scoped to the calling agent's granted sources; returns citations and confidence.
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Job accepted
+  /knowledge/gaps:
+    get:
+      tags:
+      - Knowledge
+      summary: Questions with no reliable source
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '202':
+          description: Job accepted
+  /approvals:
+    get:
+      tags:
+      - Approvals
+      summary: List Approvals
+      operationId: listApprovals
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Approvals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Approvals
+      summary: Create a Approval
+      operationId: createApproval
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Approval'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /approvals/{id}:
+    get:
+      tags:
+      - Approvals
+      summary: Get a Approval
+      operationId: getApproval
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Approval'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Approvals
+      summary: Update a Approval
+      operationId: updateApproval
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Approval'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Approvals
+      summary: Archive a Approval
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteApproval
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /approvals/{id}/approve:
+    post:
+      tags:
+      - Approvals
+      summary: Approve and execute
+      description: Executes the exact reviewed payload, once. Enforces the required role.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /approvals/{id}/reject:
+    post:
+      tags:
+      - Approvals
+      summary: Reject
+      description: Records the reason; nothing executes.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /approvals/{id}/edit-approve:
+    post:
+      tags:
+      - Approvals
+      summary: Edit and approve
+      description: The edited payload executes; the original is retained.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /integrations:
+    get:
+      tags:
+      - Integrations
+      summary: List Integrations
+      operationId: listIntegrations
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Integrations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Integrations
+      summary: Create a Integration
+      operationId: createIntegration
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Integration'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /integrations/{id}:
+    get:
+      tags:
+      - Integrations
+      summary: Get a Integration
+      operationId: getIntegration
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Integration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Integration'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Integrations
+      summary: Update a Integration
+      operationId: updateIntegration
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Integration'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Integrations
+      summary: Archive a Integration
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteIntegration
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /integrations/{id}/connect:
+    post:
+      tags:
+      - Integrations
+      summary: Begin a connection
+      description: OAuth or API key depending on the provider.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /integrations/{id}/disconnect:
+    post:
+      tags:
+      - Integrations
+      summary: Disconnect
+      description: Lists the agents, workflows and campaigns that will be affected.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /integrations/{id}/health:
+    get:
+      tags:
+      - Integrations
+      summary: Live health check
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /integrations/{id}/sync:
+    post:
+      tags:
+      - Integrations
+      summary: Run a sync pass
+      description: Returns created, updated, skipped and failed with reasons.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /integrations/{id}/logs:
+    get:
+      tags:
+      - Integrations
+      summary: Request log
+      description: Sanitised; never includes credentials.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /posts:
+    get:
+      tags:
+      - Social
+      summary: List Posts
+      operationId: listPosts
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Posts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Social
+      summary: Create a Post
+      operationId: createPost
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Post'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /posts/{id}:
+    get:
+      tags:
+      - Social
+      summary: Get a Post
+      operationId: getPost
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Post
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Social
+      summary: Update a Post
+      operationId: updatePost
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Post'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Social
+      summary: Archive a Post
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deletePost
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /posts/{id}/publish:
+    post:
+      tags:
+      - Social
+      summary: Publish now
+      description: Requires the publish permission and a connected account.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /notifications:
+    get:
+      tags:
+      - Notifications
+      summary: List Notifications
+      operationId: listNotifications
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Notifications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Notifications
+      summary: Create a Notification
+      operationId: createNotification
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Notification'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /notifications/{id}:
+    get:
+      tags:
+      - Notifications
+      summary: Get a Notification
+      operationId: getNotification
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Notification
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Notifications
+      summary: Update a Notification
+      operationId: updateNotification
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Notification'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Notifications
+      summary: Archive a Notification
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteNotification
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /notifications/read-all:
+    post:
+      tags:
+      - Notifications
+      summary: Mark everything read
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /buzz/chat:
+    post:
+      tags:
+      - BUZZZ AI
+      summary: Send a message to BUZZZ AI
+      description: Streams via SSE. Every tool call passes the same permission, autonomy and approval checks as a human action.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /buzz/execute:
+    post:
+      tags:
+      - BUZZZ AI
+      summary: Execute a previewed action
+      description: Requires the preview token returned by /buzz/chat for medium risk and above.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /buzz/voice/transcribe:
+    post:
+      tags:
+      - BUZZZ AI
+      summary: Speech to text
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /buzz/voice/synthesize:
+    post:
+      tags:
+      - BUZZZ AI
+      summary: Text to speech
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /buzz/context:
+    get:
+      tags:
+      - BUZZZ AI
+      summary: Context available to the assistant
+      description: Scoped to the caller's permissions.
+      responses:
+        '200':
+          description: Context
+  /buzz/recommendations:
+    get:
+      tags:
+      - BUZZZ AI
+      summary: Proactive recommendations
+      description: 'Derived from live records: stalled deals, uncontacted leads, unconfirmed appointments, churn risk, failures.'
+      responses:
+        '200':
+          description: Recommendations
+  /analytics/overview:
+    get:
+      tags:
+      - Analytics
+      summary: Executive metrics with period comparison
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/funnel:
+    get:
+      tags:
+      - Analytics
+      summary: Conversion funnel with drop-off
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/attribution:
+    get:
+      tags:
+      - Analytics
+      summary: Revenue attribution (first, last or linear)
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/channels:
+    get:
+      tags:
+      - Analytics
+      summary: Channel performance
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/agents:
+    get:
+      tags:
+      - Analytics
+      summary: Agent performance
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/campaigns:
+    get:
+      tags:
+      - Analytics
+      summary: Campaign performance
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/calls:
+    get:
+      tags:
+      - Analytics
+      summary: Call performance
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /analytics/economics:
+    get:
+      tags:
+      - Analytics
+      summary: Cost, return and cost per outcome
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      - $ref: '#/components/parameters/Compare'
+      responses:
+        '200':
+          description: Computed from live records. Returns null, never a placeholder, where there is no data.
+  /events:
+    get:
+      tags:
+      - Events
+      summary: Query the event stream
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Events
+  /events/subscriptions:
+    get:
+      tags:
+      - Events
+      summary: List outbound webhook subscriptions
+      responses:
+        '200':
+          description: Subscriptions
+    post:
+      tags:
+      - Events
+      summary: Subscribe to events
+      description: Deliveries are HMAC signed and retried with backoff.
+      responses:
+        '201':
+          description: Created
+  /audit:
+    get:
+      tags:
+      - Audit
+      summary: Query the audit ledger
+      description: Append only. Filter by actor, actor type, mode (autonomous, approved, human), category, outcome, severity,
+        customer or date.
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Audit events
+  /audit/export:
+    post:
+      tags:
+      - Audit
+      summary: Export audit records
+      description: Asynchronous. The export itself is audited.
+      responses:
+        '202':
+          description: Job accepted
+  /billing/subscription:
+    get:
+      tags:
+      - Billing
+      summary: Current subscription
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/plans:
+    get:
+      tags:
+      - Billing
+      summary: Plans and prices for the caller's region
+      description: The server resolves the region from the billing country. Client supplied prices are ignored.
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/checkout:
+    post:
+      tags:
+      - Billing
+      summary: Create a checkout session
+      description: The server resolves the price id; never accepted from the client.
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/portal:
+    post:
+      tags:
+      - Billing
+      summary: Open the billing portal
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/change-plan:
+    post:
+      tags:
+      - Billing
+      summary: Upgrade or downgrade
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/cancel:
+    post:
+      tags:
+      - Billing
+      summary: Cancel the subscription
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/invoices:
+    get:
+      tags:
+      - Billing
+      summary: Invoice history
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /billing/usage:
+    get:
+      tags:
+      - Billing
+      summary: Metered usage against the allowance
+      description: ''
+      responses:
+        '200':
+          description: OK
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /search:
+    get:
+      tags:
+      - Search
+      summary: Global search
+      description: Across contacts, companies, deals, conversations, calls, appointments, agents, workflows and campaigns.
+        Results are permission filtered.
+      parameters:
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Results
+  /files:
+    post:
+      tags:
+      - Files
+      summary: Request a signed upload URL
+      description: Type and size validated. Files are stored per workspace and never served from a public bucket.
+      responses:
+        '200':
+          description: Signed URL
+  /files/{id}:
+    get:
+      tags:
+      - Files
+      summary: Signed download URL
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Signed URL
+    delete:
+      tags:
+      - Files
+      summary: Delete a file
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Deleted
+  /webhooks/gowhats:
+    post:
+      tags:
+      - Webhooks
+      summary: GoWhats inbound webhook
+      description: Signature verified. Idempotent on the provider event id.
+      security: []
+      responses:
+        '200':
+          description: Accepted
+        '400':
+          description: Signature verification failed
+  /webhooks/mrassistant:
+    post:
+      tags:
+      - Webhooks
+      summary: MrAssistant call events
+      description: Signature verified. Idempotent.
+      security: []
+      responses:
+        '200':
+          description: Accepted
+        '400':
+          description: Signature verification failed
+  /webhooks/stripe:
+    post:
+      tags:
+      - Webhooks
+      summary: Stripe billing events
+      description: Signature verified. Idempotent; a replay cannot double-credit an allowance.
+      security: []
+      responses:
+        '200':
+          description: Accepted
+        '400':
+          description: Signature verification failed
+  /admin/workspaces:
+    get:
+      tags:
+      - Admin
+      summary: List workspaces
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/workspaces/{id}:
+    get:
+      tags:
+      - Admin
+      summary: Inspect a workspace
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/usage:
+    get:
+      tags:
+      - Admin
+      summary: Platform usage and AI cost
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/health:
+    get:
+      tags:
+      - Admin
+      summary: System health
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/jobs:
+    get:
+      tags:
+      - Admin
+      summary: Background job queue
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/errors:
+    get:
+      tags:
+      - Admin
+      summary: Recent errors
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/feature-flags:
+    get:
+      tags:
+      - Admin
+      summary: Feature flags
+      description: Requires platform administrator authority; separate from workspace roles.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /workspaces/{id}/settings:
+    get:
+      tags:
+      - Workspace
+      summary: Workspace settings
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Settings
+    patch:
+      tags:
+      - Workspace
+      summary: Update settings
+      description: Timezone, currency, business hours, autonomy ceiling, escalation and notification rules. Every change is
+        audited with before and after.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Updated
+  /users:
+    get:
+      tags:
+      - Users
+      summary: List Users
+      operationId: listUsers
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Users
+      summary: Create a User
+      operationId: createUser
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /users/{id}:
+    get:
+      tags:
+      - Users
+      summary: Get a User
+      operationId: getUser
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Users
+      summary: Update a User
+      operationId: updateUser
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Users
+      summary: Archive a User
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteUser
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /teams:
+    get:
+      tags:
+      - Users
+      summary: List Teams
+      operationId: listTeams
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Query'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Teams
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Users
+      summary: Create a Team
+      operationId: createTeam
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Team'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '402':
+          $ref: '#/components/responses/PlanLimit'
+  /teams/{id}:
+    get:
+      tags:
+      - Users
+      summary: Get a Team
+      operationId: getTeam
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Team
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Users
+      summary: Update a Team
+      operationId: updateTeam
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Team'
+      responses:
+        '200':
+          description: Updated
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Users
+      summary: Archive a Team
+      description: Soft delete. Records are retained for audit and can be restored.
+      operationId: deleteTeam
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /teams/{id}/members:
+    post:
+      tags:
+      - Users
+      summary: Add a member
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /teams/{id}/invitations:
+    post:
+      tags:
+      - Users
+      summary: Invite someone
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /products:
+    get:
+      tags:
+      - Revenue
+      summary: List Products
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Products
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+      - Revenue
+      summary: Create a Product
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Product'
+      responses:
+        '201':
+          description: Created
+        '422':
+          $ref: '#/components/responses/Validation'
+  /products/{id}:
+    get:
+      tags:
+      - Revenue
+      summary: Get a Product
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Product
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Revenue
+      summary: Update a Product
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags:
+      - Revenue
+      summary: Archive a Product
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+  /quotes:
+    get:
+      tags:
+      - Revenue
+      summary: List Quotes
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Quotes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+      - Revenue
+      summary: Create a Quote
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Quote'
+      responses:
+        '201':
+          description: Created
+        '422':
+          $ref: '#/components/responses/Validation'
+  /quotes/{id}:
+    get:
+      tags:
+      - Revenue
+      summary: Get a Quote
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Quote
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Revenue
+      summary: Update a Quote
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags:
+      - Revenue
+      summary: Archive a Quote
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+  /quotes/{id}/send:
+    post:
+      tags:
+      - Revenue
+      summary: Send a quote
+      description: Validates the discount ceiling and margin floor, then runs the communication orchestrator before sending.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /quotes/{id}/accept:
+    post:
+      tags:
+      - Revenue
+      summary: Mark a quote accepted
+      description: Closes the linked deal at the quote total and converts the contact. Idempotent.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /quotes/{id}/decline:
+    post:
+      tags:
+      - Revenue
+      summary: Mark a quote declined
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /quotes/{id}/pdf:
+    get:
+      tags:
+      - Revenue
+      summary: Rendered quote PDF
+      description: Signed, short lived URL.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /quotes/{id}/versions:
+    get:
+      tags:
+      - Revenue
+      summary: Immutable snapshots
+      description: An accepted quote is a commercial record and cannot be edited in place.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /sequences:
+    get:
+      tags:
+      - Revenue
+      summary: List Sequences
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Sequences
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+      - Revenue
+      summary: Create a Sequence
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Sequence'
+      responses:
+        '201':
+          description: Created
+        '422':
+          $ref: '#/components/responses/Validation'
+  /sequences/{id}:
+    get:
+      tags:
+      - Revenue
+      summary: Get a Sequence
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Sequence
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Revenue
+      summary: Update a Sequence
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags:
+      - Revenue
+      summary: Archive a Sequence
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+  /sequences/{id}/enroll:
+    post:
+      tags:
+      - Revenue
+      summary: Enrol a contact
+      description: Refused if the contact is opted out, inside quiet hours, over the frequency cap or has an open escalation.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /sequences/{id}/enrollments:
+    get:
+      tags:
+      - Revenue
+      summary: Current enrolments with the next due step
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /enrollments/{id}/stop:
+    post:
+      tags:
+      - Revenue
+      summary: Stop an enrolment
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Stopped
+  /forms:
+    get:
+      tags:
+      - Revenue
+      summary: List Forms
+      parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Filter'
+      responses:
+        '200':
+          description: Page of Forms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page'
+    post:
+      tags:
+      - Revenue
+      summary: Create a Form
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Form'
+      responses:
+        '201':
+          description: Created
+        '422':
+          $ref: '#/components/responses/Validation'
+  /forms/{id}:
+    get:
+      tags:
+      - Revenue
+      summary: Get a Form
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Form
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Revenue
+      summary: Update a Form
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags:
+      - Revenue
+      summary: Archive a Form
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Archived
+  /forms/{id}/embed:
+    get:
+      tags:
+      - Revenue
+      summary: Embed snippet for the customer's website
+      description: ''
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /forms/{id}/submit:
+    post:
+      tags:
+      - Revenue
+      summary: Public form submission
+      security: []
+      description: Rate limited per IP. Resolves identity before creating a contact so a repeat enquiry does not duplicate,
+        assigns an owner by the workspace rule, then enrols in the configured sequence.
+      parameters:
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: Accepted
+        '422':
+          $ref: '#/components/responses/Validation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /forecast:
+    get:
+      tags:
+      - Revenue
+      summary: Pipeline forecast by owner
+      description: Closed, weighted, projected, quota and gap. Weighted uses each deal's own probability.
+      parameters:
+      - $ref: '#/components/parameters/From'
+      - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Forecast
+  /quotas:
+    get:
+      tags:
+      - Revenue
+      summary: Sales quotas
+      responses:
+        '200':
+          description: Quotas
+    put:
+      tags:
+      - Revenue
+      summary: Set quotas
+      responses:
+        '200':
+          description: Updated
+  /assignment-rule:
+    get:
+      tags:
+      - Revenue
+      summary: Lead assignment rule
+      responses:
+        '200':
+          description: Rule
+    put:
+      tags:
+      - Revenue
+      summary: Update the assignment rule
+      description: round_robin, load, territory or fixed.
+      responses:
+        '200':
+          description: Updated
+  /fx-rates:
+    get:
+      tags:
+      - Enterprise
+      summary: Exchange rates
+      description: Latest rate per currency with the date it was captured.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    put:
+      tags:
+      - Enterprise
+      summary: Set exchange rates
+      description: Rates are versioned by date; conversions store the rate they used.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /companies/tree:
+    get:
+      tags:
+      - Enterprise
+      summary: Company hierarchy
+      description: Full tree with group rollups converted into the reporting currency.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /companies/{id}/rollup:
+    get:
+      tags:
+      - Enterprise
+      summary: Account rollup
+      description: Own value and group value across every company beneath this one.
+      parameters: &id001
+      - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /companies/{id}/parent:
+    put:
+      tags:
+      - Enterprise
+      summary: Move a company in the hierarchy
+      description: Rejected if it would create a cycle; enforced by a database trigger as well as the API.
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /field-policies:
+    get:
+      tags:
+      - Enterprise
+      summary: Field sensitivity map
+      description: Which fields are public, contact, internal or financial.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    put:
+      tags:
+      - Enterprise
+      summary: Update field sensitivity
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /role-field-access:
+    get:
+      tags:
+      - Enterprise
+      summary: Role access matrix
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    put:
+      tags:
+      - Enterprise
+      summary: Update the role access matrix
+      description: A role that cannot view a class never receives those fields, including through export.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /locales:
+    get:
+      tags:
+      - Enterprise
+      summary: Supported locales
+      description: Includes text direction so right to left languages flip the layout.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /queues:
+    get:
+      tags:
+      - Enterprise
+      summary: Routing queues
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    post:
+      tags:
+      - Enterprise
+      summary: Create a queue
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /queues/{id}:
+    patch:
+      tags:
+      - Enterprise
+      summary: Update a queue
+      description: ''
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /shifts:
+    get:
+      tags:
+      - Enterprise
+      summary: Shift roster
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    post:
+      tags:
+      - Enterprise
+      summary: Create a shift
+      description: ''
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /shifts/on-duty:
+    get:
+      tags:
+      - Enterprise
+      summary: Who is on shift now
+      description: Used by routing so conversations are never assigned to someone who is off.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /conversations/{id}/route:
+    post:
+      tags:
+      - Enterprise
+      summary: Route a conversation
+      description: Matches a queue by channel and intent, then a member who is on shift. Escalates to the queue fallback when
+        nobody is available.
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /conversations/{id}/viewers:
+    get:
+      tags:
+      - Enterprise
+      summary: Who else is viewing
+      description: Collision detection so two agents do not reply at once.
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+    post:
+      tags:
+      - Enterprise
+      summary: Register as viewing
+      description: ''
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /appointments/recurrence:
+    post:
+      tags:
+      - Enterprise
+      summary: Create a recurring series
+      description: Expands to individual appointments; each occurrence can be detached and edited without changing the series.
+      parameters: []
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /appointments/{id}/detach:
+    post:
+      tags:
+      - Enterprise
+      summary: Detach one occurrence
+      description: ''
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /appointments/recurrence/{id}:
+    delete:
+      tags:
+      - Enterprise
+      summary: Cancel a series
+      description: Future occurrences only; past ones are kept as history.
+      parameters: *id001
+      responses:
+        '200':
+          description: OK
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short lived access token. The workspace is taken from the token, never from the request body.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Keyset cursor. Page fifty costs the same as page one.
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 50
+        maximum: 200
+    Sort:
+      name: sort
+      in: query
+      schema:
+        type: string
+      description: Field name, prefix with - for descending.
+    Query:
+      name: q
+      in: query
+      schema:
+        type: string
+    Filter:
+      name: filter
+      in: query
+      schema:
+        type: string
+      description: field:op:value, repeatable. Example filter=status:eq:Qualified
+    From:
+      name: from
+      in: query
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      schema:
+        type: string
+        format: date-time
+    Compare:
+      name: compare
+      in: query
+      schema:
+        type: string
+        enum:
+        - previous_period
+        - previous_year
+        - none
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Required on anything that sends, charges or dials. A repeat returns the original result rather than acting
+        twice.
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but not permitted. The body names the required role or autonomy level.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found in this workspace. Returned instead of 403 so ids cannot be probed across tenants.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflicts with current state, such as a double booking
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Validation:
+      description: Validation failed; field errors included
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PlanLimit:
+      description: Blocked by the plan entitlement or usage allowance
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Rate limited; Retry-After is set
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      - request_id
+      properties:
+        code:
+          type: string
+          example: autonomy_insufficient
+        message:
+          type: string
+          example: Create deals needs autonomy Level 3. Kai runs at Level 2.
+        request_id:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: string
+        docs:
+          type: string
+          format: uri
+    Page:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        next_cursor:
+          type:
+          - string
+          - 'null'
+        has_more:
+          type: boolean
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        company:
+          type: string
+        title:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        status:
+          type: string
+        source:
+          type: string
+        owner:
+          type: string
+        stage:
+          type: string
+        location:
+          type: string
+        score:
+          type: integer
+          readOnly: true
+          description: Computed on read from engagement, appointments, deals and memory.
+        tags:
+          type: array
+          items:
+            type: string
+        channels:
+          type: array
+          items:
+            type: string
+        workspace_id:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+    Company:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        domain:
+          type: string
+    Deal:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        contact_id:
+          type: string
+        value:
+          type: integer
+          description: Minor units
+        stage:
+          type: string
+        probability:
+          type: integer
+        owner:
+          type: string
+    Pipeline:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        stages:
+          type: array
+          items:
+            type: object
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        due:
+          type: string
+          format: date-time
+        assignee:
+          type: string
+        done:
+          type: boolean
+    Segment:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        filter:
+          type: object
+    CustomField:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+    Identity:
+      type: object
+      properties:
+        id:
+          type: string
+        contact_id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - phone
+          - email
+          - whatsapp
+          - instagram
+          - telegram
+          - external
+        value:
+          type: string
+        confidence:
+          type: number
+    Conversation:
+      type: object
+      properties:
+        id:
+          type: string
+        contact_id:
+          type: string
+        channel:
+          type: string
+        state:
+          type: string
+          enum:
+          - Open
+          - Waiting
+          - Escalated
+          - Resolved
+        assignee:
+          type: string
+        ai:
+          type: boolean
+    Call:
+      type: object
+      properties:
+        id:
+          type: string
+        contact_id:
+          type: string
+        direction:
+          type: string
+          enum:
+          - inbound
+          - outbound
+        status:
+          type: string
+          enum:
+          - initiated
+          - ringing
+          - answered
+          - ended
+          - failed
+        duration_seconds:
+          type: integer
+        outcome:
+          type: string
+    Appointment:
+      type: object
+      properties:
+        id:
+          type: string
+        contact_id:
+          type: string
+        start:
+          type: string
+          format: date-time
+        duration_minutes:
+          type: integer
+        staff_id:
+          type: string
+        service_id:
+          type: string
+        status:
+          type: string
+          enum:
+          - Pending
+          - Confirmed
+          - In progress
+          - Completed
+          - Cancelled
+          - No show
+    Agent:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum:
+          - Draft
+          - Active
+          - Paused
+          - Archived
+        autonomy:
+          type: integer
+          minimum: 0
+          maximum: 4
+          description: Capped at run time by the workspace ceiling.
+        tools:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: object
+          additionalProperties:
+            type: boolean
+        guardrails:
+          type: array
+          items:
+            type: string
+        escalation:
+          type: object
+    AgentTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        industry:
+          type: string
+        category:
+          type: string
+        agent:
+          $ref: '#/components/schemas/Agent'
+        workflows:
+          type: array
+          items:
+            type: object
+    Workflow:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - Draft
+          - Published
+          - Paused
+          - Archived
+        version:
+          type: integer
+        graph:
+          type: object
+          properties:
+            nodes:
+              type: array
+              items:
+                type: object
+            edges:
+              type: array
+              items:
+                type: object
+    Campaign:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        channel:
+          type: string
+        status:
+          type: string
+          enum:
+          - Draft
+          - Scheduled
+          - Running
+          - Paused
+          - Completed
+        audience:
+          type: object
+    KnowledgeSource:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+          enum:
+          - queued
+          - fetching
+          - parsing
+          - chunking
+          - embedding
+          - indexing
+          - indexed
+          - failed
+        priority:
+          type: integer
+        version:
+          type: integer
+    Approval:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        risk:
+          type: string
+          enum:
+          - Low
+          - Medium
+          - High
+          - Critical
+        required_role:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - approved
+          - rejected
+          - expired
+          - executing
+          - executed
+          - failed
+        sla_minutes:
+          type: integer
+        payload:
+          type: object
+    Integration:
+      type: object
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        state:
+          type: string
+          enum:
+          - not_connected
+          - connected
+          - degraded
+          - reauth_required
+          - error
+          - syncing
+        capabilities:
+          type: array
+          items:
+            type: string
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        platforms:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        category:
+          type: string
+        priority:
+          type: string
+          enum:
+          - info
+          - success
+          - warning
+          - critical
+        read:
+          type: boolean
+        link:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum:
+          - Owner
+          - Admin
+          - Manager
+          - Finance Manager
+          - Marketing Manager
+          - Sales Manager
+          - Support Lead
+          - Agent
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        sku:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+          - Subscription
+          - One off
+          - Service
+          - Usage
+        billing_period:
+          type: string
+          enum:
+          - once
+          - monthly
+          - quarterly
+          - annual
+        price_minor:
+          type: integer
+          description: Minor units
+        cost_minor:
+          type: integer
+        tax_rate:
+          type: number
+        active:
+          type: boolean
+    QuoteItem:
+      type: object
+      properties:
+        product_id:
+          type: string
+        qty:
+          type: number
+        unit_price_minor:
+          type: integer
+        discount_pct:
+          type: number
+          maximum: 100
+        tax_rate:
+          type: number
+    Quote:
+      type: object
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        contact_id:
+          type: string
+        deal_id:
+          type: string
+        status:
+          type: string
+          enum:
+          - draft
+          - sent
+          - viewed
+          - accepted
+          - declined
+          - expired
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuoteItem'
+        net_minor:
+          type: integer
+          readOnly: true
+        tax_minor:
+          type: integer
+          readOnly: true
+        total_minor:
+          type: integer
+          readOnly: true
+        mrr_minor:
+          type: integer
+          readOnly: true
+        expires_at:
+          type: string
+          format: date-time
+    Sequence:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
+        stop_on_reply:
+          type: boolean
+        stop_on_booking:
+          type: boolean
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              day_offset:
+                type: integer
+              kind:
+                type: string
+                enum:
+                - message
+                - call task
+                - manual task
+              channel:
+                type: string
+              body:
+                type: string
+    Form:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        active:
+          type: boolean
+        fields:
+          type: array
+          items:
+            type: object
+        on_submit:
+          type: object

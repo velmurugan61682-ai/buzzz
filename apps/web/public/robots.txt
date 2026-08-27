@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /$
+Allow: /pricing
+Disallow: /app
+Disallow: /admin
+Disallow: /api
+Sitemap: https://buzzzbuzzz.com/sitemap.xml

@@ -1,0 +1,23 @@
+{
+  "name": "@buzzz/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "migrate": "node ../../database/migrate.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "express": "^4.22.2",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.0.0",
+    "pg": "^8.23.0",
+    "pino": "^9.4.0",
+    "pino-http": "^10.3.0",
+    "zod": "^3.23.8"
+  }
+}

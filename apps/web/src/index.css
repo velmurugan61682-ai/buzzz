@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fonts are loaded in index.html; these are the two families the app uses. */
+/* The public site and the auth screens are light surfaces with their own
+   colours. Declaring "light dark" let a device in dark mode recolour anything
+   that inherits, so buttons that set no colour of their own rendered white on
+   a white card and disappeared. The app draws its own dark theme where it
+   wants one, so the document is explicitly light. */
+:root { color-scheme: light; }
+/* The document states its own colours so nothing ever inherits white text
+   from the user agent. A button that sets no colour of its own then renders
+   dark on light, instead of disappearing on a device set to dark mode. */
+body { margin: 0; background: #ffffff; color: #18181B; }
+button, input, select, textarea { color: inherit; font: inherit; }
+.bz-display { font-family: "Space Grotesk", sans-serif; }
+.bz-app { font-family: "Inter", system-ui, sans-serif; }

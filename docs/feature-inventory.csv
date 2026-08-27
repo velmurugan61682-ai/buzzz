@@ -1,0 +1,42 @@
+Section,Feature,Evidence in code,Client status,Server dependency
+Home,Live briefing & priorities,buildBriefing/buildPriorities,FUNCTIONAL (client),read model / rollups
+Home,Opportunities & AI work summary,findOpportunities/workDone,FUNCTIONAL (client),rollups
+BUZZZ AI,NL command routing,answer() branches,FUNCTIONAL (client),LLM provider via server
+BUZZZ AI,Risk classification & preview,classifyCommand,FUNCTIONAL (client),none
+BUZZZ AI,Voice in/out,makeRecognizer/speak,FUNCTIONAL (client),optional server STT
+BUZZZ AI,Attachment parsing,readFile (text/CSV),PARTIAL,server parse for PDF/XLSX
+CRM,"Contacts CRUD, merge, import/export",createContact/mergeContacts,FUNCTIONAL (client),database persistence
+CRM,"Pipelines, deals, stages",PIPELINES_INIT/moveDeal,FUNCTIONAL (client),database persistence
+CRM,"Custom fields, segments, audit",customFields/trail,FUNCTIONAL (client),database persistence
+Inbox,"Threads, send, notes, assignment",sendPlain/sendAsAI,FUNCTIONAL (client),transport via GoWhats
+Inbox,Inbound messages,—,BLOCKED — needs backend,GoWhats webhook
+Agents,Governance engine,canAgentDo,FUNCTIONAL (client),server-side enforcement
+Agents,"Builder, sandbox, versions",AgentBuilder/TestChat,FUNCTIONAL (client),database persistence
+Automations,Graph execution engine,runWorkflow,FUNCTIONAL (client),worker queue + scheduler
+Automations,"Validation, versioning, runs",validateWorkflow,FUNCTIONAL (client),run persistence
+Automations,Wait nodes over hours/days,—,BLOCKED — needs backend,scheduler
+Knowledge,Chunking + retrieval + citations,chunkText/retrieve,FUNCTIONAL (client),neural embeddings
+Knowledge,"Scoping, conflicts, freshness, gaps",findConflicts,FUNCTIONAL (client),vector store
+Knowledge,"PDF/DOCX parsing, web crawl",—,BLOCKED — needs backend,server ingestion
+Approvals,"Policy engine, roles, delegation",evaluatePolicy/canDecide,FUNCTIONAL (client),server enforcement
+Approvals,Execution + idempotency,decideApproval,FUNCTIONAL (client),server idempotency keys
+Appointments,Availability engine,availability,FUNCTIONAL (client),DB locking vs double-book
+Appointments,Booking lifecycle,createAppt/rescheduleAppt,FUNCTIONAL (client),calendar sync
+Campaigns,Audience resolution + validation,resolveAudience,FUNCTIONAL (client),database queries
+Campaigns,"Delivery queue, throttle, retries",delivery useEffect,PARTIAL,real sending worker
+Calls,Provider layer (real endpoints),makeVoiceProvider,FUNCTIONAL (client),server proxy + credentials
+Calls,"Live calls, recordings, transcripts",—,BLOCKED — needs backend,MrAssistant API
+Social,"Composer, quality checks, repurpose",qualityCheck/repurpose,FUNCTIONAL (client),platform publish APIs
+Social,Actual publishing,—,BLOCKED — needs backend,OAuth + platform APIs
+Analytics,"Funnel, attribution, economics",funnel/attribute/economics,FUNCTIONAL (client),rollup tables
+Activity,Structured ledger + chains,makeEvent/chainFor,FUNCTIONAL (client),append-only store
+Integrations,"Registry, health, sync engine",runSyncPass/connHealth,FUNCTIONAL (client),OAuth + real API calls
+Settings,"Workspace, escalation, notifications",SettingsView,FUNCTIONAL (client),persistence
+Billing,Pricing/entitlements/usage engine,priceFor/checkEntitlement,FUNCTIONAL (client),Stripe + webhooks
+Billing,"Checkout, invoices, payment methods",—,BLOCKED — needs backend,Stripe
+Notifications,Derived notifications + read state,deriveNotifications,FUNCTIONAL (client),push delivery
+Auth,"Registration, login, sessions, MFA",—,BLOCKED — needs backend,auth service
+Platform,RBAC server enforcement,canDecide (client),PARTIAL,server middleware
+Platform,Multi-tenancy isolation,—,BLOCKED — needs backend,workspace_id scoping
+Platform,Background jobs / queue,—,BLOCKED — needs backend,worker infrastructure
+Platform,Admin operations panel,AdminView,FUNCTIONAL (client),cross-workspace data
