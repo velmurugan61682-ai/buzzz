@@ -81,6 +81,16 @@ app.use(pinoHttp({ redact: ["req.headers.authorization", "req.headers.cookie"] }
 // health checks are public; everything else is not
 app.use("/health", health);
 
+// Root route — public, no auth. Confirms the API is reachable (e.g. after a Vercel deploy).
+app.get("/", (_req, res) =>
+  res.json({
+    status: "ok",
+    message: "BUZZZ API is running",
+    docs: "https://docs.buzzzbuzzz.com/api",
+    version: process.env.npm_package_version || "1.0.0",
+  })
+);
+
 /* Auth and staff routes sit before the customer authenticate/tenantScope pair:
    signing in cannot itself require being signed in, and staff are a separate
    population with their own session. */
