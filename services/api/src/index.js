@@ -104,6 +104,8 @@ app.get("/", (_req, res) =>
     version: process.env.npm_package_version || "1.0.0",
   })
 );
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
+app.get("/sw.js", (_req, res) => res.setHeader("Content-Type", "application/javascript").status(200).send("// No-op Service Worker\n"));
 
 /* Auth and staff routes sit before the customer authenticate/tenantScope pair:
    signing in cannot itself require being signed in, and staff are a separate
