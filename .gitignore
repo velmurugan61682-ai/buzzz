@@ -9,8 +9,11 @@ apps/web/dist/
 
 # environment variables
 .env
-.env.local
+.env.*
 *.env
+!.env.example
+!apps/web/.env.example
+!services/api/.env.example
 
 # logs
 *.log

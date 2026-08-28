@@ -13,7 +13,7 @@ import { newPasskeyChallenge, checkPasskeyResponse, checkSignCount, verifyTotp, 
 import {
   signUp, verifyEmail, logIn, logOut, currentSession,
   requestPasswordReset, resetPassword, changePassword,
-  routeAfterLogin, AuthError, SESSION_TTL_MS,
+  routeAfterLogin, AuthError, SESSION_TTL_MS, newToken,
 } from "../lib/auth.js";
 
 const cookieOpts = {
@@ -27,6 +27,20 @@ const cookieOpts = {
 export function authRoutes({ db, config = {} }) {
   const r = Router();
   const deps = { db, sendEmail: config.sendEmail };
+
+  const issueSession = async (res, user) => {
+    const token = newToken();
+    await db.createSession({
+      userId: user.id,
+      tokenHash: token.hash,
+      ip: null,
+      userAgent: null,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+    });
+    res.cookie("bz_session", token.raw, cookieOpts);
+    return token;
+  };
 
   const handle = (fn) => async (req, res, next) => {
     try { await fn(req, res); }

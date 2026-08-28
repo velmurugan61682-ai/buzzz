@@ -22,12 +22,27 @@ import { createDb } from "./lib/db.js";
 import { authRoutes } from "./routes/auth.js";
 import { googleRoutes, googleErrorHandler } from "./routes/google.js";
 import { adminRoutes } from "./routes/admin.js";
+import { crmRoutes } from "./routes/crm.js";
+import { inboxRoutes } from "./routes/inbox.js";
+import { schedulingRoutes } from "./routes/scheduling.js";
+import { agentRoutes } from "./routes/agents.js";
+import { workflowRoutes } from "./routes/workflows.js";
+import { billingRoutes } from "./routes/billing.js";
+import { integrationRoutes } from "./routes/integrations.js";
+
+import { env } from "./config/env.js";
+import { connectMongoDB } from "./lib/mongodb.js";
+
+// Initialize MongoDB connection if MONGODB_URI is configured
+if (env.MONGODB_URI) {
+  connectMongoDB(env.MONGODB_URI);
+}
 
 /* One pool for the process. Every query goes through the data layer, which is
    where workspace isolation is enforced. */
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: Number(process.env.PG_POOL_MAX || 10),
+  connectionString: env.DATABASE_URL,
+  max: env.PG_POOL_MAX,
   idleTimeoutMillis: 30000,
 });
 const db = createDb(pool);
@@ -41,8 +56,7 @@ app.use(cookieParser());
 /* CORS: an allow list, not a wildcard. Credentials are sent with every request,
    and "*" with credentials would let any site on the internet call this API as
    a signed in user. */
-const ORIGINS = String(process.env.ALLOWED_ORIGINS || "https://buzzzbuzzz.com,https://app.buzzzbuzzz.com")
-  .split(",").map((o) => o.trim()).filter(Boolean);
+const ORIGINS = env.origins;
 app.use(cors({
   origin(origin, cb) {
     if (!origin) return cb(null, true);            // same origin and server to server
@@ -95,7 +109,7 @@ app.get("/", (_req, res) =>
    signing in cannot itself require being signed in, and staff are a separate
    population with their own session. */
 app.use("/api/v1/auth", authRoutes({ db, config: {
-  appUrl: process.env.APP_URL,
+  appUrl: env.APP_URL,
   sendEmail: null,   // wire a provider here; until then verification links are logged, not sent
 } }));
 app.use("/api/v1/admin", adminRoutes({ db }));
@@ -103,21 +117,31 @@ app.use("/api/v1/admin", adminRoutes({ db }));
 app.use("/api/v1", authenticate, tenantScope);
 
 app.use("/api/v1/google", googleRoutes({ db, config: {
-  clientId: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: process.env.GOOGLE_REDIRECT_URI,
-  tokenKey: process.env.TOKEN_ENCRYPTION_KEY,
-  webhookUrl: process.env.GOOGLE_WEBHOOK_URL,
+  clientId: env.GOOGLE_CLIENT_ID,
+  clientSecret: env.GOOGLE_CLIENT_SECRET,
+  redirectUri: env.GOOGLE_REDIRECT_URI,
+  tokenKey: env.TOKEN_ENCRYPTION_KEY,
+  webhookUrl: env.GOOGLE_WEBHOOK_URL,
 } }));
+
+app.use("/api/v1", crmRoutes({ db }));
+app.use("/api/v1", inboxRoutes({ db, config: {
+  gowhatsBaseUrl: env.GOWHATS_BASE_URL,
+  gowhatsApiKey: env.GOWHATS_API_KEY,
+  gowhatsWebhookSecret: env.GOWHATS_WEBHOOK_SECRET,
+} }));
+app.use("/api/v1", schedulingRoutes({ db }));
+app.use("/api/v1", agentRoutes({ db }));
+app.use("/api/v1", workflowRoutes({ db }));
+app.use("/api/v1", billingRoutes({ db }));
+app.use("/api/v1", integrationRoutes({ db }));
 
 // Domain routes are mounted here as they are ported. Each returns 501 until then,
 // which is deliberate: a missing endpoint must fail loudly, not silently succeed.
-/* "auth", "admin" and "google" are implemented above and deliberately absent
-   from this list: an implemented route must never be shadowed by a 501. */
-const DOMAINS = ["contacts", "companies", "deals", "pipelines", "tasks", "segments",
-  "conversations", "calls", "appointments", "agents", "agent-library", "workflows",
-  "campaigns", "knowledge", "approvals", "integrations", "analytics", "audit",
-  "events", "billing", "notifications", "search", "files", "buzz"];
+const DOMAINS = ["pipelines", "segments",
+  "calls",
+  "campaigns", "knowledge", "approvals", "analytics", "audit",
+  "events", "notifications", "files", "buzz"];
 for (const d of DOMAINS) {
   app.use(`/api/v1/${d}`, (req, res) =>
     res.status(501).json({
@@ -132,5 +156,5 @@ for (const d of DOMAINS) {
 app.use(googleErrorHandler);
 app.use(errorHandler);
 
-const port = process.env.PORT || 4000;
+const port = env.PORT;
 app.listen(port, () => console.log(`BUZZZ API listening on :${port}`));
