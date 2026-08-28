@@ -9,12 +9,32 @@
 import { currentSession, AuthError } from "../lib/auth.js";
 import { hasPermission } from "../lib/permissions.js";
 
+export function isPublicRoute(req) {
+  const path = req.path || "";
+  const originalUrl = req.originalUrl || req.url || "";
+  const publicRoutes = [
+    "/webhooks/gowhats",
+    "/webhooks/stripe",
+    "/google/callback",
+    "/google/webhook",
+    "/api/v1/webhooks/gowhats",
+    "/api/v1/webhooks/stripe",
+    "/api/v1/google/callback",
+    "/api/v1/google/webhook",
+  ];
+  return publicRoutes.some((route) => path.includes(route) || originalUrl.includes(route));
+}
+
 export function createAuthMiddleware({ db }) {
   /**
    * Authenticates the user session from cookie or Authorization header.
    */
   const authenticate = async (req, res, next) => {
     try {
+      if (isPublicRoute(req)) {
+        return next();
+      }
+
       let token = null;
       if (req.cookies && req.cookies.bz_session) {
         token = req.cookies.bz_session;
@@ -168,6 +188,9 @@ export function createAuthMiddleware({ db }) {
 
 // Backward-compatible default middleware stub export
 export function authenticate(req, res, next) {
+  if (isPublicRoute(req)) {
+    return next();
+  }
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token && (!req.cookies || !req.cookies.bz_session)) {

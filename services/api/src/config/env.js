@@ -19,6 +19,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   APP_URL: z.string().url().default("http://localhost:5173"),
   API_URL: z.string().url().default("http://localhost:4000"),
+  API_PUBLIC_URL: z.string().url().optional(),
   ALLOWED_ORIGINS: z.string().default("https://buzzzbuzzz.com,https://app.buzzzbuzzz.com,http://localhost:5173"),
   CORS_ORIGIN: z.string().optional(),
   LOG_LEVEL: z.enum(["silent", "trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
@@ -135,6 +136,10 @@ export function validateEnv(rawEnv = process.env) {
     ? parsed.CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean)
     : parsed.ALLOWED_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean);
 
+  if (parsed.API_PUBLIC_URL && !originList.includes(parsed.API_PUBLIC_URL)) {
+    originList.push(parsed.API_PUBLIC_URL);
+  }
+
   // Integration readiness flags
   const integrations = {
     googleCalendar: Boolean(parsed.GOOGLE_CLIENT_ID && parsed.GOOGLE_CLIENT_SECRET),
@@ -167,6 +172,7 @@ export function getSanitizedConfig(config) {
     port: config.PORT,
     appUrl: config.APP_URL,
     apiUrl: config.API_URL,
+    apiPublicUrl: config.API_PUBLIC_URL || null,
     allowedOrigins: config.origins,
     version: config.npm_package_version,
     gitSha: config.GIT_SHA,

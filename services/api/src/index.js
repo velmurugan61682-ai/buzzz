@@ -119,9 +119,9 @@ app.use("/api/v1", authenticate, tenantScope);
 app.use("/api/v1/google", googleRoutes({ db, config: {
   clientId: env.GOOGLE_CLIENT_ID,
   clientSecret: env.GOOGLE_CLIENT_SECRET,
-  redirectUri: env.GOOGLE_REDIRECT_URI,
+  redirectUri: env.GOOGLE_REDIRECT_URI || (env.API_PUBLIC_URL ? `${env.API_PUBLIC_URL}/api/v1/google/callback` : `${env.API_URL}/api/v1/google/callback`),
   tokenKey: env.TOKEN_ENCRYPTION_KEY,
-  webhookUrl: env.GOOGLE_WEBHOOK_URL,
+  webhookUrl: env.GOOGLE_WEBHOOK_URL || (env.API_PUBLIC_URL ? `${env.API_PUBLIC_URL}/api/v1/google/webhook` : `${env.API_URL}/api/v1/google/webhook`),
 } }));
 
 app.use("/api/v1", crmRoutes({ db }));
