@@ -75,6 +75,19 @@ CREATE TABLE staff_users (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE staff_sessions (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  staff_user_id uuid NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+  token_hash    text NOT NULL UNIQUE,
+  ip            inet,
+  user_agent    text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  expires_at    timestamptz NOT NULL,
+  revoked_at    timestamptz
+);
+CREATE INDEX ON staff_sessions (staff_user_id) WHERE revoked_at IS NULL;
+CREATE INDEX ON staff_sessions (expires_at);
+
 -- support access is explicit, time boxed, read only by default, and logged
 CREATE TABLE support_grants (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),

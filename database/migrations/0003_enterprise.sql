@@ -20,6 +20,8 @@ create table fx_rates (
 create index on fx_rates (workspace_id, quote_currency, as_of desc);
 
 -- ---- company hierarchy ----
+create extension if not exists "ltree";
+
 create table companies (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces(id) on delete cascade,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
+import { api } from "./lib/api-client.js";
 import {
   Inbox, Users, Bot, Workflow, Megaphone, Phone, BookOpen, BarChart3, Plug, Settings,
   Search, Bell, Moon, Sun, Sparkles, Send, Check, X, Pencil, ChevronRight, ChevronDown,
@@ -6556,6 +6557,23 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
   const [kb, setKb] = useState(KNOWLEDGE);
   const [kbQueries, setKbQueries] = useState([]);      // every retrieval, real
   const [kbGaps, setKbGaps] = useState([]);            // questions with no confident answer
+
+  useEffect(() => {
+    let active = true;
+    const wsId = route?.workspaceId || "ws_default";
+    Promise.allSettled([
+      api.getContacts(wsId),
+      api.getConversations(wsId),
+      api.getAgents(wsId),
+      api.getWorkflows(wsId),
+    ]).then(([resContacts, resConvs, resAgents, resWfs]) => {
+      if (!active) return;
+      if (resConvs.status === "fulfilled" && resConvs.value?.data?.length) setConvs(resConvs.value.data);
+      if (resAgents.status === "fulfilled" && resAgents.value?.data?.length) setAgents(resAgents.value.data);
+      if (resWfs.status === "fulfilled" && resWfs.value?.data?.length) setWfs(resWfs.value.data);
+    });
+    return () => { active = false; };
+  }, [route]);
   const [conns, setConns] = useState(() => {
     const o = {};
     ["gowhats", "instaxbot", "mrassistant", "gmail", "gcal", "slack", "zoom"].forEach((id) => {

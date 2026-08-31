@@ -19,6 +19,16 @@ export class DbError extends Error {
   }
 }
 
+export class DuplicateError extends Error {
+  constructor(field, message = `A record with this ${field} already exists in this workspace.`) {
+    super(message);
+    this.name = "DuplicateError";
+    this.code = "duplicate_value";
+    this.status = 409;
+    this.field = field;
+  }
+}
+
 /* A query that touches tenant data must carry a workspace id. This is checked
    at runtime, not left to review. */
 function assertScope(workspaceId) {
@@ -29,8 +39,30 @@ function assertScope(workspaceId) {
 }
 
 export function createDb(pool, { now = () => new Date().toISOString() } = {}) {
-  const one = async (text, params) => (await pool.query(text, params)).rows[0] || null;
-  const many = async (text, params) => (await pool.query(text, params)).rows;
+  const handleQuery = async (fn, text, params) => {
+    try {
+      return await fn(text, params);
+    } catch (err) {
+      if (err.code === "23505" || err.code === "duplicate_value") {
+        let field = "name";
+        const constraint = String(err.constraint || err.detail || err.message || "").toLowerCase();
+        if (constraint.includes("email")) field = "email";
+        else if (constraint.includes("phone")) field = "phone";
+        else if (constraint.includes("slug")) field = "slug";
+        throw new DuplicateError(field, err.message || `A duplicate record with this ${field} already exists.`);
+      }
+      throw err;
+    }
+  };
+
+  const one = async (text, params) => {
+    const res = await handleQuery((t, p) => pool.query(t, p), text, params);
+    return res.rows[0] || null;
+  };
+  const many = async (text, params) => {
+    const res = await handleQuery((t, p) => pool.query(t, p), text, params);
+    return res.rows;
+  };
 
   /* ---- transactions ----
      Provisioning creates a workspace, a membership, agents and workflows. A
@@ -246,9 +278,30 @@ export function createDb(pool, { now = () => new Date().toISOString() } = {}) {
           c.ownerId,
         ]
       ),
-    updateContact: (workspaceId, id, patch) => {
+    updateContact: async (workspaceId, id, patch) => {
       const keys = Object.keys(patch);
       if (!keys.length) throw new DbError("Nothing to update", "empty_patch");
+
+      if (patch.email) {
+        const existing = await one(
+          `SELECT id, name FROM contacts WHERE workspace_id = $1 AND lower(email) = lower($2) AND id != $3 AND archived = false`,
+          [assertScope(workspaceId), patch.email, id]
+        );
+        if (existing) {
+          throw new DuplicateError("email", `Email '${patch.email}' is already used by contact '${existing.name}'.`);
+        }
+      }
+
+      if (patch.phone) {
+        const existing = await one(
+          `SELECT id, name FROM contacts WHERE workspace_id = $1 AND phone = $2 AND id != $3 AND archived = false`,
+          [assertScope(workspaceId), patch.phone, id]
+        );
+        if (existing) {
+          throw new DuplicateError("phone", `Phone number '${patch.phone}' is already used by contact '${existing.name}'.`);
+        }
+      }
+
       const sets = keys.map((k, i) => `${k} = $${i + 3}`).join(", ");
       return one(
         `UPDATE contacts SET ${sets}, updated_at = now()
@@ -668,9 +721,20 @@ export function createDb(pool, { now = () => new Date().toISOString() } = {}) {
           a.createdBy || null,
         ]
       ),
-    updateAgent: (workspaceId, id, patch) => {
+    updateAgent: async (workspaceId, id, patch) => {
       const keys = Object.keys(patch);
       if (!keys.length) throw new DbError("Nothing to update", "empty_patch");
+
+      if (patch.name) {
+        const existing = await one(
+          `SELECT id, name FROM agents WHERE workspace_id = $1 AND lower(name) = lower($2) AND id != $3`,
+          [assertScope(workspaceId), patch.name, id]
+        );
+        if (existing) {
+          throw new DuplicateError("name", `Agent name '${patch.name}' is already used in this workspace.`);
+        }
+      }
+
       const sets = keys.map((k, i) => `${k} = $${i + 3}`).join(", ");
       return one(
         `UPDATE agents SET ${sets} WHERE workspace_id = $1 AND id = $2 RETURNING *`,
@@ -720,9 +784,20 @@ export function createDb(pool, { now = () => new Date().toISOString() } = {}) {
           w.createdBy || null,
         ]
       ),
-    updateWorkflow: (workspaceId, id, patch) => {
+    updateWorkflow: async (workspaceId, id, patch) => {
       const keys = Object.keys(patch);
       if (!keys.length) throw new DbError("Nothing to update", "empty_patch");
+
+      if (patch.name) {
+        const existing = await one(
+          `SELECT id, name FROM workflows WHERE workspace_id = $1 AND lower(name) = lower($2) AND id != $3 AND status != 'archived'`,
+          [assertScope(workspaceId), patch.name, id]
+        );
+        if (existing) {
+          throw new DuplicateError("name", `Workflow name '${patch.name}' is already used in this workspace.`);
+        }
+      }
+
       const sets = keys.map((k, i) => `${k} = $${i + 3}`).join(", ");
       return one(
         `UPDATE workflows SET ${sets}, updated_at = now() WHERE workspace_id = $1 AND id = $2 RETURNING *`,

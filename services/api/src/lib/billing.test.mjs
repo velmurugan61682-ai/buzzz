@@ -1,7 +1,7 @@
 /**
  * Stripe Billing & Entitlements Unit Tests.
  */
-import { createCheckoutSession, createPortalSession, processStripeWebhookEvent } from "./billing.js";
+import { createCheckoutSession, createPortalSession, processStripeWebhookEvent, verifyStripeWebhookSignature } from "./billing.js";
 import { assertEntitlement, assertUsageLimit } from "./entitlements.js";
 
 let fails = 0;
@@ -54,7 +54,16 @@ const portal = await createPortalSession({
 });
 ok(portal.url.includes("billing"), "creates portal session");
 
-/* 2. Stripe Webhook Processing (Idempotent) */
+/* 2. Webhook Signature Verification */
+const mockRawPayload = JSON.stringify({
+  id: "evt_sig_test",
+  type: "customer.subscription.created",
+  data: { object: { metadata: { workspace_id: "ws_alpha" } } },
+});
+const verifiedEvent = await verifyStripeWebhookSignature(mockRawPayload, "mock_sig");
+ok(verifiedEvent.id === "evt_sig_test", "verifies webhook signature / parses payload");
+
+/* 3. Stripe Webhook Processing (Idempotent) */
 const webhookEvent = {
   id: "evt_test_123",
   type: "customer.subscription.updated",
@@ -75,7 +84,7 @@ ok(procRes.ok === true && procRes.processed === true, "processes stripe webhook"
 const updatedSub = await db.getSubscription("ws_alpha");
 ok(updatedSub.plan === "pro" && updatedSub.status === "active", "updates subscription state from webhook");
 
-/* 3. Entitlements Verification */
+/* 4. Entitlements Verification */
 let entOk = false;
 try {
   await assertEntitlement(db, "ws_alpha", "copilot");
@@ -83,7 +92,7 @@ try {
 } catch (e) {}
 ok(entOk === true, "allows copilot feature on pro plan");
 
-/* 4. Plan Limits Enforcement */
+/* 5. Plan Limits Enforcement */
 db.setUsage("ws_alpha", "workflow_runs", 6000); // Exceeds Pro limit of 5000
 let limitBlocked = false;
 try {

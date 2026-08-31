@@ -256,6 +256,62 @@ export const NODE_CATALOG = {
       return { delayedMs: Number(config.ms || 0) };
     },
   },
+  "utility.http_request": {
+    name: "HTTP Webhook / API Call",
+    category: "Utilities",
+    type: "utility",
+    handler: async (db, wsId, config, ctx) => {
+      const urlStr = interpolateVariables(config.url || "", ctx);
+      if (!urlStr) throw new Error("URL is required for HTTP node");
+
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(urlStr);
+      } catch {
+        throw new Error(`Invalid URL: ${urlStr}`);
+      }
+
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        throw new Error(`Forbidden URL protocol: ${parsedUrl.protocol}. Only http and https are allowed.`);
+      }
+
+      const host = parsedUrl.hostname.toLowerCase();
+      const isPrivate =
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host === "0.0.0.0" ||
+        host === "169.254.169.254" ||
+        /^10\./.test(host) ||
+        /^192\.168\./.test(host) ||
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host) ||
+        /^169\.254\./.test(host);
+
+      if (isPrivate) {
+        throw new Error(`SSRF Blocked: Outbound requests to private/internal network address (${host}) are forbidden.`);
+      }
+
+      const method = (config.method || "GET").toUpperCase();
+      const headers = config.headers || {};
+      const body = config.body ? interpolateVariables(config.body, ctx) : undefined;
+
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), Number(config.timeoutMs || 5000));
+
+      try {
+        const res = await (config.fetchImpl || globalThis.fetch)(urlStr, {
+          method,
+          headers: { "Content-Type": "application/json", ...headers },
+          body: method !== "GET" && method !== "HEAD" ? (typeof body === "string" ? body : JSON.stringify(body)) : undefined,
+          signal: ctrl.signal,
+        });
+        const responseData = await res.json().catch(() => ({}));
+        return { status: res.status, ok: res.ok, data: responseData };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  },
 };
 
 /**
