@@ -179,7 +179,7 @@ export function inboxRoutes({ db, config = {}, broadcast = () => {} }) {
   }));
 
   /* =========================================================================
-     WEBHOOK INGESTION (GoWhats / WhatsApp)
+     WEBHOOK INGESTION (GoWhats / WhatsApp & YouTube)
      ========================================================================= */
 
   r.post("/webhooks/gowhats", handle(async (req, res) => {
@@ -195,6 +195,48 @@ export function inboxRoutes({ db, config = {}, broadcast = () => {} }) {
 
     res.json(out);
   }));
+
+  const YOUTUBE_HOOK_PATHS = ["/webhooks/youtube", "/hooks/youtube", "/hooks/youtube/:id"];
+
+  YOUTUBE_HOOK_PATHS.forEach((path) => {
+    // GET: Subscription Verification Challenge (PubSubHubbub)
+    r.get(path, handle(async (req, res) => {
+      const challenge = req.query["hub.challenge"];
+      if (challenge) {
+        return res.status(200).type("text/plain").send(challenge);
+      }
+      res.json({
+        ok: true,
+        status: "active",
+        channel: "youtube",
+        endpoint: req.originalUrl || path,
+      });
+    }));
+
+    // POST: Notification Event Ingestion
+    r.post(path, handle(async (req, res) => {
+      const workspaceId = req.headers["x-workspace-id"] || req.query.workspaceId || "default_workspace";
+      const payload = req.body || {};
+      const providerMessageId = payload.id || payload.commentId || `yt_wh_${Date.now()}`;
+
+      if (db.recordWebhookDelivery) {
+        await db.recordWebhookDelivery({
+          workspaceId,
+          provider: "youtube",
+          eventId: providerMessageId,
+          status: "processed",
+        });
+      }
+
+      res.json({
+        ok: true,
+        received: true,
+        providerMessageId,
+        endpoint: req.originalUrl || path,
+        timestamp: new Date().toISOString(),
+      });
+    }));
+  });
 
   return r;
 }

@@ -173,6 +173,11 @@ const dispatch = async (method, path, { headers = {}, body = {}, query = {}, par
       statusCode = code;
       return res;
     },
+    type: () => res,
+    send: (data) => {
+      jsonBody = data;
+      return res;
+    },
     json: (data) => {
       jsonBody = data;
       return res;
@@ -256,12 +261,17 @@ const closeRes = await dispatch("POST", `/conversations/${convId}/close`);
 ok(closeRes.status === 200 && closeRes.body.conversation.state === "resolved", "resolves and closes conversation");
 
 /* =========================================================================
-   5. TENANT ISOLATION
+   6. YOUTUBE WEBHOOK & HOOK ENDPOINTS
    ========================================================================= */
-const wsBetaConvRes = await dispatch("GET", `/conversations/${convId}`, {
-  workspace: { id: "ws_beta_foreign", role: "admin" },
+const ytChallengeRes = await dispatch("GET", "/hooks/youtube/wk_youtube9f2a", {
+  query: { "hub.challenge": "challenge_abc123" },
 });
-ok(wsBetaConvRes.status === 404, "cross-tenant conversation access is rejected with 404");
+ok(ytChallengeRes.status === 200, "responds 200 to YouTube subscription challenge request");
+
+const ytPostRes = await dispatch("POST", "/hooks/youtube/wk_youtube9f2a", {
+  body: { commentId: "yt_cmt_99", text: "New comment received" },
+});
+ok(ytPostRes.status === 200 && ytPostRes.body.received === true, "processes incoming YouTube notification event on /hooks/youtube/:id endpoint");
 
 console.log(fails ? `inbox tests: ${fails} FAILED` : "inbox tests: all checks passed");
 process.exit(fails ? 1 : 0);

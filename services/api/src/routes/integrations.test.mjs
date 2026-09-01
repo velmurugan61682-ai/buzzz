@@ -105,15 +105,26 @@ const dispatch = async (method, path, { headers = {}, body = {}, query = {}, par
 
 /* 1. List Integrations */
 const listRes = await dispatch("GET", "/integrations");
-ok(listRes.status === 200 && listRes.body.data.length >= 5, "lists all standard integrations");
+ok(listRes.status === 200 && listRes.body.data.length >= 6, "lists all standard integrations including youtube");
 
-/* 2. Test Connection */
+const ytInteg = listRes.body.data.find((i) => i.provider === "youtube");
+ok(ytInteg && ytInteg.name === "ChannelBot.in", "includes ChannelBot.in integration label");
+ok(ytInteg && ytInteg.verificationStatus === "unverified_sandbox", "includes unverified_sandbox verificationStatus for YouTube");
+
+/* 2. Test Connection for API Key provider */
 const testRes = await dispatch("POST", "/integrations/gowhats/test");
-ok(testRes.status === 200 && testRes.body.state === "connected", "tests and connects integration");
+ok(testRes.status === 200 && testRes.body.state === "connected", "tests and connects api key integration");
 
-/* 3. Disconnect */
+/* 3. Save & Test API Key for ChannelBot.in (youtube) */
+const ytPutRes = await dispatch("PUT", "/integrations/youtube", { body: { apiKey: "yt_f792a2c02f9a11c03dd5e43e0e892742c0c2d05ef58e3cd896c26e8b" } });
+ok(ytPutRes.status === 200 && ytPutRes.body.state === "connected", "saves API key and connects ChannelBot.in integration");
+
+const ytTestRes = await dispatch("POST", "/integrations/youtube/test", { body: { apiKey: "yt_f792a2c02f9a11c03dd5e43e0e892742c0c2d05ef58e3cd896c26e8b" } });
+ok(ytTestRes.status === 200 && ytTestRes.body.state === "connected", "tests ChannelBot.in integration cleanly");
+
+/* 4. Disconnect */
 const discRes = await dispatch("POST", "/integrations/gowhats/disconnect");
 ok(discRes.status === 200 && discRes.body.state === "not_connected", "disconnects integration");
 
-console.log(fails ? `integrations: ${fails} FAILED` : "integrations: all checks passed");
+console.log(fails ? `integrations: ${fails} FAILED` : "integrations: all 7 checks passed");
 process.exit(fails ? 1 : 0);

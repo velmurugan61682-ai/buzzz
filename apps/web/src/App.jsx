@@ -408,6 +408,28 @@ const CONVS = [
       { id: 4, from: "system", time: t(1500), text: "Follow up 2 of 3 sent · Next: move to nurture if no reply in 5 days" },
     ],
   },
+  {
+    id: "v9", contactId: "c2", channel: "youtube", state: "AI Handling", priority: "Medium",
+    intent: "Product inquiry", sentiment: "Positive", assigned: "Sales Agent (AI)", team: "Sales",
+    ai: true, unread: 3, tags: ["ChannelBot.in", "YouTube"],
+    msgs: [
+      { id: 1, from: "customer", channel: "youtube", time: t(45), text: "🔥 This platform looks amazing! Does it support multi-language WhatsApp replies or only English? Asking for our Tamil customer base." },
+      { id: 2, from: "ai", agent: "Sales Agent", channel: "youtube", time: t(44), text: "Great question! Yes, Buzzz supports multi-language replies including Tamil, Hindi, Arabic and more. Your agents or AI can respond in the customer's preferred language automatically. Want me to drop a link to the language settings demo?" },
+      { id: 3, from: "system", time: t(43), text: "ChannelBot.in · Comment thread fetched via YouTube Data API · Channel: @LumenBeauty" },
+      { id: 4, from: "customer", channel: "youtube", time: t(10), text: "Yes please! Also does it integrate with Shopify for order tracking replies?" },
+    ],
+  },
+  {
+    id: "v10", contactId: "c4", channel: "youtube", state: "Waiting for Team", priority: "High",
+    intent: "Support", sentiment: "Negative", assigned: "Support Agent (AI)", team: "Support",
+    ai: true, unread: 2, tags: ["ChannelBot.in", "Complaint"],
+    msgs: [
+      { id: 1, from: "customer", channel: "youtube", time: t(120), text: "Your software deleted all my contacts after the update. This is unacceptable. I am going to leave a public review about this." },
+      { id: 2, from: "ai", agent: "Support Agent", channel: "youtube", time: t(119), text: "Hi Priya, I am really sorry to hear that. This should not happen and I want to help immediately. Can you DM us your account email? Our team will restore your contacts from backup right away. I am escalating this as P1." },
+      { id: 3, from: "system", time: t(118), text: "ChannelBot.in · Sentiment: Negative · Escalation triggered · Assigned to Support team" },
+      { id: 4, from: "customer", channel: "youtube", time: t(30), text: "DM sent. Please fix this fast, we have a client meeting today." },
+    ],
+  },
 ];
 /* normalize seed shape: at/last/assignee/priority are what the UI reads */
 CONVS.forEach((c) => {
@@ -2440,7 +2462,7 @@ const BUZZZ_FIELDS = {
 };
 
 const PROVIDERS = [
-  { id: "gowhats", name: "GoWhats", logo: "gowhats", cat: "Your ecosystem", auth: "internal", core: true,
+  { id: "gowhats", name: "GoWhats", logo: "gowhats", cat: "Your ecosystem", auth: "apikey", core: true,
     d: "WhatsApp Business messaging, templates and media.",
     caps: { messaging: true, sync: false, webhooks: true, actions: ["Send message", "Send template", "Send media"] },
     objects: [], events: ["message.received", "message.delivered", "message.read", "template.approved"],
@@ -2468,6 +2490,11 @@ const PROVIDERS = [
     d: "Reviews, questions and messages from your listing.",
     caps: { messaging: true, sync: true, webhooks: false, actions: ["Reply to review", "Reply to message"] },
     objects: ["review"], events: ["review.received"], limits: "polling every 15 minutes", scopes: ["business.manage"] },
+  { id: "youtube", name: "ChannelBot.in", logo: "youtube", cat: "Google", auth: "apikey",
+    d: "Automated YouTube comment replies, moderation and thread management.",
+    caps: { messaging: true, sync: true, webhooks: false, actions: ["Reply to comment", "Set moderation status"] },
+    objects: ["comment"], events: ["comment.received"],
+    limits: "polling every 15 minutes · 10,000 daily quota units", scopes: ["youtube.force-ssl"] },
   { id: "hubspot", name: "HubSpot", logo: "hubspot", cat: "CRM and sales", auth: "oauth",
     d: "Two way contact, company and deal sync.",
     caps: { messaging: false, sync: true, webhooks: true, actions: ["Create contact", "Update contact", "Create deal"] },
@@ -2591,7 +2618,7 @@ function dependenciesOf(providerId, { agents = [], wfs = [], camps = [], account
   const p = PROVIDERS.find((x) => x.id === providerId);
   if (!p) return { agents: [], workflows: [], campaigns: [], channels: [] };
   const toolName = { gowhats: "GoWhats", instaxbot: "InstaxBot", mrassistant: "MrAssistant.ai", gmail: "Gmail", gcal: "Calendar", stripe: "Payments", shopify: "CRM" }[providerId];
-  const chan = { gowhats: "whatsapp", instaxbot: "instagram", gmail: "email", telegram: "telegram", mrassistant: "voice" }[providerId];
+  const chan = { gowhats: "whatsapp", instaxbot: "instagram", gmail: "email", telegram: "telegram", mrassistant: "voice", youtube: "youtube" }[providerId];
   return {
     agents: agents.filter((a) => toolName && (a.tools || []).includes(toolName)),
     workflows: wfs.filter((w) => (w.nodes || []).some((n) => n.type === "act" && WF_ACTIONS[n.action] && WF_ACTIONS[n.action].integration === p.name)),
@@ -21156,6 +21183,12 @@ function ConnectModal({ provider, onClose }) {
   const [step, setStep] = useState("review");
   const [key, setKey] = useState("");
   const [err, setErr] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const webhookEndpoint = `https://api.buzzzbuzzz.com/hooks/${provider.id}/wk_${provider.id}9f2a`;
+  const copyEndpoint = () => {
+    navigator.clipboard?.writeText(webhookEndpoint).catch(() => {});
+    setCopied(true); setTimeout(() => setCopied(false), 2000);
+  };
   const run = () => {
     if (provider.auth === "apikey" && key.trim().length < 8) { setErr("That key is too short to be valid. Copy the full key from your " + provider.name + " dashboard."); return; }
     setErr(null); setStep("connecting");
@@ -21183,8 +21216,22 @@ function ConnectModal({ provider, onClose }) {
         </div>
         {provider.auth === "apikey" && (
           <Field label="API key" hint="Stored encrypted on our server and never sent to the browser again." error={err}>
-            <input value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk_live_…" className={inputCls(T, err)} />
+            <input value={key} onChange={(e) => setKey(e.target.value)}
+              placeholder={provider.id === "gowhats" ? "gw_live_…" : provider.id === "youtube" ? "yt_…" : "sk_live_…"}
+              className={inputCls(T, err)} />
           </Field>
+        )}
+        {provider.auth === "apikey" && provider.caps.webhooks && (
+          <div className={`rounded-xl p-3 mt-2 space-y-1.5 ${T.softcard}`}>
+            <div className={`text-[10px] font-medium uppercase tracking-widest mb-1 ${T.faint}`}>Webhook endpoint — paste this in your {provider.name} dashboard</div>
+            <div className="flex items-center gap-2">
+              <code className="text-[10px] font-mono flex-1 break-all">{webhookEndpoint}</code>
+              <button onClick={copyEndpoint} className={`shrink-0 h-7 px-2.5 rounded-lg border text-[10px] font-semibold ${T.chip}`}>
+                {copied ? "Copied ✓" : "Copy"}
+              </button>
+            </div>
+            <p className={`text-[10px] ${T.faint}`}>Paste this URL into your {provider.name} webhook settings so Buzzz receives live notifications.</p>
+          </div>
         )}
         {provider.auth === "oauth" && <p className={`text-[11px] mt-3 ${T.faint}`}>You will be taken to {provider.name} to sign in and approve these scopes. Buzzz never sees your password.</p>}
         {err && provider.auth !== "apikey" && <p className="text-[11px] text-red-500 mt-2">{err}</p>}
@@ -21430,16 +21477,24 @@ function IntegrationsView() {
                           <p className={`text-[11px] leading-snug ${T.faint}`}>{p.d}</p>
                         </div>
                         {c.on && <Pill c={HEALTH_TINT2[h.state]}>{h.state}</Pill>}
+                        {p.id === "youtube" && !c.on && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded border bg-amber-50 text-amber-700 border-amber-200 font-semibold">Verification Pending</span>
+                        )}
                       </div>
                       <div className="flex flex-wrap gap-1 mt-2.5">
                         {(p.caps.actions || []).slice(0, 3).map((a) => <span key={a} className={`text-[10px] px-1.5 py-0.5 rounded ${T.softcard} ${T.faint}`}>{a}</span>)}
                       </div>
+                      {p.id === "youtube" && !c.on && (
+                        <p className="text-[10px] mt-1.5 text-amber-600 bg-amber-50/50 p-1.5 rounded-lg border border-amber-100/60 leading-tight">
+                          Available to pre-registered test accounts while Google App Verification is in review.
+                        </p>
+                      )}
                       <div className="flex items-center gap-1.5 mt-3">
                         <span className={`text-[10px] ${T.faint}`}>{AUTH_LABEL[p.auth]}{c.lastSync ? " · synced " + fmtD(new Date(c.lastSync)) : ""}</span>
                         <div className="flex-1" />
                         {c.on
                           ? <button onClick={() => setDetail(p)} className={`h-8 px-3 rounded-xl border text-[11px] font-semibold ${T.chip} ${T.hover}`}>Manage</button>
-                          : <button onClick={() => setConnecting(p)} className="h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>Connect</button>}
+                          : <button onClick={() => setConnecting(p)} className="h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>{p.id === "youtube" ? "Connect (Test Mode)" : "Connect"}</button>}
                       </div>
                       {h.why && <p className={`text-[10px] mt-2 ${h.state === "Error" ? "text-red-500" : "text-amber-600"}`}>{h.why}</p>}
                     </div>

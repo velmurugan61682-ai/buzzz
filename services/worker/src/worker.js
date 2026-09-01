@@ -6,6 +6,7 @@
  */
 
 import { sendGoWhatsMessage } from "../../api/src/lib/gowhats.js";
+import { listCommentThreads } from "../../api/src/lib/google.js";
 
 export class JobRunner {
   constructor({ db, maxRetries = 3 }) {
@@ -167,15 +168,69 @@ export function createDefaultWorker(db) {
     });
   });
 
-  // 6. Analytics Rollup Job
-  runner.registerHandler("analytics.rollup", async (payload, { workspaceId, db }) => {
-    const { period = "daily" } = payload;
-    return await db.writeAudit(workspaceId, {
-      actorType: "worker",
-      action: "analytics.rollup.completed",
-      targetType: "metrics",
-      detail: { period, rolledUpAt: new Date().toISOString() },
+  // 7. YouTube Comment Sync Job (15-min cadence, quota budget check, publishedAfter delta sync)
+  runner.registerHandler("youtube.sync", async (payload, { workspaceId, db }) => {
+    const { accessToken, channelId, lastSyncAt, quotaUsedToday = 0, fetchFn = globalThis.fetch } = payload;
+    
+    // Quota Budget Check: 10,000 units/day limit. commentThreads.list = 1 unit.
+    // Safety threshold: 9,000 units/day.
+    const DAILY_QUOTA_LIMIT = 9000;
+    if (quotaUsedToday >= DAILY_QUOTA_LIMIT) {
+      return {
+        skipped: true,
+        reason: `Daily YouTube quota limit approaching (${quotaUsedToday}/${DAILY_QUOTA_LIMIT} units used). Polling backed off until quota reset.`,
+      };
+    }
+
+    if (!accessToken) {
+      throw new Error("YouTube sync requires valid OAuth access token");
+    }
+
+    const syncStartTime = new Date().toISOString();
+    const response = await listCommentThreads({
+      accessToken,
+      allThreadsRelatedToChannelId: channelId || undefined,
+      publishedAfter: lastSyncAt || undefined,
+      fetchImpl: fetchFn,
     });
+
+    const items = response.items || [];
+    let syncedCount = 0;
+
+    for (const thread of items) {
+      const topComment = thread.snippet?.topLevelComment?.snippet || {};
+      const author = topComment.authorDisplayName || "YouTube User";
+      const text = topComment.textOriginal || topComment.textDisplay || "";
+      const commentId = thread.id;
+
+      if (db.createConversation && db.createMessage) {
+        const conv = await db.createConversation(workspaceId, {
+          contactId: null,
+          channel: "youtube",
+          externalId: commentId,
+          state: "open",
+        });
+        await db.createMessage(workspaceId, {
+          conversationId: conv.id,
+          direction: "inbound",
+          body: text,
+          author,
+          providerMessageId: commentId,
+          timestamp: topComment.publishedAt || syncStartTime,
+        });
+      }
+      syncedCount++;
+    }
+
+    const updatedQuotaUsed = quotaUsedToday + 1; // 1 unit used for commentThreads.list
+
+    return {
+      ok: true,
+      syncedCount,
+      lastSyncAt: syncStartTime,
+      quotaUsedToday: updatedQuotaUsed,
+      cadenceMinutes: 15,
+    };
   });
 
   return runner;

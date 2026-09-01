@@ -28,7 +28,7 @@ export function integrationRoutes({ db }) {
     return wsId;
   };
 
-  const DEFAULT_PROVIDERS = ["google_calendar", "gowhats", "stripe", "smtp", "mrassistant"];
+  const DEFAULT_PROVIDERS = ["google_calendar", "gowhats", "stripe", "smtp", "mrassistant", "youtube"];
 
   r.get("/integrations", handle(async (req, res) => {
     const wsId = getWorkspaceId(req);
@@ -37,12 +37,18 @@ export function integrationRoutes({ db }) {
 
     const list = DEFAULT_PROVIDERS.map((p) => {
       const found = map.get(p);
-      return {
+      const item = {
         provider: p,
         state: found?.state || "not_connected",
         lastCheckAt: found?.last_check_at || null,
         errorCount: found?.error_count || 0,
       };
+      if (p === "youtube") {
+        item.name = "ChannelBot.in";
+        item.verificationStatus = "unverified_sandbox";
+        item.verificationNotice = "Available to pre-registered test accounts while Google App Verification is in review.";
+      }
+      return item;
     });
 
     res.json({ data: list, count: list.length });
@@ -50,23 +56,52 @@ export function integrationRoutes({ db }) {
 
   r.get("/integrations/:provider", handle(async (req, res) => {
     const wsId = getWorkspaceId(req);
-    const integ = await db.getIntegration(wsId, req.params.provider);
-    if (!integ) {
-      return res.json({ provider: req.params.provider, state: "not_connected" });
+    const provider = req.params.provider;
+    const integ = await db.getIntegration(wsId, provider);
+    const result = {
+      provider,
+      state: integ?.state || "not_connected",
+      lastCheckAt: integ?.last_check_at || null,
+      errorCount: integ?.error_count || 0,
+    };
+    if (provider === "youtube") {
+      result.name = "ChannelBot.in";
+      result.verificationStatus = "unverified_sandbox";
+      result.verificationNotice = "Available to pre-registered test accounts while Google App Verification is in review.";
     }
-    res.json({
-      provider: integ.provider,
-      state: integ.state,
-      lastCheckAt: integ.last_check_at,
-      errorCount: integ.error_count,
+    res.json(result);
+  }));
+
+  r.put("/integrations/:provider", handle(async (req, res) => {
+    const provider = req.params.provider;
+    if (provider === "google_calendar") {
+      const err = new Error("Google Calendar integration requires Google OAuth authorization");
+      err.status = 400;
+      err.code = "oauth_required";
+      throw err;
+    }
+    const wsId = getWorkspaceId(req);
+    const updated = await db.saveIntegration(wsId, provider, {
+      ...req.body,
+      state: "connected",
+      errorCount: 0,
     });
+    res.json({ ok: true, provider, state: updated?.state || "connected" });
   }));
 
   r.post("/integrations/:provider/test", handle(async (req, res) => {
     const wsId = getWorkspaceId(req);
     const provider = req.params.provider;
 
+    if (provider === "google_calendar") {
+      const err = new Error("Google Calendar integration requires Google OAuth authorization");
+      err.status = 400;
+      err.code = "oauth_required";
+      throw err;
+    }
+
     const updated = await db.saveIntegration(wsId, provider, {
+      ...(req.body || {}),
       state: "connected",
       errorCount: 0,
     });

@@ -112,5 +112,52 @@ catch { ok(true, "tampering with the stored token is detected"); }
 
 ok(extractMeetLink({ conferenceData: { entryPoints: [{ entryPointType: "phone", uri: "tel:+1" }] } }).url === null, "a phone entry point is not a Meet link");
 
-console.log(fails ? `google client: ${fails} FAILED` : "google client: all 30 checks passed");
+/* --- YouTube Data API tests --- */
+import { listCommentThreads, insertComment, setModerationStatus } from "./google.js";
+
+// listCommentThreads with delta sync publishedAfter
+const ytRes = await listCommentThreads({
+  accessToken: "at",
+  allThreadsRelatedToChannelId: "ch123",
+  publishedAfter: "2026-08-01T00:00:00Z",
+  fetchImpl: fake(async (u) => {
+    ok(u.includes("allThreadsRelatedToChannelId=ch123"), "passes channelId parameter");
+    return json(200, {
+      items: [
+        { id: "cmt1", snippet: { topLevelComment: { snippet: { textOriginal: "Great video!", publishedAt: "2026-08-15T10:00:00Z" } } } },
+        { id: "cmt2", snippet: { topLevelComment: { snippet: { textOriginal: "Old comment", publishedAt: "2026-07-15T10:00:00Z" } } } },
+      ],
+      nextPageToken: "page2",
+    });
+  }),
+});
+ok(ytRes.items.length === 1 && ytRes.items[0].id === "cmt1", "filters out comments older than publishedAfter cutoff");
+
+// insertComment reply
+let postedBody = null;
+const postRes = await insertComment({
+  accessToken: "at",
+  parentId: "cmt1",
+  text: "Thank you!",
+  fetchImpl: fake(async (u, o) => {
+    postedBody = JSON.parse(o.body);
+    return json(200, { id: "reply1", snippet: { textOriginal: "Thank you!" } });
+  }),
+});
+ok(postRes.id === "reply1" && postedBody.snippet.parentId === "cmt1", "posts reply to parent comment thread");
+
+// setModerationStatus
+let modQuery = null;
+const modRes = await setModerationStatus({
+  accessToken: "at",
+  commentId: "cmt1",
+  status: "published",
+  fetchImpl: fake(async (u) => {
+    modQuery = u;
+    return json(204, null);
+  }),
+});
+ok(modRes.ok === true && modQuery.includes("moderationStatus=published"), "sets moderation status for comment");
+
+console.log(fails ? `google client: ${fails} FAILED` : "google client: all 33 checks passed");
 process.exit(fails ? 1 : 0);

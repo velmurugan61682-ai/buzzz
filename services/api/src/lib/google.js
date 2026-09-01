@@ -18,6 +18,7 @@ const CAL_BASE = "https://www.googleapis.com/calendar/v3";
 export const SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 
 export class GoogleError extends Error {
@@ -274,3 +275,145 @@ export async function withRetry(fn, { attempts = 3, baseMs = 300, sleep = (ms) =
   }
   throw last;
 }
+
+/* =========================================================================
+   YOUTUBE DATA API V3 INTEGRATION
+   ========================================================================= */
+
+const YT_BASE = "https://www.googleapis.com/youtube/v3";
+
+async function youtubeCall(fetchImpl, accessToken, path, { method = "GET", body, query } = {}) {
+  const qStr = query ? "?" + new URLSearchParams(query).toString() : "";
+  const url = `${YT_BASE}${path}${qStr}`;
+  const res = await fetchImpl(url, {
+    method,
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = data.error || {};
+    const status = res.status;
+    throw new GoogleError(err.message || `YouTube API returned ${status}`, {
+      status,
+      code: (err.errors && err.errors[0] && err.errors[0].reason) || "youtube_error",
+      retryable: status === 429 || status >= 500,
+      needsReconnect: status === 401,
+    });
+  }
+  return data;
+}
+
+/**
+  * Fetches top-level comment threads for a YouTube channel or video.
+  * Supports `publishedAfter` for incremental delta syncs and `pageToken` for pagination.
+  */
+export async function listCommentThreads({
+  accessToken,
+  allThreadsRelatedToChannelId,
+  videoId,
+  pageToken,
+  publishedAfter,
+  maxResults = 50,
+  fetchImpl = fetch,
+}) {
+  const query = {
+    part: "snippet,replies",
+    maxResults: String(maxResults),
+  };
+  if (allThreadsRelatedToChannelId) query.allThreadsRelatedToChannelId = allThreadsRelatedToChannelId;
+  if (videoId) query.videoId = videoId;
+  if (pageToken) query.pageToken = pageToken;
+
+  const data = await youtubeCall(fetchImpl, accessToken, "/commentThreads", { method: "GET", query });
+  
+  let items = data.items || [];
+  if (publishedAfter) {
+    const cutoff = new Date(publishedAfter).getTime();
+    items = items.filter((item) => {
+      const pub = item.snippet?.topLevelComment?.snippet?.publishedAt;
+      return pub && new Date(pub).getTime() > cutoff;
+    });
+  }
+
+  return {
+    items,
+    nextPageToken: data.nextPageToken || null,
+    totalResults: data.pageInfo?.totalResults || items.length,
+  };
+}
+
+/**
+  * Posts a top-level comment on a video or a reply to an existing comment thread.
+  */
+export async function insertComment({
+  accessToken,
+  videoId,
+  parentId,
+  text,
+  fetchImpl = fetch,
+}) {
+  if (!text) throw new GoogleError("Comment text is required", { code: "bad_request" });
+
+  if (parentId) {
+    // Post reply to existing comment
+    const body = {
+      snippet: {
+        parentId,
+        textOriginal: text,
+      },
+    };
+    return youtubeCall(fetchImpl, accessToken, "/comments", {
+      method: "POST",
+      query: { part: "snippet" },
+      body,
+    });
+  } else if (videoId) {
+    // Post top-level comment on video
+    const body = {
+      snippet: {
+        videoId,
+        topLevelComment: {
+          snippet: {
+            textOriginal: text,
+          },
+        },
+      },
+    };
+    return youtubeCall(fetchImpl, accessToken, "/commentThreads", {
+      method: "POST",
+      query: { part: "snippet" },
+      body,
+    });
+  } else {
+    throw new GoogleError("Either videoId or parentId is required to post a comment", { code: "bad_request" });
+  }
+}
+
+/**
+  * Sets moderation status for YouTube comments (published, heldForReview, rejected).
+  */
+export async function setModerationStatus({
+  accessToken,
+  commentId,
+  status = "published",
+  banAuthor = false,
+  fetchImpl = fetch,
+}) {
+  if (!commentId) throw new GoogleError("commentId is required", { code: "bad_request" });
+
+  const query = {
+    id: commentId,
+    moderationStatus: status,
+    banAuthor: String(banAuthor),
+  };
+
+  await youtubeCall(fetchImpl, accessToken, "/comments/setModerationStatus", {
+    method: "POST",
+    query,
+  });
+
+  return { ok: true, commentId, status };
+}
+

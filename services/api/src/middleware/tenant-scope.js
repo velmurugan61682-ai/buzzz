@@ -9,10 +9,14 @@ export function isPublicRoute(req) {
   const publicRoutes = [
     "/webhooks/gowhats",
     "/webhooks/stripe",
+    "/webhooks/youtube",
+    "/hooks/youtube",
     "/google/callback",
     "/google/webhook",
     "/api/v1/webhooks/gowhats",
     "/api/v1/webhooks/stripe",
+    "/api/v1/webhooks/youtube",
+    "/api/v1/hooks/youtube",
     "/api/v1/google/callback",
     "/api/v1/google/webhook",
   ];

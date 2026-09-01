@@ -40,12 +40,12 @@ const ACTION_TOOL = {
   CAN_SEND_WHATSAPP: "GoWhats", CAN_SEND_EMAIL: "Gmail", CAN_SEND_SMS: "GoWhats", CAN_ASSIGN_CONVERSATION: "CRM",
   CAN_BOOK_APPOINTMENT: "Calendar", CAN_CANCEL_APPOINTMENT: "Calendar",
   CAN_PLACE_CALL: "MrAssistant.ai", CAN_TRANSFER_CALL: "MrAssistant.ai",
-  CAN_POST_SOCIAL: "Publisher", CAN_REPLY_SOCIAL: "InstaxBot",
+  CAN_POST_SOCIAL: "Publisher", CAN_REPLY_SOCIAL: "InstaxBot", CAN_REPLY_YOUTUBE: "YouTube",
   CAN_CREATE_CAMPAIGN: "Campaigns", CAN_START_CAMPAIGN: "Campaigns",
   CAN_TRIGGER_WORKFLOW: "Workflows", CAN_CREATE_TASK: "CRM", CAN_ISSUE_REFUND: "Payments", CAN_CREATE_TICKET: "Ticketing",
 };
-const ALL_TOOLS = ["CRM", "Calendar", "Knowledge base", "Payments", "GoWhats", "InstaxBot", "Gmail", "MrAssistant.ai", "Ticketing", "Publisher", "Campaigns", "Workflows", "Analytics"];
-const AGENT_CHANNELS = ["whatsapp", "instagram", "facebook", "email", "sms", "telegram", "voice", "webchat"];
+const ALL_TOOLS = ["CRM", "Calendar", "Knowledge base", "Payments", "GoWhats", "InstaxBot", "Gmail", "MrAssistant.ai", "Ticketing", "Publisher", "Campaigns", "Workflows", "Analytics", "YouTube"];
+const AGENT_CHANNELS = ["whatsapp", "instagram", "facebook", "email", "sms", "telegram", "voice", "webchat", "youtube"];
 const HANDOFF_TRIGGERS = ["Customer asks for a human", "Low confidence", "Complaint or anger", "Refund request", "Legal or compliance topic", "Repeated misunderstanding", "Guardrail blocked the reply", "Tool failure"];
 const TONES = ["Professional", "Friendly", "Warm", "Concise", "Consultative", "Formal", "Casual", "Empathetic", "Confident"];
 const AGENT_STATUS = ["Draft", "Active", "Paused", "Archived"];
@@ -54,7 +54,7 @@ const AGENT_STATUS = ["Draft", "Active", "Paused", "Archived"];
 const PROVIDER_BY_NAME = { "GoWhats": "gowhats", "WhatsApp": "gowhats", "InstaxBot": "instaxbot", "Instagram": "instaxbot",
   "MrAssistant.ai": "mrassistant", "Gmail": "gmail", "Google Calendar": "gcal", "Calendar": "gcal", "Google Business": "gbiz",
   "HubSpot": "hubspot", "Salesforce": "salesforce", "Calendly": "calendly", "Shopify": "shopify", "Stripe": "stripe",
-  "Payments": "stripe", "Slack": "slack", "Zoom": "zoom", "Telegram": "telegram" };
+  "Payments": "stripe", "Slack": "slack", "Zoom": "zoom", "Telegram": "telegram", "YouTube": "youtube" };
 
 function canAgentDo(agent, action, ctx = {}) {
   const spec = ACTIONS[action];
