@@ -128,15 +128,22 @@ app.use("/api/v1/google", googleRoutes({ db, config: {
 
 app.use("/api/v1", crmRoutes({ db }));
 app.use("/api/v1", inboxRoutes({ db, config: {
-  gowhatsBaseUrl: env.GOWHATS_BASE_URL,
-  gowhatsApiKey: env.GOWHATS_API_KEY,
+  // WhatsApp send path — credentials are read from the integrations table at send time
+  // and decrypted using credentialKey. Neither the token nor the key is stored plaintext here.
+  whatsappBaseUrl:      env.WHATSAPP_BASE_URL,
+  whatsappPhoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+  credentialKey:        env.CREDENTIAL_ENCRYPTION_KEY || env.TOKEN_ENCRYPTION_KEY,
+  // Webhook verification secret (does not need to be encrypted at rest)
   gowhatsWebhookSecret: env.GOWHATS_WEBHOOK_SECRET,
 } }));
 app.use("/api/v1", schedulingRoutes({ db }));
 app.use("/api/v1", agentRoutes({ db }));
 app.use("/api/v1", workflowRoutes({ db }));
 app.use("/api/v1", billingRoutes({ db }));
-app.use("/api/v1", integrationRoutes({ db }));
+app.use("/api/v1", integrationRoutes({ db, config: {
+  credentialKey:   env.CREDENTIAL_ENCRYPTION_KEY || env.TOKEN_ENCRYPTION_KEY,
+  whatsappBaseUrl: env.WHATSAPP_BASE_URL,
+} }));
 
 // Domain routes are mounted here as they are ported. Each returns 501 until then,
 // which is deliberate: a missing endpoint must fail loudly, not silently succeed.

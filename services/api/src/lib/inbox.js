@@ -5,7 +5,7 @@
  * appointment scheduling intents, delivery tracking, and loop prevention.
  */
 
-import { verifyGoWhatsWebhookSignature, normalizeGoWhatsEvent, sendGoWhatsMessage } from "./gowhats.js";
+import { verifyGoWhatsWebhookSignature, normalizeGoWhatsEvent, sendWhatsAppMessageFromStore } from "./gowhats.js";
 
 export class InboxError extends Error {
   constructor(code, message, status = 400) {
@@ -196,12 +196,18 @@ export function createInboxService({ db, config = {}, broadcast = () => {} }) {
     });
 
     // Dispatch to provider if WhatsApp
-    let providerResult = { ok: true, providerMessageId: `gw_out_${Date.now()}` };
+    let providerResult = null;
     if (conversation.channel === "whatsapp" && recipientPhone) {
       try {
-        providerResult = await sendGoWhatsMessage(
+        providerResult = await sendWhatsAppMessageFromStore(
           { to: recipientPhone, body, media },
-          { baseUrl: config.gowhatsBaseUrl, apiKey: config.gowhatsApiKey }
+          {
+            workspaceId,
+            db,
+            credentialKey:  config.credentialKey,
+            baseUrl:        config.whatsappBaseUrl || "https://graph.facebook.com/v20.0",
+            phoneNumberId:  config.whatsappPhoneNumberId,
+          },
         );
         await db.updateMessageDeliveryStatus(workspaceId, message.provider_message_id || message.id, "sent");
       } catch (err) {

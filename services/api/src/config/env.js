@@ -50,10 +50,22 @@ const envSchema = z.object({
   OPENAI_MODEL: z.string().default("openai/gpt-4o-mini"),
   ANTHROPIC_API_KEY: z.string().optional(),
 
-  // GoWhats (WhatsApp Business API)
-  GOWHATS_BASE_URL: z.string().url().default("https://api.gowhats.app"),
+  // GoWhats (WhatsApp Business API — via api.gowhats.in)
+  // When GoWhats API is unreachable, set WHATSAPP_BASE_URL to use Meta directly.
+  GOWHATS_BASE_URL: z.string().url().default("https://api.gowhats.in"),
   GOWHATS_API_KEY: z.string().optional(),
   GOWHATS_WEBHOOK_SECRET: z.string().optional(),
+
+  // Meta WhatsApp Cloud API (graph.facebook.com) — used as interim when GoWhats is unreachable.
+  // IMPORTANT: WHATSAPP_TOKEN should be a permanent System User Access Token, NOT a short-lived
+  // User Access Token. Generate via Meta Business Suite → Business Settings → System Users.
+  // Short-lived tokens expire in ~60 days and are NOT suitable for production.
+  WHATSAPP_TOKEN:              z.string().optional(), // Meta System User Access Token
+  WHATSAPP_PHONE_NUMBER_ID:    z.string().optional(), // From Meta for Developers → WhatsApp → API Setup
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER:       z.string().optional(),
+  // Override to use Meta directly instead of GoWhats:
+  WHATSAPP_BASE_URL: z.string().url().default("https://graph.facebook.com/v20.0"),
 
   // MrAssistant.ai (Voice AI)
   MRASSISTANT_BASE_URL: z.string().url().default("https://api.mrassistant.ai"),
@@ -68,11 +80,14 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().optional(),
   GOOGLE_WEBHOOK_URL: z.string().optional(),
 
-  // Social Sign-in OAuth
+  // Social Sign-in OAuth & Integrations
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   APPLE_OAUTH_CLIENT_ID: z.string().optional(),
   APPLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_CLIENT_ID: z.string().optional(),
+  LINKEDIN_CLIENT_SECRET: z.string().optional(),
+  LINKEDIN_REDIRECT_URI: z.string().optional(),
 
   // Stripe Payments & Billing
   STRIPE_SECRET_KEY: z.string().optional(),
@@ -146,7 +161,7 @@ export function validateEnv(rawEnv = process.env) {
     googleOAuth: Boolean(parsed.GOOGLE_OAUTH_CLIENT_ID && parsed.GOOGLE_OAUTH_CLIENT_SECRET),
     appleOAuth: Boolean(parsed.APPLE_OAUTH_CLIENT_ID && parsed.APPLE_OAUTH_CLIENT_SECRET),
     mrAssistant: Boolean(parsed.MRASSISTANT_API_KEY || (parsed.MRASSISTANT_CLIENT_ID && parsed.MRASSISTANT_CLIENT_SECRET)),
-    goWhats: Boolean(parsed.GOWHATS_API_KEY),
+    goWhats: Boolean(parsed.GOWHATS_API_KEY || parsed.WHATSAPP_TOKEN),
     stripe: Boolean(parsed.STRIPE_SECRET_KEY),
     s3: Boolean(parsed.S3_BUCKET && parsed.S3_ACCESS_KEY_ID && parsed.S3_SECRET_ACCESS_KEY),
     smtp: Boolean(parsed.SMTP_HOST && parsed.SMTP_USER && parsed.SMTP_PASSWORD),

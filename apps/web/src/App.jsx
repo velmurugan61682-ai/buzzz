@@ -154,7 +154,7 @@ function Brand({ id, size = 16 }) {
 const BIcon = (id) => (p) => <Brand id={id} size={p && p.size ? p.size : 16} />;
 
 const CH = {
-  whatsapp:  { label: "WhatsApp",  Icon: BIcon("whatsapp"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
+  whatsapp:  { label: "WhatsApp (GoWhats)",  Icon: BIcon("whatsapp"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
   instagram: { label: "Instagram", Icon: BIcon("instagram"), dot: "bg-pink-500",   l: "bg-pink-50 text-pink-700 border-pink-200",      d: "bg-pink-950 text-pink-400 border-pink-900" },
   facebook:  { label: "Facebook",  Icon: BIcon("facebook"), dot: "bg-blue-600",   l: "bg-blue-50 text-blue-700 border-blue-200",      d: "bg-blue-950 text-blue-400 border-blue-900" },
   email:     { label: "Email",     Icon: BIcon("gmail"), dot: "bg-sky-500",    l: "bg-sky-50 text-sky-700 border-sky-200",         d: "bg-sky-950 text-sky-400 border-sky-900" },
@@ -297,6 +297,16 @@ const CONTACTS = [
     aiSummary: "VIP customer with an unresolved billing complaint and a negative public review. Churn risk flagged High by the Retention Agent. Human ownership assigned to the support manager with a recommended goodwill credit pending approval.",
     engagement: 51,
   },
+  {
+    id: "c9", name: "David Miller", company: "Apex Capital Partners", title: "Managing Director",
+    location: "London, UK", email: "david.miller@apexcapital.co.uk", phone: "+44 20 7946 0912",
+    stage: "Opportunity", score: 94, value: "$36,000", ltv: "$36,000", churn: "Low",
+    sentiment: "Positive", intent: "Purchase", channels: ["linkedin", "email"],
+    tags: ["LinkedIn Lead", "VIP", "Enterprise"],
+    memory: ["Connected via LinkedIn InMail", "Looking for multi-channel AI automation for fintech portfolio"],
+    aiSummary: "Inbound via LinkedIn message. Highly interested in AI automation & multi-channel unified inbox for portfolio companies. Requested an executive demo this week.",
+    engagement: 95,
+  },
 ];
 CONTACTS.forEach((c, i) => {
   c.owner = c.owner || TEAM_USERS[i % 4];
@@ -428,6 +438,17 @@ const CONVS = [
       { id: 2, from: "ai", agent: "Support Agent", channel: "youtube", time: t(119), text: "Hi Priya, I am really sorry to hear that. This should not happen and I want to help immediately. Can you DM us your account email? Our team will restore your contacts from backup right away. I am escalating this as P1." },
       { id: 3, from: "system", time: t(118), text: "ChannelBot.in · Sentiment: Negative · Escalation triggered · Assigned to Support team" },
       { id: 4, from: "customer", channel: "youtube", time: t(30), text: "DM sent. Please fix this fast, we have a client meeting today." },
+    ],
+  },
+  {
+    id: "v11", contactId: "c9", channel: "linkedin", state: "AI Handling", priority: "High",
+    intent: "Purchase", sentiment: "Positive", assigned: "Sales Agent (AI)", team: "Sales",
+    ai: true, unread: 2, tags: ["LinkedIn Lead", "Enterprise"],
+    msgs: [
+      { id: 1, from: "customer", channel: "linkedin", time: t(25), text: "Hi team! We manage 18 portfolio fintech companies and need a unified messaging platform with WhatsApp, LinkedIn and Voice AI. Can Buzzz deploy a dedicated tenant for us?" },
+      { id: 2, from: "ai", agent: "Sales Agent", channel: "linkedin", time: t(24), text: "Hello David, absolutely. Our Enterprise multi-tenant tier offers isolated databases, unified inbox across LinkedIn, WhatsApp & Voice, plus custom SLA guarantees. I can set up a live executive walkthrough for your partners." },
+      { id: 3, from: "system", time: t(23), text: "LinkedIn Lead synced · Lead score: 94 · High Value Enterprise Opportunity created ($36,000)" },
+      { id: 4, from: "customer", channel: "linkedin", time: t(5), text: "Sounds promising. Does Thursday 3 PM UK time work for the executive demo?" },
     ],
   },
 ];
@@ -2495,6 +2516,11 @@ const PROVIDERS = [
     caps: { messaging: true, sync: true, webhooks: false, actions: ["Reply to comment", "Set moderation status"] },
     objects: ["comment"], events: ["comment.received"],
     limits: "polling every 15 minutes · 10,000 daily quota units", scopes: ["youtube.force-ssl"] },
+  { id: "linkedin", name: "LinkedIn", logo: "linkedin", cat: "Social", auth: "oauth",
+    d: "Automated business post sharing and professional network engagement.",
+    caps: { messaging: false, sync: false, webhooks: false, actions: ["Share post", "Publish UGC content"] },
+    objects: ["post"], events: ["post.published"],
+    limits: "100 posts per day", scopes: ["w_member_social", "openid", "profile"] },
   { id: "hubspot", name: "HubSpot", logo: "hubspot", cat: "CRM and sales", auth: "oauth",
     d: "Two way contact, company and deal sync.",
     caps: { messaging: false, sync: true, webhooks: true, actions: ["Create contact", "Update contact", "Create deal"] },
@@ -6603,10 +6629,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
   }, [route]);
   const [conns, setConns] = useState(() => {
     const o = {};
-    ["gowhats", "instaxbot", "mrassistant", "gmail", "gcal", "slack", "zoom"].forEach((id) => {
+    ["gowhats", "instaxbot", "mrassistant", "gmail", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
       o[id] = { on: true, connectedAt: atDay(-20, 9), lastSync: atDay(0, 8), expiresAt: id === "gcal" ? atDay(2, 9) : null,
         direction: "Two way", conflict: "Newest wins", freq: "Realtime", mapping: DEFAULT_MAPPING[id] || [], error: null, paused: false, syncing: false,
-        account: id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", key: "" };
+        account: id === "gowhats" ? "+91 9047484484" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
+        key: id === "gowhats" ? "EAAS9L0ST948BQUFPJxcHdsCHEfJSHfM8LGbUb1Sao05JTqjtaWmjW0aTo46yPAZAw4qF3avtzXjYSJLXDzR4L5ZBM45jWgYCwMOZCLYt7PtLwkNDC6LPJhZB1zgtBb52GmCtyLWGwttI0SQErdowM22aXXVlKO9mwlatSe8F763Uo0dpYpfaDv7nZBx6wUZB7c2wZDZD" : id === "linkedin" ? "li_live_connected" : "" };
     });
     return o;
   });
@@ -21182,23 +21209,56 @@ function ConnectModal({ provider, onClose }) {
   const { T, dk, connectProvider, flash } = useApp();
   const [step, setStep] = useState("review");
   const [key, setKey] = useState("");
+  const [email, setEmail] = useState(provider.id === "gmail" ? "techvaseegrah@gmail.com" : "");
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
-  const webhookEndpoint = `https://api.buzzzbuzzz.com/hooks/${provider.id}/wk_${provider.id}9f2a`;
+
+  // Listen for callback postMessage from OAuth popup
+  useEffect(() => {
+    const onMsg = (e) => {
+      if (e.data && e.data.type === "LINKEDIN_AUTH_SUCCESS") {
+        connectProvider("linkedin", { key: "linkedin_live_connected", email: "Official LinkedIn Profile" });
+        flash("LinkedIn connected successfully! Ready to share and publish.");
+        onClose();
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [connectProvider, flash, onClose]);
+
+  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
+    ? "http://localhost:4000" 
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000");
+  const webhookEndpoint = provider.id === "gowhats"
+    ? `${apiHost}/api/v1/inbox/webhook`
+    : `${apiHost}/hooks/${provider.id}/wk_${provider.id}9f2a`;
   const copyEndpoint = () => {
     navigator.clipboard?.writeText(webhookEndpoint).catch(() => {});
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
   const run = () => {
-    if (provider.auth === "apikey" && key.trim().length < 8) { setErr("That key is too short to be valid. Copy the full key from your " + provider.name + " dashboard."); return; }
+    if (provider.id === "linkedin") {
+      // Connects directly to server's /api/linkedin/auth or opens authorization
+      window.open("http://localhost:5000/api/linkedin/auth", "linkedin_auth", "width=600,height=700");
+      connectProvider(provider.id, { key: "linkedin_connected", email: "Official LinkedIn Profile" });
+      flash("LinkedIn authorization window opened. Complete sign-in to connect.");
+      onClose();
+      return;
+    }
+    if (provider.id === "gmail") {
+      if (!email || !email.includes("@")) { setErr("Please enter a valid Gmail address."); return; }
+    } else if (provider.auth === "apikey" && key.trim().length < 8) {
+      setErr("That key is too short to be valid. Copy the full key from your " + provider.name + " dashboard.");
+      return;
+    }
     setErr(null); setStep("connecting");
     setTimeout(() => setStep("verifying"), 700);
     setTimeout(() => {
       if (provider.auth === "apikey" && /^test|^invalid/i.test(key.trim())) { setStep("failed"); setErr("Authentication was rejected by " + provider.name + ". The key may be revoked or from a different environment."); return; }
-      connectProvider(provider.id, { key: key.trim() });
-      flash(provider.name + " connected. Everything that depends on it is available again.");
+      connectProvider(provider.id, { key: key.trim(), email: email.trim() });
+      flash(provider.name + " connected (" + (email || provider.name) + "). Everything that depends on it is available again.");
       onClose();
-    }, 1600);
+    }, 1200);
   };
   return (
     <Modal title={"Connect " + provider.name} onClose={onClose}>
@@ -21214,13 +21274,34 @@ function ConnectModal({ provider, onClose }) {
           {provider.events.length > 0 && <div><span className={T.faint}>Events received</span> · {provider.events.join(", ")}</div>}
           <div><span className={T.faint}>Scopes requested</span> · {(provider.scopes || []).join(", ")}</div>
         </div>
-        {provider.auth === "apikey" && (
+        {provider.id === "gmail" ? (
+          <div className="space-y-3">
+            <Field label="Gmail Account / Address" hint="Enter your official Gmail account to link into Buzzz." error={err}>
+              <input 
+                type="email"
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="techvaseegrah@gmail.com"
+                className={inputCls(T, err)} 
+              />
+            </Field>
+            <Field label="App Password / API Secret (Optional)" hint="Used to send automated emails directly via SMTP or OAuth.">
+              <input 
+                type="password"
+                value={key} 
+                onChange={(e) => setKey(e.target.value)}
+                placeholder="Google App Password (e.g. abcd efgh ijkl mnop)"
+                className={inputCls(T, null)} 
+              />
+            </Field>
+          </div>
+        ) : provider.auth === "apikey" ? (
           <Field label="API key" hint="Stored encrypted on our server and never sent to the browser again." error={err}>
             <input value={key} onChange={(e) => setKey(e.target.value)}
               placeholder={provider.id === "gowhats" ? "gw_live_…" : provider.id === "youtube" ? "yt_…" : "sk_live_…"}
               className={inputCls(T, err)} />
           </Field>
-        )}
+        ) : null}
         {provider.auth === "apikey" && provider.caps.webhooks && (
           <div className={`rounded-xl p-3 mt-2 space-y-1.5 ${T.softcard}`}>
             <div className={`text-[10px] font-medium uppercase tracking-widest mb-1 ${T.faint}`}>Webhook endpoint — paste this in your {provider.name} dashboard</div>
@@ -21233,12 +21314,12 @@ function ConnectModal({ provider, onClose }) {
             <p className={`text-[10px] ${T.faint}`}>Paste this URL into your {provider.name} webhook settings so Buzzz receives live notifications.</p>
           </div>
         )}
-        {provider.auth === "oauth" && <p className={`text-[11px] mt-3 ${T.faint}`}>You will be taken to {provider.name} to sign in and approve these scopes. Buzzz never sees your password.</p>}
-        {err && provider.auth !== "apikey" && <p className="text-[11px] text-red-500 mt-2">{err}</p>}
+        {provider.auth === "oauth" && provider.id !== "gmail" && <p className={`text-[11px] mt-3 ${T.faint}`}>You will be taken to {provider.name} to sign in and approve these scopes. Buzzz never sees your password.</p>}
+        {err && provider.auth !== "apikey" && provider.id !== "gmail" && <p className="text-[11px] text-red-500 mt-2">{err}</p>}
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className={`px-3.5 h-9 rounded-xl text-xs font-semibold border ${T.chip}`}>Cancel</button>
           <button onClick={run} className="px-4 h-9 rounded-xl text-xs font-semibold text-white" style={{ background: BRAND }}>
-            {provider.auth === "oauth" ? "Continue to " + provider.name : "Connect"}
+            {provider.id === "gmail" ? "Connect Account" : provider.auth === "oauth" ? "Continue to " + provider.name : "Connect"}
           </button>
         </div>
       </>)}

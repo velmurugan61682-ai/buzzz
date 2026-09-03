@@ -10,22 +10,14 @@ import {
   buildAuthUrl, exchangeCode, validAccessToken, createEvent, updateEvent,
   cancelEvent, freeBusy, revoke, withRetry, GoogleError, SCOPES,
 } from "../lib/google.js";
+import { sealCredential, openCredential } from "../lib/credential-store.js";
 
 /* Refresh tokens are encrypted at rest with a key held only by the service.
-   A database dump alone is therefore not enough to impersonate a customer. */
-export function sealToken(plain, keyHex) {
-  const key = Buffer.from(keyHex, "hex");
-  const iv = crypto.randomBytes(12);
-  const c = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const enc = Buffer.concat([c.update(String(plain), "utf8"), c.final()]);
-  return [iv.toString("base64"), c.getAuthTag().toString("base64"), enc.toString("base64")].join(".");
-}
-export function openToken(sealed, keyHex) {
-  const [iv, tag, data] = String(sealed).split(".");
-  const d = crypto.createDecipheriv("aes-256-gcm", Buffer.from(keyHex, "hex"), Buffer.from(iv, "base64"));
-  d.setAuthTag(Buffer.from(tag, "base64"));
-  return Buffer.concat([d.update(Buffer.from(data, "base64")), d.final()]).toString("utf8");
-}
+   A database dump alone is therefore not enough to impersonate a customer.
+   Encryption implementation lives in lib/credential-store.js (shared across providers). */
+
+// Re-export from the shared store so existing callers (tests, google routes) are unaffected.
+export { sealCredential as sealToken, openCredential as openToken } from "../lib/credential-store.js";
 
 export function googleRoutes({ db, config, fetchImpl = fetch }) {
   const r = Router();
@@ -34,7 +26,7 @@ export function googleRoutes({ db, config, fetchImpl = fetch }) {
   const conn = async (workspaceId) => {
     const row = await db.getGoogleConnection(workspaceId);
     if (!row) return null;
-    return { ...row, refreshToken: row.refreshTokenSealed ? openToken(row.refreshTokenSealed, tokenKey) : null };
+    return { ...row, refreshToken: row.refreshTokenSealed ? openCredential(row.refreshTokenSealed, tokenKey) : null };
   };
   const token = (workspaceId, c) => validAccessToken(c, {
     clientId, clientSecret, fetchImpl,
@@ -73,7 +65,7 @@ export function googleRoutes({ db, config, fetchImpl = fetch }) {
       }
       await db.saveGoogleConnection({
         workspaceId: st.workspaceId, userId: st.userId,
-        refreshTokenSealed: sealToken(t.refreshToken, tokenKey),
+        refreshTokenSealed: sealCredential(t.refreshToken, tokenKey),
         accessToken: t.accessToken, expiresAt: t.expiresAt, scope: t.scope, needsReconnect: false,
       });
       res.json({ connected: true });
