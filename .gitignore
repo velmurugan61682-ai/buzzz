@@ -1,26 +1,20 @@
-# dependencies
+# Node / Dependency directories
 node_modules/
-client/node_modules/
-server/node_modules/
+**/node_modules/
 
-# production build outputs
-dist/
-client/dist/
-
-# environment variables
+# Environment files
 .env
-.env.*
+.env.local
+.env.*.local
 *.env
-!.env.example
-!client/.env.example
-!server/.env.example
 
-# logs
+# Build outputs
+dist/
+**/dist/
+build/
 *.log
-npm-debug.log*
-yarn-debug.log*
 
-# IDE & OS
+# OS & Editor files
 .DS_Store
 Thumbs.db
 .vscode/

@@ -1,27 +1,17 @@
 {
-  "name": "@buzzz/api",
+  "name": "@buzzz/server",
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "main": "src/server.js",
   "scripts": {
-    "dev": "node --watch src/index.js",
-    "start": "node src/index.js",
-    "migrate": "node ../../database/migrate.js",
-    "test": "node --test src/**/*.test.mjs"
+    "dev": "node src/server.js",
+    "start": "node src/server.js"
   },
   "dependencies": {
-    "bullmq": "^5.12.0",
-    "cookie-parser": "^1.4.7",
-    "cors": "^2.8.6",
-    "express": "^4.22.2",
-    "express-rate-limit": "^8.6.2",
-    "helmet": "^8.0.0",
-    "ioredis": "^5.4.1",
-    "mongoose": "^9.9.4",
-    "pg": "^8.23.0",
-    "pino": "^9.4.0",
-    "pino-http": "^10.3.0",
-    "stripe": "^16.8.0",
-    "zod": "^3.23.8"
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.5.2"
   }
 }

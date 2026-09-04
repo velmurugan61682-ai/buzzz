@@ -121,6 +121,21 @@ function Brand({ id, size = 16 }) {
       return tile("#8B5CF6", <path fill="#fff" d="M6 7.5h12c.8 0 1.5.7 1.5 1.5v5c0 .8-.7 1.5-1.5 1.5h-6.6L8 18v-2.5H6c-.8 0-1.5-.7-1.5-1.5V9c0-.8.7-1.5 1.5-1.5Z"/>);
     case "voice": case "mrassistant":
       return tile(BRAND, <g fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round"><path d="M7 12a5 5 0 0 1 10 0"/><rect x="5.2" y="11.4" width="3" height="4.6" rx="1.4" fill="#fff" stroke="none"/><rect x="15.8" y="11.4" width="3" height="4.6" rx="1.4" fill="#fff" stroke="none"/><path d="M17.3 16v.6a2.4 2.4 0 0 1-2.4 2.4H13"/></g>);
+    case "channelbot": case "channelbot.in":
+      return (
+        <svg {...S}>
+          <rect width="24" height="24" rx="5.5" fill="#22C55E"/>
+          <g transform="translate(3.5, 3.5) scale(0.7)">
+            <path fill="#ffffff" d="M6 4.5A2.5 2.5 0 0 1 9.8 2.3l9.2 5.9a2.5 2.5 0 0 1 0 4.2l-9.2 5.9A2.5 2.5 0 0 1 6 16.1V4.5z"/>
+            <circle cx="11.2" cy="7" r="1.1" fill="#22C55E"/>
+            <rect x="9.5" y="7.5" width="0.8" height="2" fill="#22C55E" rx="0.4"/>
+            <rect x="7.6" y="9.2" width="4.6" height="3.2" rx="1" fill="#22C55E"/>
+            <circle cx="8.8" cy="10.4" r="0.5" fill="#ffffff"/>
+            <circle cx="11" cy="10.4" r="0.5" fill="#ffffff"/>
+            <path d="M9 11.5a0.8 0.8 0 0 0 1.8 0" stroke="#ffffff" strokeWidth="0.5" fill="none" strokeLinecap="round"/>
+          </g>
+        </svg>
+      );
     case "gowhats":
       return tile("#128C7E", <text x="12" y="16.2" textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#fff" fontFamily="Inter,system-ui">GW</text>);
     case "instaxbot":
@@ -154,7 +169,9 @@ function Brand({ id, size = 16 }) {
 const BIcon = (id) => (p) => <Brand id={id} size={p && p.size ? p.size : 16} />;
 
 const CH = {
+  channelbot: { label: "ChannelBot.in", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
   whatsapp:  { label: "WhatsApp (GoWhats)",  Icon: BIcon("whatsapp"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
+  gowhats:   { label: "ChannelBot (GoWhats)", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
   instagram: { label: "Instagram", Icon: BIcon("instagram"), dot: "bg-pink-500",   l: "bg-pink-50 text-pink-700 border-pink-200",      d: "bg-pink-950 text-pink-400 border-pink-900" },
   facebook:  { label: "Facebook",  Icon: BIcon("facebook"), dot: "bg-blue-600",   l: "bg-blue-50 text-blue-700 border-blue-200",      d: "bg-blue-950 text-blue-400 border-blue-900" },
   email:     { label: "Email",     Icon: BIcon("gmail"), dot: "bg-sky-500",    l: "bg-sky-50 text-sky-700 border-sky-200",         d: "bg-sky-950 text-sky-400 border-sky-900" },
@@ -307,6 +324,26 @@ const CONTACTS = [
     aiSummary: "Inbound via LinkedIn message. Highly interested in AI automation & multi-channel unified inbox for portfolio companies. Requested an executive demo this week.",
     engagement: 95,
   },
+  {
+    id: "c10", name: "Deepa Raj", company: "Lumen Beauty Co", title: "Social Lead",
+    location: "Chennai, IN", email: "deepa@lumenbeauty.in", phone: "+91 98410 55401",
+    stage: "Qualified Lead", score: 78, value: "$7,500", ltv: "$7,500", churn: "Low",
+    sentiment: "Positive", intent: "Product inquiry", channels: ["channelbot", "youtube"],
+    tags: ["ChannelBot.in", "Tamil", "SMB"],
+    memory: ["Inquired via ChannelBot.in about Tamil language support"],
+    aiSummary: "Inbound via ChannelBot.in asking about Tamil multi-language support. High engagement.",
+    engagement: 82,
+  },
+  {
+    id: "c11", name: "Kavitha S", company: "Aster Dental", title: "Operations Manager",
+    location: "Kochi, IN", email: "kavitha@asterdental.in", phone: "+91 90200 99881",
+    stage: "New Lead", score: 62, value: "$4,200", ltv: "$0", churn: "Unknown",
+    sentiment: "Negative", intent: "Support", channels: ["channelbot", "youtube"],
+    tags: ["ChannelBot.in", "Escalated"],
+    memory: ["Reported contact sync issue via ChannelBot.in"],
+    aiSummary: "Inbound support request via ChannelBot.in. Escalated to support team.",
+    engagement: 55,
+  },
 ];
 CONTACTS.forEach((c, i) => {
   c.owner = c.owner || TEAM_USERS[i % 4];
@@ -419,23 +456,23 @@ const CONVS = [
     ],
   },
   {
-    id: "v9", contactId: "c2", channel: "youtube", state: "AI Handling", priority: "Medium",
+    id: "v9", contactId: "c10", channel: "channelbot", state: "AI Handling", priority: "Medium",
     intent: "Product inquiry", sentiment: "Positive", assigned: "Sales Agent (AI)", team: "Sales",
     ai: true, unread: 3, tags: ["ChannelBot.in", "YouTube"],
     msgs: [
-      { id: 1, from: "customer", channel: "youtube", time: t(45), text: "🔥 This platform looks amazing! Does it support multi-language WhatsApp replies or only English? Asking for our Tamil customer base." },
-      { id: 2, from: "ai", agent: "Sales Agent", channel: "youtube", time: t(44), text: "Great question! Yes, Buzzz supports multi-language replies including Tamil, Hindi, Arabic and more. Your agents or AI can respond in the customer's preferred language automatically. Want me to drop a link to the language settings demo?" },
-      { id: 3, from: "system", time: t(43), text: "ChannelBot.in · Comment thread fetched via YouTube Data API · Channel: @LumenBeauty" },
-      { id: 4, from: "customer", channel: "youtube", time: t(10), text: "Yes please! Also does it integrate with Shopify for order tracking replies?" },
+      { id: 1, from: "customer", channel: "channelbot", time: t(45), text: "🔥 This platform looks amazing! Does it support multi-language WhatsApp replies or only English? Asking for our Tamil customer base." },
+      { id: 2, from: "ai", agent: "Sales Agent", channel: "channelbot", time: t(44), text: "Great question! Yes, Buzzz supports multi-language replies including Tamil, Hindi, Arabic and more. Your agents or AI can respond in the customer's preferred language automatically. Want me to drop a link to the language settings demo?" },
+      { id: 3, from: "system", time: t(43), text: "ChannelBot.in · Comment thread fetched via API · Channel: @LumenBeauty" },
+      { id: 4, from: "customer", channel: "channelbot", time: t(10), text: "Yes please! Also does it integrate with Shopify for order tracking replies?" },
     ],
   },
   {
-    id: "v10", contactId: "c4", channel: "youtube", state: "Waiting for Team", priority: "High",
+    id: "v10", contactId: "c11", channel: "channelbot", state: "Waiting for Team", priority: "High",
     intent: "Support", sentiment: "Negative", assigned: "Support Agent (AI)", team: "Support",
     ai: true, unread: 2, tags: ["ChannelBot.in", "Complaint"],
     msgs: [
-      { id: 1, from: "customer", channel: "youtube", time: t(120), text: "Your software deleted all my contacts after the update. This is unacceptable. I am going to leave a public review about this." },
-      { id: 2, from: "ai", agent: "Support Agent", channel: "youtube", time: t(119), text: "Hi Priya, I am really sorry to hear that. This should not happen and I want to help immediately. Can you DM us your account email? Our team will restore your contacts from backup right away. I am escalating this as P1." },
+      { id: 1, from: "customer", channel: "channelbot", time: t(120), text: "Your software deleted all my contacts after the update. This is unacceptable. I am going to leave a public review about this." },
+      { id: 2, from: "ai", agent: "Support Agent", channel: "channelbot", time: t(119), text: "Hi Kavitha, I am really sorry to hear that. This should not happen and I want to help immediately. Can you DM us your account email? Our team will restore your contacts from backup right away. I am escalating this as P1." },
       { id: 3, from: "system", time: t(118), text: "ChannelBot.in · Sentiment: Negative · Escalation triggered · Assigned to Support team" },
       { id: 4, from: "customer", channel: "youtube", time: t(30), text: "DM sent. Please fix this fast, we have a client meeting today." },
     ],
@@ -3785,7 +3822,7 @@ const BENTO = [
    using an approximate rate. These are illustrative sample records, never a
    quote and never billing: real pricing comes from the pricing section, and
    real invoices from the billing provider. */
-const DEMO_BASE = "USD";
+const DEMO_BASE = "INR";
 
 /* rounded, deliberately approximate, and only ever used to make a sample
    record legible in the local currency */
@@ -3822,11 +3859,9 @@ const TZ_COUNTRY = {
   "Australia/Sydney": "AU", "Pacific/Auckland": "NZ",
 };
 
-/* The visitor's currency, from their own browser settings. Falls back to
-   dollars rather than to rupees, because a wrong dollar is at least the
-   currency most people can read. */
+/* The visitor's currency, from their own browser settings. Defaults to INR (₹) */
 function detectCurrency() {
-  if (typeof navigator === "undefined") return "USD";
+  if (typeof navigator === "undefined") return "INR";
   try {
     const langs = [navigator.language, ...(navigator.languages || [])].filter(Boolean);
     for (const l of langs) {
@@ -3836,14 +3871,14 @@ function detectCurrency() {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const country = TZ_COUNTRY[tz];
     if (country && COUNTRY_CURRENCY[country]) return COUNTRY_CURRENCY[country];
-  } catch (e) { /* a locked down browser tells us nothing: dollars it is */ }
-  return "USD";
+  } catch (e) { /* fallback to INR */ }
+  return "INR";
 }
 
 /* Formats a base amount into the visitor's currency, rounded to something a
    person would actually write on an invoice. */
 function demoMoney(baseAmount, currency) {
-  const cur = currency || "USD";
+  const cur = currency || "INR";
   const rate = DEMO_RATES[cur] || 1;
   const raw = Number(baseAmount) * rate;
   /* round to a sensible step for the size of the number, so a converted
@@ -3851,15 +3886,15 @@ function demoMoney(baseAmount, currency) {
   const step = raw >= 100000 ? 1000 : raw >= 10000 ? 500 : raw >= 1000 ? 100 : raw >= 100 ? 10 : 1;
   const rounded = Math.max(step, Math.round(raw / step) * step);
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency", currency: cur, maximumFractionDigits: 0,
     }).format(rounded);
-  } catch { return `${cur} ${rounded}`; }
+  } catch { return `₹${rounded}`; }
 }
 
 /* One reading per session: the currency does not change while someone reads. */
 function useDemoCurrency() {
-  const [cur, setCur] = useState("USD");
+  const [cur, setCur] = useState("INR");
   useEffect(() => { setCur(detectCurrency()); }, []);
   return cur;
 }
@@ -5400,9 +5435,9 @@ function faultReport({ tickets = [], conversations = [], agents = [], integratio
   };
 }
 
-const money0 = (n, cur = "USD") => {
-  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(n || 0); }
-  catch { return `${cur} ${n}`; }
+const money0 = (n, cur = "INR") => {
+  try { return new Intl.NumberFormat("en-IN", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(n || 0); }
+  catch { return `₹${n}`; }
 };
 
 function workspaceSnapshot() {
@@ -6627,6 +6662,80 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     });
     return () => { active = false; };
   }, [route]);
+
+  /* Real-time SSE listener for channelbot.in incoming messages */
+  useEffect(() => {
+    const apiBaseUrl = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:4000";
+    const sseUrl = `${apiBaseUrl}/api/v1/events`;
+    let es;
+    try {
+      es = new EventSource(sseUrl);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "message:new" && data.payload) {
+            const { conversation: backendConv, message: backendMsg } = data.payload;
+            if (!backendConv || !backendMsg) return;
+
+            const channelKey = "channelbot";
+            const newMsgItem = {
+              id: backendMsg.id || `msg_${Date.now()}`,
+              from: backendMsg.sender === "customer" ? "customer" : "agent",
+              text: backendMsg.text,
+              time: backendMsg.timestamp,
+              at: backendMsg.timestamp,
+              channel: channelKey,
+            };
+
+            setConvs((cs) => {
+              const cleanPhone = backendConv.phone ? String(backendConv.phone).replace(/\D/g, "") : "";
+              const existingIdx = cs.findIndex(
+                (c) => c.id === backendConv.id || (c.phone && cleanPhone && String(c.phone).replace(/\D/g, "") === cleanPhone)
+              );
+
+              if (existingIdx !== -1) {
+                const updated = [...cs];
+                const target = updated[existingIdx];
+                const msgExists = (target.msgs || []).some((m) => m.id === newMsgItem.id);
+                const newMsgs = msgExists ? target.msgs : [...(target.msgs || []), newMsgItem];
+                updated[existingIdx] = {
+                  ...target,
+                  customerName: backendConv.customerName || target.customerName,
+                  unread: backendMsg.sender === "customer" ? (target.unread || 0) + 1 : target.unread,
+                  last: newMsgItem.text,
+                  msgs: newMsgs,
+                };
+                return updated;
+              } else {
+                const newConvObj = {
+                  id: backendConv.id || `conv_cb_${Date.now()}`,
+                  contactId: `cnt_${Date.now()}`,
+                  customerName: backendConv.customerName || backendConv.phone || "ChannelBot Customer",
+                  channel: channelKey,
+                  phone: backendConv.phone,
+                  unread: 1,
+                  ai: false,
+                  state: "New Lead",
+                  priority: "high",
+                  msgs: [newMsgItem],
+                  last: newMsgItem.text,
+                  tags: ["ChannelBot.in"],
+                };
+                return [newConvObj, ...cs];
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Error parsing SSE event:", e);
+        }
+      };
+    } catch (e) {
+      console.warn("SSE connection skipped/error:", e);
+    }
+    return () => {
+      if (es) es.close();
+    };
+  }, []);
   const [conns, setConns] = useState(() => {
     const o = {};
     ["gowhats", "instaxbot", "mrassistant", "gmail", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
@@ -6777,6 +6886,39 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     trail("Merged duplicate", keep.name, drop.name, "merged into " + keep.name);
     bumpContacts(); log("You", "Contacts merged", drop.name + " → " + keep.name);
     return { ok: true };
+  };
+  const removeAllDuplicates = () => {
+    let count = 0;
+    const live = CONTACTS.filter((c) => !c.archived);
+    const toRemove = new Set();
+    for (let i = 0; i < live.length; i++) {
+      if (toRemove.has(live[i].id)) continue;
+      for (let j = i + 1; j < live.length; j++) {
+        if (toRemove.has(live[j].id)) continue;
+        const a = live[i], b = live[j];
+        const matchPhone = a.phone && b.phone && a.phone.replace(/\D/g, "") === b.phone.replace(/\D/g, "") && a.phone.replace(/\D/g, "").length >= 7;
+        const matchEmail = a.email && b.email && a.email.toLowerCase().trim() === b.email.toLowerCase().trim();
+        const matchName = a.name && b.name && a.name.toLowerCase().trim() === b.name.toLowerCase().trim();
+        if (matchPhone || matchEmail || matchName) {
+          a.channels = [...new Set([...(a.channels || []), ...(b.channels || [])])];
+          a.tags = [...new Set([...(a.tags || []), ...(b.tags || [])])];
+          a.notes = [...(a.notes || []), ...(b.notes || [])];
+          if (!a.phone && b.phone) a.phone = b.phone;
+          if (!a.email && b.email) a.email = b.email;
+          toRemove.add(b.id);
+          count++;
+        }
+      }
+    }
+    if (toRemove.size > 0) {
+      toRemove.forEach((dropId) => {
+        const idx = CONTACTS.findIndex((x) => x.id === dropId);
+        if (idx >= 0) CONTACTS.splice(idx, 1);
+      });
+      bumpContacts();
+      log("You", "Cleaned duplicates", `${count} duplicate contact(s) merged & removed`);
+    }
+    return { ok: true, count };
   };
   const addNote = (id, text, who = "Jordan Lee") => {
     const c = CONTACTS.find((x) => x.id === id); if (!c) return;
@@ -7950,7 +8092,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     wsName, setWsName, crmTabs, setCrmTabs, provisionAgents, provisionWorkflows, enableIntegrations,
     createContact, updateContact, contactsV, tasks, setTasks, addTask,
     pipelines, setPipelines, tickets, setTickets, customFields, setCustomFields, segments, setSegments,
-    audit, trail, contactPatch, archiveContacts, deleteContacts, mergeContacts, addNote,
+    audit, trail, contactPatch, archiveContacts, deleteContacts, mergeContacts, removeAllDuplicates, addNote,
     createDeal, updateDeal, deleteDeal, setDeals, createTask, updateTask, deleteTask,
     autonomy, setAutonomy, sendMessage, setAiOpen, setCmdOpen };
 
@@ -10007,9 +10149,9 @@ function fmtNumberI18n(n, lang = "en") {
   try { return new Intl.NumberFormat(lang).format(n); } catch { return String(n); }
 }
 /* Formatting is not conversion: the amount is shown in its own currency. */
-function fmtMoneyI18n(amount, currency = "USD", lang = "en") {
+function fmtMoneyI18n(amount, currency = "INR", lang = "en-IN") {
   try { return new Intl.NumberFormat(lang, { style: "currency", currency }).format(amount); }
-  catch { return `${currency} ${amount}`; }
+  catch { return `₹${amount}`; }
 }
 
 /* ---- campaigns: one campaign, many languages ---- */
@@ -11799,7 +11941,13 @@ function InboxView() {
     }
     return true;
   };
-  const list = convs.filter(matches);
+  const seenContactsInInbox = new Set();
+  const list = convs.filter(matches).filter((c) => {
+    const key = c.contactId || (c.phone ? String(c.phone).replace(/\D/g, "") : c.id);
+    if (seenContactsInInbox.has(key)) return false;
+    seenContactsInInbox.add(key);
+    return true;
+  });
   const conv = convs.find((c) => c.id === selConv);
   const counts = { Unread: convs.filter((c) => c.unread > 0).length, Priority: convs.filter((c) => ["high", "critical"].includes(c.priority)).length };
 
@@ -12533,7 +12681,7 @@ function MergeModal({ pair, onClose }) {
 }
 
 function ContactsView({ module }) {
-  const { T, dk, openContact, contactsV, segments, setSegments, customFields, archiveContacts, deleteContacts, contactPatch, createTask, setConfirm, flash, deals } = useApp();
+  const { T, dk, openContact, contactsV, segments, setSegments, customFields, archiveContacts, deleteContacts, contactPatch, createTask, setConfirm, flash, deals, removeAllDuplicates } = useApp();
   const [qy, setQy] = useState("");
   const [f, setF] = useState(emptyFilter());
   const [adv, setAdv] = useState(false);
@@ -12627,7 +12775,10 @@ function ContactsView({ module }) {
             <button key={sg.id} onClick={() => { setF({ ...emptyFilter(), ...sg.f }); setAdv(true); }} className={`h-7 px-2.5 rounded-full border text-[11px] font-medium ${T.chip} ${T.hover}`}>{sg.name}</button>
           ))}
           {dupPairs.length > 0 && (
-            <button onClick={() => setMerge(dupPairs[0])} className="h-7 px-2.5 rounded-full border text-[11px] font-semibold bg-amber-50 text-amber-700 border-amber-200 inline-flex items-center gap-1"><Layers size={11} /> {dupPairs.length} possible duplicate{dupPairs.length > 1 ? "s" : ""}</button>
+            <>
+              <button onClick={() => setMerge(dupPairs[0])} className="h-7 px-2.5 rounded-full border text-[11px] font-semibold bg-amber-50 text-amber-700 border-amber-200 inline-flex items-center gap-1"><Layers size={11} /> {dupPairs.length} possible duplicate{dupPairs.length > 1 ? "s" : ""}</button>
+              <button onClick={() => { const res = removeAllDuplicates(); flash(res.count > 0 ? `Successfully merged & removed ${res.count} duplicate contact(s)` : "No duplicates found"); }} className="h-7 px-2.5 rounded-full border text-[11px] font-semibold bg-emerald-50 text-emerald-700 border-emerald-200 inline-flex items-center gap-1"><Trash2 size={11} /> Clean All Duplicates</button>
+            </>
           )}
         </div>
       </div>
@@ -12775,7 +12926,7 @@ function DealForm({ initial, pipelineId, stage, onClose }) {
               {CONTACTS.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
-          <Field label="Value (USD)" error={err.value}><input type="number" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} className={inputCls(T, err.value)} /></Field>
+          <Field label="Value (INR ₹)" error={err.value}><input type="number" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} className={inputCls(T, err.value)} /></Field>
           <Field label="Pipeline">
             <select value={f.pipelineId} onChange={(e) => { const p = pipelines.find((x) => x.id === e.target.value); setF({ ...f, pipelineId: e.target.value, stage: p.stages[0].name }); }} className={inputCls(T)}>
               {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
