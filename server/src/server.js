@@ -29,7 +29,7 @@ if (!hasMongoUri || !hasApiKey || !hasBaseUrl || !hasLinkedInKeys) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 5000;
 
 // CORS configuration
 app.use(
@@ -57,8 +57,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Mount API v1 router
+// Mount API router on both /api/v1 and /api
 app.use("/api/v1", apiRouter);
+app.use("/api", apiRouter);
 
 // 404 Handler
 app.use((req, res) => {

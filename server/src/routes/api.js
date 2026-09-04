@@ -448,8 +448,8 @@ setInterval(() => {
   }
 }, 300000);
 
-// STEP 3: GET /api/v1/auth/linkedin - Redirects user to LinkedIn authorization URL
-apiRouter.get("/auth/linkedin", (req, res) => {
+// STEP 3: GET /api/v1/auth/linkedin & /api/linkedin/auth - Redirects user to LinkedIn authorization URL
+const handleLinkedInAuth = (req, res) => {
   const state = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
   oauthStates.set(state, { state, createdAt: Date.now() });
 
@@ -462,10 +462,13 @@ apiRouter.get("/auth/linkedin", (req, res) => {
   )}&scope=${scope}&state=${state}`;
 
   res.redirect(authUrl);
-});
+};
 
-// STEP 3: GET /api/v1/auth/linkedin/callback - Validates state, exchanges code for access token & userinfo
-apiRouter.get("/auth/linkedin/callback", async (req, res) => {
+apiRouter.get("/auth/linkedin", handleLinkedInAuth);
+apiRouter.get("/linkedin/auth", handleLinkedInAuth);
+
+// STEP 3: GET /api/v1/auth/linkedin/callback & /api/linkedin/callback - Validates state, exchanges code for access token & userinfo
+const handleLinkedInCallback = async (req, res) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
@@ -546,7 +549,10 @@ apiRouter.get("/auth/linkedin/callback", async (req, res) => {
     console.error("❌ LinkedIn OAuth Callback Error:", safeError);
     res.redirect(`http://localhost:5173/?linkedin=error&msg=${encodeURIComponent(safeError)}`);
   }
-});
+};
+
+apiRouter.get("/auth/linkedin/callback", handleLinkedInCallback);
+apiRouter.get("/linkedin/callback", handleLinkedInCallback);
 
 // GET /api/v1/linkedin/status - Returns connection status and profile details without access token
 apiRouter.get("/linkedin/status", async (req, res) => {

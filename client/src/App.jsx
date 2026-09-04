@@ -21394,8 +21394,8 @@ function ConnectModal({ provider, onClose }) {
   }, [connectProvider, flash, onClose]);
 
   const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
-    ? "http://localhost:4000" 
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000");
+    ? "http://localhost:5000" 
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
   const webhookEndpoint = provider.id === "gowhats"
     ? `${apiHost}/api/v1/inbox/webhook`
     : `${apiHost}/hooks/${provider.id}/wk_${provider.id}9f2a`;
@@ -21406,9 +21406,9 @@ function ConnectModal({ provider, onClose }) {
   const run = () => {
     if (provider.id === "linkedin") {
       const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-        ? "http://localhost:4000"
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000");
-      window.location.href = `${targetHost}/api/v1/auth/linkedin`;
+        ? "http://localhost:5000"
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      window.location.href = `${targetHost}/api/linkedin/auth`;
       return;
     }
     if (provider.id === "gmail") {
@@ -21668,12 +21668,12 @@ function LinkedInShareWidget() {
   const [sharing, setSharing] = useState(false);
 
   const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-    ? "http://localhost:4000"
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000");
+    ? "http://localhost:5000"
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
 
   const checkStatus = async () => {
     try {
-      const res = await fetch(`${apiHost}/api/v1/linkedin/status`);
+      const res = await fetch(`${apiHost}/api/linkedin/status`);
       const data = await res.json();
       setStatus({ loading: false, ...data });
     } catch (e) {
@@ -21686,7 +21686,7 @@ function LinkedInShareWidget() {
   }, []);
 
   const connectLinkedIn = () => {
-    window.location.href = `${apiHost}/api/v1/auth/linkedin`;
+    window.location.href = `${apiHost}/api/linkedin/auth`;
   };
 
   const handleShare = async () => {
@@ -21696,7 +21696,7 @@ function LinkedInShareWidget() {
     }
     setSharing(true);
     try {
-      const res = await fetch(`${apiHost}/api/v1/linkedin/share`, {
+      const res = await fetch(`${apiHost}/api/linkedin/share`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
