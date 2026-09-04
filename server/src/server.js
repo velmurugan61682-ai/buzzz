@@ -10,10 +10,21 @@ dotenv.config();
 const hasApiKey = Boolean(process.env.CHANNELBOT_API_KEY || process.env.GOWHATS_API_KEY);
 const hasBaseUrl = Boolean(process.env.CHANNELBOT_BASE_URL || process.env.GOWHATS_BASE_URL);
 const hasMongoUri = Boolean(process.env.MONGODB_URI);
+const hasLinkedInKeys = Boolean(
+  process.env.LINKEDIN_CLIENT_ID &&
+  process.env.LINKEDIN_CLIENT_SECRET &&
+  process.env.LINKEDIN_REDIRECT_URI
+);
 
-if (!hasMongoUri || !hasApiKey || !hasBaseUrl) {
-  console.error(`🚨 FATAL STARTUP ERROR: Missing required environment variables (MONGODB_URI, CHANNELBOT_API_KEY / GOWHATS_API_KEY, CHANNELBOT_BASE_URL / GOWHATS_BASE_URL)`);
-  console.error(`Please configure these keys in server/.env before launching.`);
+if (!hasMongoUri || !hasApiKey || !hasBaseUrl || !hasLinkedInKeys) {
+  const missing = [];
+  if (!hasMongoUri) missing.push("MONGODB_URI");
+  if (!hasApiKey) missing.push("CHANNELBOT_API_KEY / GOWHATS_API_KEY");
+  if (!hasBaseUrl) missing.push("CHANNELBOT_BASE_URL / GOWHATS_BASE_URL");
+  if (!hasLinkedInKeys) missing.push("LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET / LINKEDIN_REDIRECT_URI");
+
+  console.error(`🚨 FATAL STARTUP ERROR: Missing required environment variables: ${missing.join(", ")}`);
+  console.error(`Please configure these environment keys in server/.env before launching.`);
   process.exit(1);
 }
 

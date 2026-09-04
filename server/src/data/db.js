@@ -36,6 +36,7 @@ export const db = {
   appointments: [],
   agents: [],
   workflows: [],
+  linkedinAccounts: [],
 };
 
 // ==============================================================================
@@ -69,8 +70,22 @@ const MessageSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const LinkedInAccountSchema = new mongoose.Schema(
+  {
+    workspaceId: { type: String, default: "ws_default", index: true },
+    linkedinId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    email: { type: String },
+    picture: { type: String },
+    accessToken: { type: String, required: true },
+    expiresAt: { type: Date, required: true },
+  },
+  { timestamps: true }
+);
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
+export const LinkedInAccountModel = mongoose.models.LinkedInAccount || mongoose.model("LinkedInAccount", LinkedInAccountSchema);
 
 // ==============================================================================
 // 3. MONGODB CONNECTION SETUP & SEEDING
@@ -212,4 +227,39 @@ export const updateMessageStatus = async (whatsappMessageId, status) => {
     }
   }
   return null;
+};
+
+export const saveLinkedInAccount = async (data) => {
+  const payload = {
+    ...data,
+    workspaceId: data.workspaceId || "ws_default",
+    expiresAt: data.expiresAt ? new Date(data.expiresAt) : new Date(Date.now() + 5184000000),
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const doc = await LinkedInAccountModel.findOneAndUpdate(
+      { workspaceId: payload.workspaceId, linkedinId: payload.linkedinId },
+      { $set: payload },
+      { upsert: true, new: true }
+    ).lean();
+    return doc;
+  }
+
+  const idx = db.linkedinAccounts.findIndex(
+    (a) => a.workspaceId === payload.workspaceId && a.linkedinId === payload.linkedinId
+  );
+  if (idx !== -1) {
+    db.linkedinAccounts[idx] = { ...db.linkedinAccounts[idx], ...payload };
+    return db.linkedinAccounts[idx];
+  } else {
+    db.linkedinAccounts.unshift(payload);
+    return payload;
+  }
+};
+
+export const getLinkedInAccount = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await LinkedInAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
+  }
+  return db.linkedinAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
 };

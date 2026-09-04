@@ -6736,6 +6736,22 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
       if (es) es.close();
     };
   }, []);
+
+  /* Listen for LinkedIn OAuth redirect URL parameters (?linkedin=connected / ?linkedin=error) */
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("linkedin") === "connected") {
+        const user = params.get("user") || "LinkedIn User";
+        flash(`LinkedIn account connected successfully as ${user}!`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get("linkedin") === "error") {
+        const msg = params.get("msg") || "LinkedIn authorization failed";
+        flash(`LinkedIn connection error: ${msg}`, "err");
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [flash]);
   const [conns, setConns] = useState(() => {
     const o = {};
     ["gowhats", "instaxbot", "mrassistant", "gmail", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
@@ -21389,11 +21405,10 @@ function ConnectModal({ provider, onClose }) {
   };
   const run = () => {
     if (provider.id === "linkedin") {
-      // Connects directly to server's /api/linkedin/auth or opens authorization
-      window.open("http://localhost:5000/api/linkedin/auth", "linkedin_auth", "width=600,height=700");
-      connectProvider(provider.id, { key: "linkedin_connected", email: "Official LinkedIn Profile" });
-      flash("LinkedIn authorization window opened. Complete sign-in to connect.");
-      onClose();
+      const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+        ? "http://localhost:4000"
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000");
+      window.location.href = `${targetHost}/api/v1/auth/linkedin`;
       return;
     }
     if (provider.id === "gmail") {
@@ -21646,6 +21661,137 @@ function ProviderDetail({ provider, onClose }) {
   );
 }
 
+function LinkedInShareWidget() {
+  const { T, flash } = useApp();
+  const [status, setStatus] = useState({ loading: true, connected: false });
+  const [text, setText] = useState("");
+  const [sharing, setSharing] = useState(false);
+
+  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+    ? "http://localhost:4000"
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:4000");
+
+  const checkStatus = async () => {
+    try {
+      const res = await fetch(`${apiHost}/api/v1/linkedin/status`);
+      const data = await res.json();
+      setStatus({ loading: false, ...data });
+    } catch (e) {
+      setStatus({ loading: false, connected: false });
+    }
+  };
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const connectLinkedIn = () => {
+    window.location.href = `${apiHost}/api/v1/auth/linkedin`;
+  };
+
+  const handleShare = async () => {
+    if (!text.trim()) {
+      flash("Please enter post text before sharing to LinkedIn", "err");
+      return;
+    }
+    setSharing(true);
+    try {
+      const res = await fetch(`${apiHost}/api/v1/linkedin/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        flash("Successfully published share to your LinkedIn feed!", "ok");
+        setText("");
+      } else {
+        flash(data.message || "Failed to post to LinkedIn feed", "err");
+      }
+    } catch (e) {
+      flash("Network error while sharing to LinkedIn feed", "err");
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  return (
+    <div className={`rounded-2xl p-5 border space-y-4 ${T.card} ${T.border}`}>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 grid place-items-center text-white shrink-0">
+            <Brand id="linkedin" size={22} />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              LinkedIn OAuth 2.0 & OpenID Connect
+              {status.connected && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  Active
+                </span>
+              )}
+            </h3>
+            <p className={`text-xs ${T.sub}`}>
+              {status.loading
+                ? "Checking connection status..."
+                : status.connected
+                ? `Connected as ${status.name} (${status.email || "Profile connected"})`
+                : status.expired
+                ? "Access token expired (~60 day limit). Please reconnect."
+                : "Not connected. Sign in with LinkedIn to post shares to your profile feed."}
+            </p>
+          </div>
+        </div>
+        <div>
+          {status.connected ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={connectLinkedIn}
+                className="h-8 px-3 rounded-xl text-xs font-medium border text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Reconnect LinkedIn
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={connectLinkedIn}
+              className="h-9 px-4 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors inline-flex items-center gap-2"
+            >
+              <Brand id="linkedin" size={16} /> Sign in with LinkedIn
+            </button>
+          )}
+        </div>
+      </div>
+
+      {status.connected && (
+        <div className="space-y-3 pt-3 border-t">
+          <label className="block text-xs font-medium">Post Share to your LinkedIn Feed</label>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="What do you want to share on your LinkedIn feed today?"
+            className={`w-full h-24 p-3 rounded-xl border text-xs outline-none resize-none ${T.input} ${T.border}`}
+          />
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <span className={`text-[11px] ${T.faint}`}>
+              {status.expired ? "Token expired. Reconnect LinkedIn to post." : `Publishing to member feed: urn:li:person:${status.linkedinId || "profile"}`}
+            </span>
+            <button
+              onClick={handleShare}
+              disabled={sharing || !text.trim() || status.expired}
+              className={`h-9 px-4 rounded-xl text-xs font-semibold text-white transition-colors ${
+                sharing || !text.trim() || status.expired ? "opacity-50 cursor-not-allowed bg-blue-600" : "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {sharing ? "Publishing..." : "Post to LinkedIn Feed"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IntegrationsView() {
   const { T, dk, connOf, isConnected, apiKeys, setApiKeys, outHooks, setOutHooks, flash, setConfirm, log, agents, wfs, camps } = useApp();
   const [tab, setTab] = useState("Connectors");
@@ -21693,6 +21839,7 @@ function IntegrationsView() {
           ))}
         </div>
         <div className="flex-1 overflow-y-auto bz-scroll p-6 space-y-5">
+          <LinkedInShareWidget />
           {cats.map((cat) => {
             const items = list.filter((x) => x.p.cat === cat);
             if (!items.length) return null;

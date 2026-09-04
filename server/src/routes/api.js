@@ -9,6 +9,8 @@ import {
   fetchMessagesByConversationId,
   saveMessage,
   updateMessageStatus,
+  saveLinkedInAccount,
+  getLinkedInAccount,
 } from "../data/db.js";
 import { getGoWhatsConfigStatus, sendWhatsAppMessage } from "../services/gowhats.js";
 
@@ -429,4 +431,222 @@ apiRouter.get("/workflows", (req, res) => {
   const wsId = getWorkspaceId(req);
   const workflows = db.workflows.filter((w) => !w.workspaceId || w.workspaceId === wsId);
   res.json(workflows);
+});
+
+// ==============================================================================
+// LINKEDIN OAUTH 2.0 / OPENID CONNECT & FEED SHARE ROUTES
+// ==============================================================================
+const oauthStates = new Map();
+
+// Periodically clean up expired OAuth states (older than 10 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [s, data] of oauthStates.entries()) {
+    if (now - data.createdAt > 600000) {
+      oauthStates.delete(s);
+    }
+  }
+}, 300000);
+
+// STEP 3: GET /api/v1/auth/linkedin - Redirects user to LinkedIn authorization URL
+apiRouter.get("/auth/linkedin", (req, res) => {
+  const state = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+  oauthStates.set(state, { state, createdAt: Date.now() });
+
+  const clientId = process.env.LINKEDIN_CLIENT_ID;
+  const redirectUri = process.env.LINKEDIN_REDIRECT_URI;
+  const scope = encodeURIComponent("openid profile email w_member_social");
+
+  const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${scope}&state=${state}`;
+
+  res.redirect(authUrl);
+});
+
+// STEP 3: GET /api/v1/auth/linkedin/callback - Validates state, exchanges code for access token & userinfo
+apiRouter.get("/auth/linkedin/callback", async (req, res) => {
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.warn(`⚠️ LinkedIn OAuth callback error: ${error}`);
+    return res.redirect(`http://localhost:5173/?linkedin=error&msg=${encodeURIComponent(error_description || error)}`);
+  }
+
+  if (!state || !oauthStates.has(state)) {
+    console.warn("⚠️ Rejecting LinkedIn OAuth callback due to invalid/expired state parameter");
+    return res.status(400).json({ error: "Invalid OAuth state parameter. Possible CSRF attack." });
+  }
+  oauthStates.delete(state);
+
+  if (!code) {
+    return res.status(400).json({ error: "Missing authorization code" });
+  }
+
+  try {
+    const tokenUrl = "https://www.linkedin.com/oauth/v2/accessToken";
+    const params = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: process.env.LINKEDIN_REDIRECT_URI,
+      client_id: process.env.LINKEDIN_CLIENT_ID,
+      client_secret: process.env.LINKEDIN_CLIENT_SECRET,
+    });
+
+    const tokenRes = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+
+    const tokenData = await tokenRes.json().catch(() => ({}));
+
+    if (!tokenRes.ok || !tokenData.access_token) {
+      const errorMsg = tokenData.error_description || tokenData.error || `HTTP ${tokenRes.status}`;
+      throw new Error(`LinkedIn token exchange failed: ${errorMsg}`);
+    }
+
+    const accessToken = tokenData.access_token;
+    const expiresIn = tokenData.expires_in || 5184000; // ~60 days default
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Call GET https://api.linkedin.com/v2/userinfo with Bearer token
+    const userInfoRes = await fetch("https://api.linkedin.com/v2/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const userInfo = await userInfoRes.json().catch(() => ({}));
+
+    if (!userInfoRes.ok || !userInfo.sub) {
+      throw new Error("Failed to fetch LinkedIn user info");
+    }
+
+    const linkedinId = userInfo.sub;
+    const name = userInfo.name || `${userInfo.given_name || ""} ${userInfo.family_name || ""}`.trim() || "LinkedIn Member";
+    const email = userInfo.email || "";
+    const picture = userInfo.picture || "";
+
+    // Save account details in MongoDB / memory dataset
+    // SECURITY: Access token is NEVER logged or returned to the client in response
+    await saveLinkedInAccount({
+      workspaceId: "ws_default",
+      linkedinId,
+      name,
+      email,
+      picture,
+      accessToken,
+      expiresAt,
+    });
+
+    console.log(`✅ LinkedIn account successfully connected for ${name} (${email || linkedinId})`);
+
+    res.redirect(`http://localhost:5173/?linkedin=connected&user=${encodeURIComponent(name)}`);
+  } catch (err) {
+    const safeError = String(err.message).replace(/[a-zA-Z0-9_-]{30,}/g, "[REDACTED_TOKEN]");
+    console.error("❌ LinkedIn OAuth Callback Error:", safeError);
+    res.redirect(`http://localhost:5173/?linkedin=error&msg=${encodeURIComponent(safeError)}`);
+  }
+});
+
+// GET /api/v1/linkedin/status - Returns connection status and profile details without access token
+apiRouter.get("/linkedin/status", async (req, res) => {
+  try {
+    const account = await getLinkedInAccount("ws_default");
+    if (!account) {
+      return res.json({ connected: false });
+    }
+
+    const isExpired = new Date(account.expiresAt).getTime() <= Date.now();
+    res.json({
+      connected: !isExpired,
+      expired: isExpired,
+      linkedinId: account.linkedinId,
+      name: account.name,
+      email: account.email,
+      picture: account.picture,
+      expiresAt: account.expiresAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch LinkedIn status" });
+  }
+});
+
+// STEP 4: POST /api/v1/linkedin/share - Share text post to user's LinkedIn feed
+apiRouter.post("/linkedin/share", async (req, res) => {
+  try {
+    const { text } = req.body || {};
+    if (!text || !text.trim()) {
+      return res.status(400).json({ code: "bad_request", message: "Share text content is required" });
+    }
+
+    const account = await getLinkedInAccount("ws_default");
+    if (!account || !account.accessToken) {
+      return res.status(401).json({
+        code: "unauthorized",
+        message: "LinkedIn account is not connected. Please click 'Connect LinkedIn' to sign in.",
+      });
+    }
+
+    const isExpired = new Date(account.expiresAt).getTime() <= Date.now();
+    if (isExpired) {
+      return res.status(401).json({
+        code: "token_expired",
+        message: "LinkedIn access token has expired (~60 day limit). Please reconnect your LinkedIn account.",
+      });
+    }
+
+    // Call POST https://api.linkedin.com/v2/ugcPosts
+    const shareUrl = "https://api.linkedin.com/v2/ugcPosts";
+    const payload = {
+      author: `urn:li:person:${account.linkedinId}`,
+      lifecycleState: "PUBLISHED",
+      specificContent: {
+        "com.linkedin.ugc.ShareContent": {
+          shareCommentary: {
+            text: text.trim(),
+          },
+          shareMediaCategory: "NONE",
+        },
+      },
+      visibility: {
+        "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+      },
+    };
+
+    const response = await fetch(shareUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${account.accessToken}`,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const errorMsg = data.message || data.error || `LinkedIn API HTTP ${response.status}`;
+      // Security: ensure access token is never leaked in response or logs
+      const safeMsg = String(errorMsg).replace(account.accessToken, "[REDACTED_TOKEN]");
+      console.error("❌ LinkedIn Feed Share Failed:", safeMsg);
+      return res.status(502).json({
+        code: "linkedin_api_error",
+        message: `LinkedIn Post Failed: ${safeMsg}`,
+      });
+    }
+
+    const postId = data.id || `urn:li:share:${Date.now()}`;
+    console.log(`📢 Published share to LinkedIn feed for ${account.name} (URN: ${postId})`);
+
+    res.status(201).json({
+      success: true,
+      id: postId,
+      author: account.name,
+      message: "Successfully published share to LinkedIn feed!",
+    });
+  } catch (err) {
+    const safeError = String(err.message).replace(/[a-zA-Z0-9_-]{30,}/g, "[REDACTED_TOKEN]");
+    res.status(500).json({ code: "internal_error", message: safeError });
+  }
 });
