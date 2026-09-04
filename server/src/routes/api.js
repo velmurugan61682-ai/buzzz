@@ -11,6 +11,8 @@ import {
   updateMessageStatus,
   saveLinkedInAccount,
   getLinkedInAccount,
+  saveGoogleAccount,
+  getGoogleAccount,
 } from "../data/db.js";
 import { getGoWhatsConfigStatus, sendWhatsAppMessage } from "../services/gowhats.js";
 
@@ -656,3 +658,142 @@ apiRouter.post("/linkedin/share", async (req, res) => {
     res.status(500).json({ code: "internal_error", message: safeError });
   }
 });
+
+// ==============================================================================
+// GOOGLE OAUTH 2.0 / OPENID CONNECT & GMAIL ROUTES
+// ==============================================================================
+const googleOauthStates = new Map();
+
+// GET /api/google/auth & /api/v1/google/auth & /api/auth/google
+const handleGoogleAuth = (req, res) => {
+  const state = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+  googleOauthStates.set(state, { state, createdAt: Date.now() });
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+  const scope = encodeURIComponent("openid profile email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send");
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${scope}&access_type=offline&prompt=consent&state=${state}`;
+
+  res.redirect(authUrl);
+};
+
+apiRouter.get("/google/auth", handleGoogleAuth);
+apiRouter.get("/auth/google", handleGoogleAuth);
+
+// GET /api/google/callback & /api/v1/google/callback & /api/auth/google/callback
+const handleGoogleCallback = async (req, res) => {
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.warn(`⚠️ Google OAuth callback error: ${error}`);
+    return res.redirect(`http://localhost:5173/?google=error&msg=${encodeURIComponent(error_description || error)}`);
+  }
+
+  if (!state || !googleOauthStates.has(state)) {
+    console.warn("⚠️ Rejecting Google OAuth callback due to invalid/expired state parameter");
+    return res.status(400).json({ error: "Invalid OAuth state parameter. Possible CSRF attack." });
+  }
+  googleOauthStates.delete(state);
+
+  if (!code) {
+    return res.status(400).json({ error: "Missing authorization code" });
+  }
+
+  try {
+    const tokenUrl = "https://oauth2.googleapis.com/token";
+    const params = new URLSearchParams({
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: process.env.GOOGLE_REDIRECT_URI,
+      grant_type: "authorization_code",
+    });
+
+    const tokenRes = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+
+    const tokenData = await tokenRes.json().catch(() => ({}));
+
+    if (!tokenRes.ok || !tokenData.access_token) {
+      const errorMsg = tokenData.error_description || tokenData.error || `HTTP ${tokenRes.status}`;
+      throw new Error(`Google token exchange failed: ${errorMsg}`);
+    }
+
+    const accessToken = tokenData.access_token;
+    const refreshToken = tokenData.refresh_token || null;
+    const expiresIn = tokenData.expires_in || 3600;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Call GET https://www.googleapis.com/oauth2/v3/userinfo with Bearer token
+    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const userInfo = await userInfoRes.json().catch(() => ({}));
+
+    if (!userInfoRes.ok || !userInfo.sub) {
+      throw new Error("Failed to fetch Google user info");
+    }
+
+    const googleId = userInfo.sub;
+    const name = userInfo.name || `${userInfo.given_name || ""} ${userInfo.family_name || ""}`.trim() || "Google User";
+    const email = userInfo.email || "";
+    const picture = userInfo.picture || "";
+
+    // Save account details in MongoDB / memory dataset
+    // SECURITY: Secrets are NEVER logged or returned to the client in response
+    await saveGoogleAccount({
+      workspaceId: "ws_default",
+      googleId,
+      name,
+      email,
+      picture,
+      accessToken,
+      refreshToken,
+      expiresAt,
+    });
+
+    console.log(`✅ Google email account successfully connected for ${name} (${email})`);
+
+    res.redirect(`http://localhost:5173/?google=connected&user=${encodeURIComponent(email || name)}`);
+  } catch (err) {
+    const safeError = String(err.message).replace(/[a-zA-Z0-9_-]{30,}/g, "[REDACTED_TOKEN]");
+    console.error("❌ Google OAuth Callback Error:", safeError);
+    res.redirect(`http://localhost:5173/?google=error&msg=${encodeURIComponent(safeError)}`);
+  }
+};
+
+apiRouter.get("/google/callback", handleGoogleCallback);
+apiRouter.get("/auth/google/callback", handleGoogleCallback);
+
+// GET /api/google/status & /api/gmail/status
+const handleGoogleStatus = async (req, res) => {
+  try {
+    const account = await getGoogleAccount("ws_default");
+    if (!account) {
+      return res.json({ connected: false });
+    }
+
+    const isExpired = new Date(account.expiresAt).getTime() <= Date.now();
+    res.json({
+      connected: true,
+      expired: isExpired,
+      googleId: account.googleId,
+      name: account.name,
+      email: account.email,
+      picture: account.picture,
+      expiresAt: account.expiresAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch Google account status" });
+  }
+};
+
+apiRouter.get("/google/status", handleGoogleStatus);
+apiRouter.get("/gmail/status", handleGoogleStatus);

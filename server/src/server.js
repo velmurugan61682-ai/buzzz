@@ -15,13 +15,19 @@ const hasLinkedInKeys = Boolean(
   process.env.LINKEDIN_CLIENT_SECRET &&
   process.env.LINKEDIN_REDIRECT_URI
 );
+const hasGoogleKeys = Boolean(
+  process.env.GOOGLE_CLIENT_ID &&
+  process.env.GOOGLE_CLIENT_SECRET &&
+  process.env.GOOGLE_REDIRECT_URI
+);
 
-if (!hasMongoUri || !hasApiKey || !hasBaseUrl || !hasLinkedInKeys) {
+if (!hasMongoUri || !hasApiKey || !hasBaseUrl || !hasLinkedInKeys || !hasGoogleKeys) {
   const missing = [];
   if (!hasMongoUri) missing.push("MONGODB_URI");
   if (!hasApiKey) missing.push("CHANNELBOT_API_KEY / GOWHATS_API_KEY");
   if (!hasBaseUrl) missing.push("CHANNELBOT_BASE_URL / GOWHATS_BASE_URL");
   if (!hasLinkedInKeys) missing.push("LINKEDIN_CLIENT_ID / LINKEDIN_CLIENT_SECRET / LINKEDIN_REDIRECT_URI");
+  if (!hasGoogleKeys) missing.push("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REDIRECT_URI");
 
   console.error(`🚨 FATAL STARTUP ERROR: Missing required environment variables: ${missing.join(", ")}`);
   console.error(`Please configure these environment keys in server/.env before launching.`);

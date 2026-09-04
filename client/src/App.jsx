@@ -6749,6 +6749,14 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
         const msg = params.get("msg") || "LinkedIn authorization failed";
         flash(`LinkedIn connection error: ${msg}`, "err");
         window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get("google") === "connected") {
+        const user = params.get("user") || "Google Account";
+        flash(`Google email account connected successfully as ${user}!`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get("google") === "error") {
+        const msg = params.get("msg") || "Google authorization failed";
+        flash(`Google connection error: ${msg}`, "err");
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
   }, [flash]);
@@ -21411,7 +21419,13 @@ function ConnectModal({ provider, onClose }) {
       window.location.href = `${targetHost}/api/linkedin/auth`;
       return;
     }
-    if (provider.id === "gmail") {
+    if (provider.id === "gmail" || provider.id === "google") {
+      const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+        ? "http://localhost:5000"
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      window.location.href = `${targetHost}/api/google/auth`;
+      return;
+    }
       if (!email || !email.includes("@")) { setErr("Please enter a valid Gmail address."); return; }
     } else if (provider.auth === "apikey" && key.trim().length < 8) {
       setErr("That key is too short to be valid. Copy the full key from your " + provider.name + " dashboard.");

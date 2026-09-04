@@ -37,6 +37,7 @@ export const db = {
   agents: [],
   workflows: [],
   linkedinAccounts: [],
+  googleAccounts: [],
 };
 
 // ==============================================================================
@@ -83,9 +84,24 @@ const LinkedInAccountSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const GoogleAccountSchema = new mongoose.Schema(
+  {
+    workspaceId: { type: String, default: "ws_default", index: true },
+    googleId: { type: String, required: true, index: true },
+    name: { type: String, required: true },
+    email: { type: String, required: true, index: true },
+    picture: { type: String },
+    accessToken: { type: String, required: true },
+    refreshToken: { type: String },
+    expiresAt: { type: Date, required: true },
+  },
+  { timestamps: true }
+);
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
 export const LinkedInAccountModel = mongoose.models.LinkedInAccount || mongoose.model("LinkedInAccount", LinkedInAccountSchema);
+export const GoogleAccountModel = mongoose.models.GoogleAccount || mongoose.model("GoogleAccount", GoogleAccountSchema);
 
 // ==============================================================================
 // 3. MONGODB CONNECTION SETUP & SEEDING
@@ -262,4 +278,39 @@ export const getLinkedInAccount = async (workspaceId = "ws_default") => {
     return await LinkedInAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
   }
   return db.linkedinAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
+};
+
+export const saveGoogleAccount = async (data) => {
+  const payload = {
+    ...data,
+    workspaceId: data.workspaceId || "ws_default",
+    expiresAt: data.expiresAt ? new Date(data.expiresAt) : new Date(Date.now() + 3600000),
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const doc = await GoogleAccountModel.findOneAndUpdate(
+      { workspaceId: payload.workspaceId, email: payload.email },
+      { $set: payload },
+      { upsert: true, new: true }
+    ).lean();
+    return doc;
+  }
+
+  const idx = db.googleAccounts.findIndex(
+    (a) => a.workspaceId === payload.workspaceId && a.email === payload.email
+  );
+  if (idx !== -1) {
+    db.googleAccounts[idx] = { ...db.googleAccounts[idx], ...payload };
+    return db.googleAccounts[idx];
+  } else {
+    db.googleAccounts.unshift(payload);
+    return payload;
+  }
+};
+
+export const getGoogleAccount = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await GoogleAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
+  }
+  return db.googleAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
 };
