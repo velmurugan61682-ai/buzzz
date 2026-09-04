@@ -10,7 +10,7 @@ import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const start = src.indexOf("/* ---- demo money ----");
 const end = src.indexOf("function useDemoCurrency");
 if (start < 0 || end < 0) { console.log("demo money helpers not found"); process.exit(1); }

@@ -19,14 +19,14 @@ const root = path.join(dir, "..");
 const out = process.argv[2] || "/mnt/user-data/outputs/buzzz_admin_console.html";
 
 const bundle = await build({
-  entryPoints: [path.join(root, "apps/web/src/admin-preview.jsx")],
+  entryPoints: [path.join(root, "client/src/admin-preview.jsx")],
   bundle: true, format: "iife", jsx: "automatic", minify: true, write: false,
   loader: { ".jsx": "jsx" }, define: { "process.env.NODE_ENV": '"production"' },
   logLevel: "error",
 });
 const js = bundle.outputFiles[0].text.replace(/<\/script>/g, "<\\/script>");
 
-const cssDir = path.join(root, "apps/web/dist/assets");
+const cssDir = path.join(root, "client/dist/assets");
 const cssFile = fs.existsSync(cssDir) && fs.readdirSync(cssDir).find((f) => f.endsWith(".css"));
 if (!cssFile) {
   console.error("No compiled stylesheet found. Run `npm run build` first so the preview is styled.");

@@ -8,7 +8,7 @@ import { createRequire } from "module";
 import path from "path";
 import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(dir, "..", "apps", "web", "src", "App.jsx");
+const entry = path.join(dir, "..", "client", "src", "App.jsx");
 
 const harness = `
 const { JSDOM } = require("jsdom");

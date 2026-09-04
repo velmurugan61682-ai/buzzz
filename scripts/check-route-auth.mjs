@@ -1,10 +1,10 @@
 /**
  * CI Route Authentication & Tenant Scoping Guard.
  *
- * Scans services/api/src/index.js and services/api/src/routes/*.js to enforce that:
+ * Scans server/src/index.js and server/src/routes/*.js to enforce that:
  * 1. Global middleware authenticate & tenantScope are attached before tenant routes in index.js.
- * 2. Every tenant route module in services/api/src/routes/ is registered under the auth/tenant middleware chain.
- * 3. Every route file exported in services/api/src/routes/ properly inspects workspace context (workspace_id).
+ * 2. Every tenant route module in server/src/routes/ is registered under the auth/tenant middleware chain.
+ * 3. Every route file exported in server/src/routes/ properly inspects workspace context (workspace_id).
  */
 
 import fs from "fs";
@@ -20,7 +20,7 @@ const ok = (cond, msg) => {
 };
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const apiDir = path.join(dir, "..", "services", "api", "src");
+const apiDir = path.join(dir, "..", "server", "src");
 const indexFile = path.join(apiDir, "index.js");
 const routesDir = path.join(apiDir, "routes");
 
@@ -53,7 +53,7 @@ for (const fn of tenantRouteFunctions) {
   ok(fnIdx > authChainIdx, `Route handler '${fn}' is mounted AFTER authenticate and tenantScope middleware`);
 }
 
-// 3. Scan route files in services/api/src/routes/
+// 3. Scan route files in server/src/routes/
 const routeFiles = fs.readdirSync(routesDir).filter((f) => f.endsWith(".js") && !f.endsWith(".test.js"));
 
 for (const file of routeFiles) {

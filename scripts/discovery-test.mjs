@@ -5,7 +5,7 @@ import { createRequire } from "module";
 import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const start = src.indexOf("/* ==================================================================== */\n/* ONBOARDING UNDERSTANDING ENGINE");
 const end = src.indexOf("\nfunction Onboarding");
 const harness = `const CH={whatsapp:{label:"WhatsApp"}};\n` + src.slice(start, end) + `

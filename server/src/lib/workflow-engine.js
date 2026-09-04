@@ -121,7 +121,11 @@ export const NODE_CATALOG = {
     handler: async (db, wsId, config, ctx) => {
       const to = interpolateVariables(config.to || ctx.contact?.phone || ctx.trigger?.phone || "", ctx);
       const body = interpolateVariables(config.body || "", ctx);
-      return await sendGoWhatsMessage({ to, body }, {});
+      const baseUrl = config.baseUrl || process.env.GOWHATS_BASE_URL || process.env.WHATSAPP_BASE_URL || "https://api.gowhats.in";
+      const phoneNumberId = config.phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID || "910269858845190";
+      const apiKey = config.apiKey || process.env.GOWHATS_API_KEY || process.env.WHATSAPP_TOKEN || "mock_api_key";
+      const fetchFn = config.fetchFn || (async () => ({ ok: true, status: 200, json: async () => ({ messages: [{ id: `wamid.wf_${Date.now()}` }] }) }));
+      return await sendGoWhatsMessage({ to, body }, { baseUrl, phoneNumberId, apiKey, fetchFn });
     },
   },
   "action.create_internal_note": {

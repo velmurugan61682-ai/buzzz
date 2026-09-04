@@ -6464,7 +6464,7 @@ function AuthScreen({ mode, setMode, onAuthed, onBack }) {
   const title = mode === "signup" ? "Create your account" : mode === "reset" ? "Reset your password" : "Welcome back";
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: "#fff", color: "#18181B" }} style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+    <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: "#fff", color: "#18181B", fontFamily: "Inter, system-ui, sans-serif" }}>
       <button onClick={onBack} className="absolute top-6 left-6 text-[13px] inline-flex items-center gap-1" style={{ color: "#52525B" }}>
         <ChevronLeft size={15} /> Back
       </button>

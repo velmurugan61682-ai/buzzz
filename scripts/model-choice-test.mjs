@@ -4,7 +4,7 @@ import { build } from "esbuild";
 import { createRequire } from "module";
 import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(dir, "..", "apps", "web", "src", "App.jsx");
+const entry = path.join(dir, "..", "client", "src", "App.jsx");
 const src = (await import("node:fs")).readFileSync(entry, "utf8");
 const cs = src.indexOf("const AI_FUNCTIONS = [");
 /* end the slice at whatever comes first after the catalog: another component

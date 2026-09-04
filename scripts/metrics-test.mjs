@@ -4,7 +4,7 @@ import { createRequire } from "module";
 import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const st = src.indexOf("/* BUSINESS METRICS"), en = src.indexOf("function workspaceSnapshot()");
 if (st < 0 || en < 0) { console.log("metrics engine not found"); process.exit(1); }
 const harness = src.slice(st - 75, en) + `

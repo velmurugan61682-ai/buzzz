@@ -1,3 +1,7 @@
+/**
+ * Workspace Scoped Multi-Tenant LinkedIn Route.
+ * Production endpoints available under /api/v1/integrations/linkedin/test with workspace_id validation.
+ */
 import { Router } from "express";
 import crypto from "node:crypto";
 

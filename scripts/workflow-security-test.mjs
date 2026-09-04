@@ -5,7 +5,7 @@ import { createRequire } from "module";
 import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const gs = src.indexOf("const ACTIONS = {"), ge = src.indexOf("/* ---- guardrails are matched against");
 const w1 = src.indexOf("const WF_ACTIONS"), w2 = src.indexOf("\nfunction wfSummary") > 0 ? src.indexOf("\nfunction wfSummary") : src.indexOf("\nconst WF_FACTORY");
 const names = [...new Set([...src.slice(gs, w2).matchAll(/Icon:\s*([A-Z]\w+)/g)].map((m) => m[1]))];

@@ -3,6 +3,15 @@
  *
  * Provides transactional email templates and delivery recording.
  */
+export class EmailError extends Error {
+  constructor(code, message, status = 400) {
+    super(message);
+    this.name = "EmailError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
 
 export const EMAIL_TEMPLATES = {
   welcome: ({ name = "User" }) => ({
@@ -34,13 +43,48 @@ export async function sendEmail({
   template = "welcome",
   params = {},
   idempotencyKey = null,
+  credentialKey = null,
+  transporterFn = null,
 }) {
-  if (!to) throw new Error("Recipient email address is required");
+  if (!to) throw new EmailError("invalid_recipient", "Recipient email address is required");
 
   const templateFn = EMAIL_TEMPLATES[template] || EMAIL_TEMPLATES.welcome;
   const content = templateFn(params);
 
-  // In production with SMTP configured, dispatches via nodemailer/transport
+  let deliveryStatus = "delivered";
+  if (transporterFn && typeof transporterFn.sendMail === "function") {
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await transporterFn.sendMail({
+          to,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+        });
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+
+    if (lastErr) {
+      deliveryStatus = "failed";
+      if (db && workspaceId) {
+        await db.recordNotification(workspaceId, {
+          channel: "email",
+          recipient: to,
+          subject: content.subject,
+          status: "failed",
+          error: lastErr.message,
+          idempotencyKey: idempotencyKey || `email_${Date.now()}_${Math.random()}`,
+        });
+      }
+      throw new EmailError("delivery_failed", lastErr.message, 500);
+    }
+  }
+
   // Record delivery in database
   if (db && workspaceId) {
     await db.recordNotification(workspaceId, {

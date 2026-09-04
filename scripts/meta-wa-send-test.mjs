@@ -6,7 +6,7 @@
  * environment to get the literal request/response transcript.
  *
  * USAGE:
- *   node --env-file=services/api/.env scripts/meta-wa-send-test.mjs
+ *   node --env-file=server/.env scripts/meta-wa-send-test.mjs
  *
  * REQUIRED ENV VARS:
  *   WHATSAPP_TOKEN          — Meta System User Access Token (not a short-lived User token)
@@ -23,8 +23,8 @@
  * NEVER printed: the decrypted token, the raw token, or any partial token value.
  */
 
-import { sealCredential, openCredential } from "../services/api/src/lib/credential-store.js";
-import { sendGoWhatsMessage, GoWhatsError } from "../services/api/src/lib/gowhats.js";
+import { sealCredential, openCredential } from "../server/src/lib/credential-store.js";
+import { sendGoWhatsMessage, GoWhatsError } from "../server/src/lib/gowhats.js";
 
 // ---- Configuration ---------------------------------------------------------
 

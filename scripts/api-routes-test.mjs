@@ -7,7 +7,7 @@ process.env.LOG_LEVEL = "silent";
 const quiet = process.stdout.write.bind(process.stdout);
 process.stdout.write = (chunk, ...a) => (String(chunk).startsWith("{\"level\"") ? true : quiet(chunk, ...a));
 
-await import("../services/api/src/index.js");
+await import("../server/src/index.js");
 await new Promise((r) => setTimeout(r, 500));
 
 let fails = 0;

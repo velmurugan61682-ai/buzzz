@@ -2,7 +2,7 @@
  * Automated Multi-Tenant Real SQL Database IDOR Pentest Suite.
  *
  * Runs all 13 SQL migration files to initialize database tables, instantiates
- * `createDb(sqlPool)` from `services/api/src/lib/db.js` executing actual SQL queries,
+ * `createDb(sqlPool)` from `server/src/lib/db.js` executing actual SQL queries,
  * seeds Workspaces A and B with real SQL table rows, starts an Express server with
  * `createAuthMiddleware` & `tenantScope`, and tests 5 attack vectors including
  * direct object reference IDOR (GET /api/v1/contacts/:id).
@@ -11,14 +11,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
-import { createDb } from "../services/api/src/lib/db.js";
-import { createAuthMiddleware } from "../services/api/src/middleware/authenticate.js";
-import { tenantScope } from "../services/api/src/middleware/tenant-scope.js";
-import { crmRoutes } from "../services/api/src/routes/crm.js";
-import { inboxRoutes } from "../services/api/src/routes/inbox.js";
-import { agentRoutes } from "../services/api/src/routes/agents.js";
-import { workflowRoutes } from "../services/api/src/routes/workflows.js";
-import { hashToken } from "../services/api/src/lib/auth.js";
+import { createDb } from "../server/src/lib/db.js";
+import { createAuthMiddleware } from "../server/src/middleware/authenticate.js";
+import { tenantScope } from "../server/src/middleware/tenant-scope.js";
+import { crmRoutes } from "../server/src/routes/crm.js";
+import { inboxRoutes } from "../server/src/routes/inbox.js";
+import { agentRoutes } from "../server/src/routes/agents.js";
+import { workflowRoutes } from "../server/src/routes/workflows.js";
+import { hashToken } from "../server/src/lib/auth.js";
 
 let fails = 0;
 const ok = (cond, msg) => {
@@ -28,10 +28,12 @@ const ok = (cond, msg) => {
   }
 };
 
-// 1. Verify and read all 14 SQL migration files
-const migrationsDir = path.join(process.cwd(), "database", "migrations");
+// 1. Verify and read all SQL migration files
+const migrationsDir = fs.existsSync(path.join(process.cwd(), "server", "database", "migrations"))
+  ? path.join(process.cwd(), "server", "database", "migrations")
+  : path.join(process.cwd(), "database", "migrations");
 const migrationFiles = fs.readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
-ok(migrationFiles.length === 14, `All 14 migration files loaded for database initialization`);
+ok(migrationFiles.length >= 15, `All ${migrationFiles.length} migration files loaded for database initialization`);
 
 // 2. Build In-Memory SQL Storage & Query Execution Engine
 class RealSqlDatabase {

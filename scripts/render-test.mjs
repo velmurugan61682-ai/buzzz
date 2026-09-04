@@ -9,7 +9,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(dir, "..", "apps", "web", "src", "App.jsx");
+const entry = path.join(dir, "..", "client", "src", "App.jsx");
 
 const VIEWS = ["home","inbox","crm","agents","library","approvals","activity","automations",
   "campaigns","calls","knowledge","analytics","integrations","settings","appointments","social","admin","revenue"];

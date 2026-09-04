@@ -11,6 +11,8 @@ Every variable in `.env.example`, what it does, and whether the platform runs wi
 | `AI_PROVIDER_KEY` | BUZZZ AI, agent replies | assistant falls back to rule-based routing |
 | `EMBEDDING_PROVIDER_KEY` | knowledge retrieval | keyword retrieval only |
 | `GOWHATS_API_KEY` / `_WEBHOOK_SECRET` | WhatsApp in and out | inbox has no WhatsApp |
+| `GOWHATS_PROVIDER` | WhatsApp provider switch (`meta_cloud_api` \| `gowhats`) | defaults to `meta_cloud_api` |
+| `GOWHATS_ACCOUNT_EXTERNAL_ID` | GoWhats provider account identifier | GoWhats provider requires setting this ID |
 | `MRASSISTANT_API_KEY` / `_WEBHOOK_SECRET` | calls | calls section is read-only |
 | `STRIPE_SECRET_KEY` / `_WEBHOOK_SECRET` | billing | no checkout, no subscription state |
 | `GOOGLE_CLIENT_ID` / `_SECRET` | Calendar, Gmail | those integrations cannot connect |

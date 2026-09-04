@@ -1,7 +1,7 @@
 /**
  * Dependency Drift Audit Script.
  *
- * Scans JavaScript source files across workspace packages (services/api, services/worker, apps/web)
+ * Scans JavaScript source files across workspace packages (server, server, client)
  * and asserts that every imported non-relative module is explicitly declared as a dependency in
  * the package.json manifest.
  */
@@ -85,9 +85,9 @@ function checkWorkspace(workspacePath, pkgJsonPath) {
 }
 
 console.log("=== Dependency Drift Audit ===");
-checkWorkspace("services/api/src", "services/api/package.json");
-checkWorkspace("services/worker/src", "services/worker/package.json");
-checkWorkspace("apps/web/src", "apps/web/package.json");
+checkWorkspace("server/src", "server/package.json");
+checkWorkspace("server/src", "server/package.json");
+checkWorkspace("client/src", "client/package.json");
 
 console.log(fails ? `dependency audit: ${fails} undeclared dependencies found` : "dependency audit: all imports matched declared package dependencies");
 process.exit(fails ? 1 : 0);

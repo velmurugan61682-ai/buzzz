@@ -19,7 +19,7 @@ const ok = (cond, msg) => {
 (async () => {
   console.log("=== PostgreSQL Backup & PITR Restore Drill ===");
 
-  const archiveDir = path.join(process.cwd(), "scratch", "backup-archive");
+  const archiveDir = path.join(process.cwd(), "server", "scratch", "backup-archive");
   if (!fs.existsSync(archiveDir)) {
     fs.mkdirSync(archiveDir, { recursive: true });
   }

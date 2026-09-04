@@ -6,7 +6,7 @@ import { createRequire } from "module";
 import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const i18nStart = src.indexOf("/* INTERNATIONALISATION");
 const i18nEnd = src.indexOf("const LOCALES = {");
 const govStart = src.indexOf("const ACTIONS = {");

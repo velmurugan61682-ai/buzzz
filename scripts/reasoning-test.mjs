@@ -4,7 +4,7 @@ import { createRequire } from "module";
 import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const gs = src.indexOf("const ACTIONS = {"), ge = src.indexOf("/* ---- guardrails are matched against");
 const bs = src.indexOf("/* BUZZZ AI REASONING LAYER"), be = src.indexOf("function BuzzzAI({ close }) {");
 if (gs < 0 || bs < 0) { console.log("reasoning layer not found"); process.exit(1); }

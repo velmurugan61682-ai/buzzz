@@ -25,10 +25,10 @@ const migrationsDir = path.join(dir, "migrations");
 
 const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort();
 
-ok(files.length === 14, `Expected 14 migration files, found ${files.length}`);
+ok(files.length >= 15, `Expected at least 15 migration files, found ${files.length}`);
 
-// Verify sequential numbering 0001..0014
-for (let i = 1; i <= 14; i++) {
+// Verify sequential numbering 0001..0015
+for (let i = 1; i <= files.length; i++) {
   const prefix = String(i).padStart(4, "0");
   const match = files.find(f => f.startsWith(prefix));
   ok(!!match, `Migration ${prefix} exists`);

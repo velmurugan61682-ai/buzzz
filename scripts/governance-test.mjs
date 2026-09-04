@@ -5,10 +5,10 @@ import { build } from "esbuild";
 import { createRequire } from "module";
 import path from "path"; import fs from "fs";
 import { fileURLToPath } from "url";
-import * as server from "../services/api/src/lib/governance.js";
+import * as server from "../server/src/lib/governance.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const src = fs.readFileSync(path.join(dir, "..", "apps", "web", "src", "App.jsx"), "utf8");
+const src = fs.readFileSync(path.join(dir, "..", "client", "src", "App.jsx"), "utf8");
 const st = src.indexOf("const ACTIONS = {");
 const en = src.indexOf("/* ---- guardrails are matched against");
 if (st < 0 || en < 0) { console.log("governance engine not found"); process.exit(1); }

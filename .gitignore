@@ -1,19 +1,18 @@
 # dependencies
 node_modules/
-apps/web/node_modules/
-services/api/node_modules/
+client/node_modules/
+server/node_modules/
 
 # production build outputs
 dist/
-apps/web/dist/
+client/dist/
 
 # environment variables
 .env
 .env.*
 *.env
 !.env.example
-!apps/web/.env.example
-!services/api/.env.example
+!client/.env.example
 !server/.env.example
 
 # logs

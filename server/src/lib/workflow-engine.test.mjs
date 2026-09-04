@@ -8,6 +8,8 @@ import {
   executeWorkflow,
 } from "./workflow-engine.js";
 
+process.env.GOWHATS_BASE_URL = process.env.GOWHATS_BASE_URL || "https://api.gowhats.in";
+
 let fails = 0;
 const ok = (c, m) => {
   if (!c) {

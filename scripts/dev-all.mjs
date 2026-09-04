@@ -6,15 +6,15 @@ const npmCmd = isWindows ? "npm.cmd" : "npm";
 
 console.log("\x1b[36m%s\x1b[0m", "🚀 Starting BUZZZ Client & Server concurrently...");
 
-// Start Backend API Server
-const apiProcess = spawn(npmCmd, ["run", "dev:api"], {
+// Start Backend Server
+const apiProcess = spawn(npmCmd, ["run", "dev", "--workspace", "server"], {
   stdio: "inherit",
   shell: isWindows,
   env: { ...process.env },
 });
 
-// Start Frontend Vite Dev Server
-const webProcess = spawn(npmCmd, ["run", "dev", "--workspace", "@buzzz/web"], {
+// Start Frontend Client
+const webProcess = spawn(npmCmd, ["run", "dev", "--workspace", "client"], {
   stdio: "inherit",
   shell: isWindows,
   env: { ...process.env },
