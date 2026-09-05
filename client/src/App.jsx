@@ -9,7 +9,7 @@ import {
   XCircle, PlayCircle, Layers, Brain, History, ThumbsUp, ThumbsDown, GitBranch, Timer,
   Target, Wand2, Mic, Home, Smartphone, Command as CommandIcon, Circle, Lock, Eye,
   RefreshCw, Upload, Link2, DollarSign, Calendar, ListChecks, Headphones, Radio,
-  Share2, Image as ImageIcon, CalendarDays, ArrowLeft, KeyRound
+  Share2, Image as ImageIcon, CalendarDays, ArrowLeft, KeyRound, LogOut
 , Download, CheckSquare, Activity , ChevronLeft , Image , PhoneIncoming, PhoneOutgoing, PhoneMissed, Pause , TrendingDown , ArrowLeftRight , Paperclip, Volume2, Video, Menu } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
@@ -3001,21 +3001,59 @@ const demoSession = (screen) => ({
 const authApi = {
   signUp: (body) => apiCall("/api/v1/auth/signup", { method: "POST", body }),
   logIn: async (body) => {
+    let result;
     if (DEMO_AVAILABLE) {
       const email = String((body && body.email) || "").trim().toLowerCase();
       const pass = String((body && body.password) || "");
-      if (email === DEMO_EMAIL && pass === DEMO_PASSWORD) return { ok: true, data: demoSession("dashboard") };
-      return { ok: false, code: "no_api", status: 0,
-        message: `No sign in server is configured in this build. Use the demo account: ${DEMO_EMAIL} / ${DEMO_PASSWORD}` };
+      if (email === DEMO_EMAIL && pass === DEMO_PASSWORD) {
+        result = { ok: true, data: demoSession("dashboard") };
+      } else {
+        result = { ok: false, code: "no_api", status: 0,
+          message: `No sign in server is configured in this build. Use the demo account: ${DEMO_EMAIL} / ${DEMO_PASSWORD}` };
+      }
+    } else {
+      result = await apiCall("/api/v1/auth/login", { method: "POST", body });
     }
-    return apiCall("/api/v1/auth/login", { method: "POST", body });
+    if (result.ok && result.data) {
+      try { localStorage.setItem("buzzz_session", JSON.stringify(result.data)); } catch (e) {}
+    }
+    return result;
   },
-  logOut: () => (DEMO_AVAILABLE ? Promise.resolve({ ok: true, data: {} }) : apiCall("/api/v1/auth/logout", { method: "POST" })),
-  session: () => (DEMO_AVAILABLE ? Promise.resolve({ ok: false, code: "no_api", message: "no session" })
-                                 : apiCall("/api/v1/auth/session")),
+  logOut: async () => {
+    try { localStorage.removeItem("buzzz_session"); } catch (e) {}
+    try {
+      const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+      await fetch(`${apiBase}/api/v1/auth/logout`, { method: "POST" });
+    } catch (e) {}
+    return { ok: true };
+  },
+  session: async () => {
+    let localData = null;
+    try {
+      const raw = localStorage.getItem("buzzz_session");
+      if (raw) localData = JSON.parse(raw);
+    } catch (e) {}
+
+    if (!DEMO_AVAILABLE) {
+      const remote = await apiCall("/api/v1/auth/session");
+      if (remote.ok && remote.data) {
+        try { localStorage.setItem("buzzz_session", JSON.stringify(remote.data)); } catch (e) {}
+        return remote;
+      }
+    }
+
+    if (localData && (localData.user || localData.demo)) {
+      return { ok: true, data: localData };
+    }
+
+    return { ok: false, code: "no_session", message: "no active session" };
+  },
   resetRequest: (body) => apiCall("/api/v1/auth/reset", { method: "POST", body }),
-  /* a fresh demo workspace that starts at onboarding, for trying the setup flow */
-  demoSignUp: () => Promise.resolve({ ok: true, data: demoSession("onboarding") }),
+  demoSignUp: () => {
+    const data = demoSession("onboarding");
+    try { localStorage.setItem("buzzz_session", JSON.stringify(data)); } catch (e) {}
+    return Promise.resolve({ ok: true, data });
+  },
 };
 
 /* ==================================================================== */
@@ -6059,18 +6097,25 @@ const SOCIAL_PROVIDERS = {
 };
 
 const oauthApi = {
-  /* the source of truth for what is configured */
-  providers: () => (DEMO_AVAILABLE
-    /* with no server, show the three you asked for so the flow can be seen.
-       Clicking one says plainly that it needs configuring rather than
-       redirecting to a consent screen that would fail. */
-    ? Promise.resolve({ ok: true, data: { providers: [
-        { id: "google", label: "Google" }, { id: "apple", label: "Apple" }] } })
-    : apiCall("/api/v1/auth/oauth/providers")),
-  authorize: (provider) => (DEMO_AVAILABLE
-    ? Promise.resolve({ ok: false, code: "not_configured",
-        message: `${(SOCIAL_PROVIDERS[provider] || {}).label || provider} sign in needs its credentials set on the server. Use the demo account below.` })
-    : apiCall(`/api/v1/auth/oauth/${encodeURIComponent(provider)}/authorize`)),
+  providers: async () => {
+    const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+    try {
+      const res = await fetch(`${apiBase}/api/v1/auth/oauth/providers`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.data) return data;
+      }
+    } catch (e) {}
+    return { ok: true, data: { providers: [{ id: "google", label: "Google" }] } };
+  },
+  authorize: async (provider) => {
+    const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+    if (provider === "google") {
+      const authUrl = `${apiBase}/api/v1/auth/google`;
+      return { ok: true, data: { authorization_url: authUrl, url: authUrl } };
+    }
+    return apiCall(`/api/v1/auth/oauth/${encodeURIComponent(provider)}/authorize`);
+  },
 };
 
 /* ---- passkey sign in ----
@@ -6402,7 +6447,7 @@ function AuthScreen({ mode, setMode, onAuthed, onBack }) {
   );
 }
 
-function AppShell({ __initialView, __openAI, route, onSignOut }) {
+function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [dk, setDk] = useState(false);
   const [toast, setToast] = useState(null);
   const flash = useCallback((msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800); }, []);
@@ -6416,7 +6461,21 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
   const [approvals, setApprovals] = useState(APPROVALS_INIT);
   const [policies, setPolicies] = useState(POLICIES_INIT);
   const [delegations, setDelegations] = useState([]);
-  const [me, setMe] = useState({ name: "Jordan Lee", role: "Owner" });
+
+  const sessionUser = session?.user;
+  const initialName = sessionUser?.name || (sessionUser?.email ? sessionUser.email.split("@")[0] : "Jordan Lee");
+  const [me, setMe] = useState({ name: initialName, email: sessionUser?.email || "", role: "Owner" });
+
+  useEffect(() => {
+    if (sessionUser && (sessionUser.name || sessionUser.email)) {
+      const uName = sessionUser.name || sessionUser.email.split("@")[0];
+      setMe((prev) => ({
+        ...prev,
+        name: uName,
+        email: sessionUser.email || prev.email,
+      }));
+    }
+  }, [sessionUser]);
   const pendingExec = useRef({});     // approvalId → the closure that performs the action
   const executed = useRef(new Set()); // idempotency: an approval executes at most once
   const [appts, setAppts] = useState(APPOINTMENTS_INIT);
@@ -6461,7 +6520,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
         resContacts.value.data.forEach((c) => CONTACTS.push(c));
         setContactsV((v) => v + 1);
       }
-      if (resConvs.status === "fulfilled" && resConvs.value?.data?.length) setConvs(resConvs.value.data);
+      if (resConvs.status === "fulfilled") {
+        const convData = Array.isArray(resConvs.value) ? resConvs.value : (resConvs.value?.data || resConvs.value?.conversations);
+        if (Array.isArray(convData) && convData.length > 0) setConvs(convData);
+      }
       if (resAgents.status === "fulfilled" && resAgents.value?.data?.length) setAgents(resAgents.value.data);
       if (resWfs.status === "fulfilled" && resWfs.value?.data?.length) setWfs(resWfs.value.data);
     });
@@ -6681,6 +6743,25 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
       } else if (params.get("google") === "error") {
         const msg = params.get("msg") || "Google authorization failed";
         flash(`Google connection error: ${msg}`, "err");
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get("auth") === "success") {
+        const token = params.get("token");
+        const user = params.get("user") || "User";
+        if (token) {
+          const sessionPayload = {
+            demo: false,
+            user: { id: `usr_${Date.now()}`, email: user, name: user.split("@")[0] || "User" },
+            token,
+            workspaces: [{ workspaceId: "ws_default", role: "owner", onboardingComplete: true }],
+            next: { screen: "dashboard", workspaceId: "ws_default" },
+          };
+          try { localStorage.setItem("buzzz_session", JSON.stringify(sessionPayload)); } catch (e) {}
+        }
+        flash(`Successfully signed in with Google as ${user}!`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (params.get("auth") === "error") {
+        const msg = params.get("msg") || "Google sign in failed";
+        flash(`Google sign in error: ${msg}`, "err");
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
@@ -8036,7 +8117,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     pipelines, setPipelines, tickets, setTickets, customFields, setCustomFields, segments, setSegments,
     audit, trail, contactPatch, archiveContacts, deleteContacts, mergeContacts, removeAllDuplicates, addNote,
     createDeal, updateDeal, deleteDeal, setDeals, createTask, updateTask, deleteTask,
-    autonomy, setAutonomy, sendMessage, setAiOpen, setCmdOpen };
+    autonomy, setAutonomy, sendMessage, setAiOpen, setCmdOpen, onSignOut };
 
   return (
     <Ctx.Provider value={ctx}>
@@ -8151,7 +8232,9 @@ function Sidebar() {
 }
 
 function TopBar({ notifOpen, setNotifOpen, setCmdOpen, dk, setDk }) {
-  const { T, setAiOpen, notifications, unread, notifRead, markRead, markAllRead, go } = useApp();
+  const { T, setAiOpen, notifications, unread, notifRead, markRead, markAllRead, go, me, onSignOut } = useApp();
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   return (
     <header className={`h-14 shrink-0 flex items-center gap-2 px-6 border-b ${T.border} ${T.panel}`}>
       <button onClick={() => setCmdOpen(true)}
@@ -8208,7 +8291,46 @@ function TopBar({ notifOpen, setNotifOpen, setCmdOpen, dk, setDk }) {
         )}
       </div>
       <button onClick={() => setDk(!dk)} className={`p-2 rounded-full ${T.hover}`}>{dk ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}</button>
-      <button className="ml-1"><Avatar name="Jordan Lee" i={7} size="w-8 h-8 text-xs" /></button>
+
+      {/* Direct Logout Button */}
+      <button
+        onClick={() => {
+          if (typeof onSignOut === "function") onSignOut();
+        }}
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 transition border border-zinc-200 dark:border-zinc-700 ml-1"
+        title="Logout to landing page"
+      >
+        <LogOut size={13} />
+        <span>Logout</span>
+      </button>
+
+      {/* User Profile Dropdown */}
+      <div className="relative ml-1">
+        <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="p-0.5 rounded-full hover:ring-2 hover:ring-zinc-400 transition" aria-label="User profile menu">
+          <Avatar name={me?.name || "User"} i={7} size="w-8 h-8 text-xs" />
+        </button>
+        {userMenuOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+            <div className={`absolute right-0 top-11 w-56 rounded-2xl shadow-xl z-50 p-2 border ${T.card} ${T.border}`}>
+              <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
+                <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100">{me?.name || "User"}</div>
+                <div className="text-[11px] text-zinc-500 truncate">{me?.email || "owner@workspace"}</div>
+              </div>
+              <button
+                onClick={() => {
+                  setUserMenuOpen(false);
+                  if (typeof onSignOut === "function") onSignOut();
+                }}
+                className="w-full mt-1.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center justify-between transition"
+              >
+                <span>Sign out</span>
+                <LogOut size={13} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </header>
   );
 }
@@ -11852,21 +11974,29 @@ function InboxView() {
 
   const FILTERS = ["All", "Unread", "Mine", "AI", "Human", "Priority", "Waiting", "Resolved"];
   const matches = (c) => {
-    const contact = CONTACTS.find((x) => x.id === c.contactId) || {};
-    if (chFilter && c.channel !== chFilter) return false;
-    if (filter === "Unread" && !c.unread) return false;
-    if (filter === "Mine" && (c.assignee || "") !== "Jordan Lee") return false;
-    if (filter === "AI" && !c.ai) return false;
-    if (filter === "Human" && c.ai) return false;
-    if (filter === "Priority" && !["high", "critical"].includes((c.priority || "").toLowerCase())) return false;
-    if (filter === "Waiting" && statusOf(c) !== "Waiting") return false;
-    if (filter === "Resolved" && statusOf(c) !== "Resolved") return false;
-    if (qy.trim()) {
-      const t = qy.toLowerCase();
-      const hay = [contact.name, contact.company, contact.phone, c.channel, CH[c.channel].label, previewOf(c), (contact.tags || []).join(" "), ...c.msgs.map((m) => m.text || "")].join(" ").toLowerCase();
-      if (!hay.includes(t)) return false;
+    try {
+      const contact = CONTACTS.find((x) => x.id === c.contactId) || {};
+      if (chFilter && c.channel !== chFilter) return false;
+      if (filter === "Unread" && !c.unread) return false;
+      if (filter === "Mine" && (c.assignee || "") !== "Jordan Lee") return false;
+      if (filter === "AI" && !c.ai) return false;
+      if (filter === "Human" && c.ai) return false;
+      if (filter === "Priority" && !["high", "critical"].includes((c.priority || "").toLowerCase())) return false;
+      if (filter === "Waiting" && typeof statusOf === "function" && statusOf(c) !== "Waiting") return false;
+      if (filter === "Resolved" && typeof statusOf === "function" && statusOf(c) !== "Resolved") return false;
+      if (qy.trim()) {
+        const t = qy.toLowerCase();
+        const chLabel = (CH[c.channel] || {}).label || c.channel || "";
+        const prevText = typeof previewOf === "function" ? previewOf(c) : c.lastMessage || "";
+        const msgTexts = Array.isArray(c.msgs) ? c.msgs.map((m) => m?.text || "") : [c.lastMessage || ""];
+        const hay = [contact.name, contact.company, contact.phone, c.channel, chLabel, prevText, (contact.tags || []).join(" "), ...msgTexts].join(" ").toLowerCase();
+        if (!hay.includes(t)) return false;
+      }
+      return true;
+    } catch (e) {
+      console.warn("⚠️ Error matching conversation in InboxView:", e);
+      return true;
     }
-    return true;
   };
   const seenContactsInInbox = new Set();
   const list = convs.filter(matches).filter((c) => {
@@ -22869,7 +22999,16 @@ export default function App({ __initialView, __openAI, __session, __staff } = {}
     return () => { live = false; };
   }, []);
 
-  const signOut = () => authApi.logOut().then(() => { setSession(null); setRoute(null); setPublicScreen("site"); });
+  const signOut = async () => {
+    try { localStorage.removeItem("buzzz_session"); } catch (e) {}
+    try { await authApi.logOut(); } catch (e) {}
+    setSession(null);
+    setRoute(null);
+    setPublicScreen("site");
+    if (typeof window !== "undefined") {
+      window.location.href = "/";
+    }
+  };
 
   if (!authChecked) return <div className="min-h-screen flex items-center justify-center bg-white text-sm text-zinc-500">Loading…</div>;
 
@@ -22899,5 +23038,5 @@ export default function App({ __initialView, __openAI, __session, __staff } = {}
       </div>
     );
   }
-  return <AppShell __initialView={__initialView} __openAI={__openAI} route={route} onSignOut={signOut} />;
+  return <AppShell __initialView={__initialView} __openAI={__openAI} route={route} onSignOut={signOut} session={session} />;
 }

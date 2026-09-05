@@ -20,9 +20,15 @@ import {
   saveInstaxBotConfig,
   getInstaxBotConfig,
   deleteInstaxBotConfig,
+  saveUnifiedMessage,
+  verifyIntegrationConnectionGate,
+  fetchUnifiedInbox,
+  UnifiedMessageModel,
+  findOrCreateGoogleUser,
 } from "../data/db.js";
 import { getGoWhatsConfigStatus, sendWhatsAppMessage } from "../services/gowhats.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts } from "../services/gmailAuth.js";
+import { PLATFORM_META } from "../constants/platformMeta.js";
 
 export const apiRouter = Router();
 
@@ -38,6 +44,223 @@ const broadcastSseEvent = (type, payload) => {
     client.write(`data: ${data}\n\n`);
   }
 };
+
+// ==============================================================================
+// AUTHENTICATION & USER SESSION ROUTES
+// ==============================================================================
+const activeAuthSessions = new Map();
+const googleLoginStates = new Map();
+
+// Helper to resolve login credentials
+const getGoogleLoginCredentials = () => {
+  const clientId = process.env.GOOGLE_LOGIN_CLIENT_ID || process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_LOGIN_CLIENT_SECRET || process.env.GOOGLE_CLIENT_SECRET;
+  const redirectUri = process.env.GOOGLE_LOGIN_REDIRECT_URI || process.env.GOOGLE_REDIRECT_URI || "http://localhost:5000/api/google/callback";
+  return { clientId, clientSecret, redirectUri, configured: Boolean(clientId && clientSecret) };
+};
+
+// GET /api/auth/oauth/providers & GET /api/v1/auth/oauth/providers
+const handleOauthProviders = (req, res) => {
+  const googleCreds = getGoogleLoginCredentials();
+  const hasLinkedIn = Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET);
+
+  const providers = [];
+  if (googleCreds.configured) {
+    providers.push({ id: "google", label: "Google", configured: true });
+  }
+  if (hasLinkedIn) {
+    providers.push({ id: "linkedin", label: "LinkedIn", configured: true });
+  }
+
+  res.json({ ok: true, data: { providers, googleConfigured: googleCreds.configured } });
+};
+
+apiRouter.get("/auth/oauth/providers", handleOauthProviders);
+
+// GET /api/auth/google & GET /api/v1/auth/google & GET /api/v1/auth/oauth/google/authorize
+const handleGoogleLoginAuth = (req, res) => {
+  const { clientId, redirectUri, configured } = getGoogleLoginCredentials();
+
+  if (!configured) {
+    console.error("❌ Google Login OAuth Error: GOOGLE_LOGIN_CLIENT_ID or GOOGLE_CLIENT_ID missing in server/.env");
+    return res.status(500).json({
+      ok: false,
+      code: "missing_configuration",
+      message: "GOOGLE_LOGIN_CLIENT_ID and GOOGLE_LOGIN_CLIENT_SECRET must be configured in server/.env",
+    });
+  }
+
+  const state = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+  googleLoginStates.set(state, { state, createdAt: Date.now() });
+
+  const scope = encodeURIComponent("openid email profile");
+
+  console.log(`🔗 [USER AUTH] Redirecting to Google Login OAuth screen with scope=openid email profile (redirect_uri: ${redirectUri})`);
+
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(
+    redirectUri
+  )}&scope=${scope}&prompt=select_account&state=${state}`;
+
+  if (req.headers.accept && req.headers.accept.includes("application/json")) {
+    return res.json({ ok: true, data: { authorization_url: authUrl, url: authUrl } });
+  }
+
+  res.redirect(authUrl);
+};
+
+apiRouter.get("/auth/google", handleGoogleLoginAuth);
+apiRouter.get("/auth/oauth/google/authorize", handleGoogleLoginAuth);
+
+// GET /api/auth/google/callback & GET /api/v1/auth/google/callback & GET /api/v1/auth/oauth/google/callback
+const handleGoogleLoginCallback = async (req, res) => {
+  const { code, state, error, error_description } = req.query;
+
+  if (error) {
+    console.warn(`⚠️ Google Login OAuth Callback Error (${error}): ${sanitizeMessage(error_description || error)}`);
+    return res.redirect(`http://localhost:5173/?auth=error&msg=${encodeURIComponent(error_description || error)}`);
+  }
+
+  if (!state || !googleLoginStates.has(state)) {
+    console.warn("⚠️ Rejecting Google Login callback due to invalid/expired state parameter");
+    return res.status(400).json({ ok: false, error: "Invalid OAuth state parameter. Possible CSRF attack." });
+  }
+  googleLoginStates.delete(state);
+
+  if (!code) {
+    return res.status(400).json({ ok: false, error: "Missing authorization code" });
+  }
+
+  try {
+    const { clientId, clientSecret, redirectUri } = getGoogleLoginCredentials();
+    const tokenUrl = "https://oauth2.googleapis.com/token";
+    const params = new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+    });
+
+    console.log("🔄 Exchanging Google authorization code for User Login profile...");
+
+    const tokenRes = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+
+    const tokenData = await tokenRes.json().catch(() => ({}));
+
+    if (!tokenRes.ok || !tokenData.access_token) {
+      throw new Error(`Google token exchange failed: ${tokenData.error_description || tokenData.error || tokenRes.status}`);
+    }
+
+    const accessToken = tokenData.access_token;
+
+    // Fetch user profile from userinfo endpoint
+    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    const userInfo = await userInfoRes.json().catch(() => ({}));
+
+    if (!userInfoRes.ok || !userInfo.sub) {
+      throw new Error("Failed to fetch Google user profile info");
+    }
+
+    const googleId = userInfo.sub;
+    const name = userInfo.name || `${userInfo.given_name || ""} ${userInfo.family_name || ""}`.trim() || "Google User";
+    const email = userInfo.email || "";
+    const picture = userInfo.picture || "";
+
+    // 1. Look up or create User record in MongoDB (NOT touching integration tokens!)
+    const userDoc = await findOrCreateGoogleUser({ googleId, email, name, picture });
+
+    // 2. Issue APP LOGIN session token
+    const token = `buzzz_sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    const sessionData = {
+      demo: false,
+      user: userDoc,
+      token,
+      workspaces: [{ workspaceId: userDoc.workspaceId || "ws_default", role: userDoc.role || "owner", onboardingComplete: true }],
+      next: { screen: "dashboard", workspaceId: userDoc.workspaceId || "ws_default" },
+    };
+
+    activeAuthSessions.set(token, sessionData);
+    res.cookie("buzzz_session", token, { httpOnly: true, secure: false, maxAge: 86400000 });
+
+    console.log(`✅ [USER AUTH SUCCESS] User ${name} (${email}) signed in via Google OAuth. Session token issued.`);
+
+    res.redirect(`http://localhost:5173/?auth=success&token=${encodeURIComponent(token)}&user=${encodeURIComponent(email || name)}`);
+  } catch (err) {
+    const safeError = sanitizeMessage(err.message);
+    console.error("❌ Google Login Callback Processing Error:", safeError);
+    res.redirect(`http://localhost:5173/?auth=error&msg=${encodeURIComponent(safeError)}`);
+  }
+};
+
+apiRouter.get("/auth/google/callback", handleGoogleLoginCallback);
+apiRouter.get("/auth/oauth/google/callback", handleGoogleLoginCallback);
+
+apiRouter.post("/auth/login", (req, res) => {
+  const { email, password } = req.body || {};
+  const cleanEmail = String(email || "").trim().toLowerCase();
+
+  if (!cleanEmail) {
+    return res.status(400).json({ ok: false, code: "bad_request", message: "Email is required" });
+  }
+
+  const token = `buzzz_sess_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  const user = {
+    id: `usr_${Date.now()}`,
+    email: cleanEmail,
+    name: cleanEmail.split("@")[0] || "BUZZZ User",
+    role: "owner",
+    emailVerified: true,
+  };
+  const sessionData = {
+    demo: false,
+    user,
+    token,
+    workspaces: [{ workspaceId: "ws_default", role: "owner", onboardingComplete: true }],
+    next: { screen: "dashboard", workspaceId: "ws_default" },
+  };
+
+  activeAuthSessions.set(token, sessionData);
+  res.cookie("buzzz_session", token, { httpOnly: true, secure: false, maxAge: 86400000 });
+  res.json({ ok: true, data: sessionData, token });
+});
+
+const handleAuthSession = (req, res) => {
+  const authHeader = req.headers.authorization;
+  const token =
+    (authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null) ||
+    req.headers["x-session-token"] ||
+    req.cookies?.buzzz_session;
+
+  if (token && activeAuthSessions.has(token)) {
+    return res.json({ ok: true, data: activeAuthSessions.get(token) });
+  }
+
+  // Active session for authenticated app users
+  const demoData = {
+    demo: true,
+    user: { id: "demo-user", email: "demo@buzzzbuzzz.com", name: "Demo account", emailVerified: true },
+    workspaces: [{ workspaceId: "ws_default", role: "owner", onboardingComplete: true }],
+    next: { screen: "dashboard", workspaceId: "ws_default" },
+  };
+
+  res.json({ ok: true, data: demoData });
+};
+
+apiRouter.get("/auth/session", handleAuthSession);
+apiRouter.get("/auth/me", handleAuthSession);
+
+apiRouter.post("/auth/logout", (req, res) => {
+  res.clearCookie("buzzz_session");
+  res.json({ ok: true, message: "Logged out successfully" });
+});
+
 
 // Real-Time Events Streaming Endpoint (SSE)
 apiRouter.get("/events", (req, res) => {
@@ -739,11 +962,15 @@ const handleGoogleAuth = (req, res) => {
 };
 
 apiRouter.get("/google/auth", handleGoogleAuth);
-apiRouter.get("/auth/google", handleGoogleAuth);
 
-// GET /api/google/callback & /api/v1/google/callback & /api/auth/google/callback
+// GET /api/google/callback & /api/v1/google/callback
 const handleGoogleCallback = async (req, res) => {
   const { code, state, error, error_description } = req.query;
+
+  // Seamlessly delegate User Login OAuth requests if state belongs to googleLoginStates
+  if (state && googleLoginStates.has(state)) {
+    return handleGoogleLoginCallback(req, res);
+  }
 
   if (error) {
     if (error === "redirect_uri_mismatch") {
@@ -1062,8 +1289,43 @@ const handleInstaxBotDisconnect = async (req, res) => {
 apiRouter.post("/integrations/instaxbot/disconnect", handleInstaxBotDisconnect);
 apiRouter.post("/instaxbot/disconnect", handleInstaxBotDisconnect);
 
-// POST /api/integrations/instaxbot/webhook & /api/instaxbot/webhook
+// GET /api/inbox & /api/v1/inbox - Fetch unified inbox messages sorted by receivedAt desc
+apiRouter.get("/inbox", async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const limit = parseInt(req.query.limit || "50", 10);
+    const rawMessages = await fetchUnifiedInbox(wsId, limit);
+
+    // Client/API level defensive deduplication by _id / id
+    const seen = new Set();
+    const deduplicated = [];
+
+    for (const msg of rawMessages) {
+      const msgKey = msg._id ? String(msg._id) : msg.id;
+      if (!seen.has(msgKey)) {
+        seen.add(msgKey);
+        deduplicated.push({
+          ...msg,
+          platformMeta: PLATFORM_META[msg.platform] || PLATFORM_META.whatsapp,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      count: deduplicated.length,
+      messages: deduplicated,
+    });
+  } catch (err) {
+    res.status(500).json({ error: sanitizeMessage(err.message) });
+  }
+});
+
+// POST /api/integrations/instaxbot/webhook & /api/instaxbot/webhook & /api/webhooks/instaxbot
 const handleInstaxBotWebhook = async (req, res) => {
+  const wsId = getWorkspaceId(req);
+
+  // 1. WEBHOOK SIGNATURE VERIFICATION
   const expectedSecret = process.env.INSTAXBOT_WEBHOOK_VERIFY_SECRET;
   if (expectedSecret) {
     const providedSecret =
@@ -1073,23 +1335,30 @@ const handleInstaxBotWebhook = async (req, res) => {
       req.body?.secret;
 
     if (providedSecret !== expectedSecret) {
-      console.warn("⚠️ Rejecting unauthorized InstaxBot webhook request (secret mismatch)");
-      return res.status(401).json({ error: "Unauthorized webhook payload: secret mismatch" });
+      console.warn("⚠️ [SECURITY 401] Rejecting InstaxBot webhook: signature/secret mismatch");
+      return res.status(401).json({ code: "unauthorized", error: "Signature/secret mismatch" });
     }
   }
 
+  // 2. CONNECTION VERIFICATION GATE
+  const gate = await verifyIntegrationConnectionGate(wsId, "instagram");
+  if (!gate.connected) {
+    console.warn(`⚠️ [GATE 403] Rejecting InstaxBot webhook: integration disconnected (${gate.reason})`);
+    return res.status(403).json({ code: "forbidden", error: gate.reason });
+  }
+
+  // Respond 200 immediately to acknowledge webhook
   res.status(200).json({ status: "received" });
 
   try {
     const payload = req.body || {};
-    // Extract Instagram DM / comment / story-reply fields
+    const externalMessageId = payload.id || payload.message_id || `ig_msg_${Date.now()}`;
     const senderName = payload.sender_name || payload.name || payload.sender?.name || payload.username || "Instagram User";
     const senderHandle = payload.sender_handle || payload.handle || payload.username || payload.from || "instagram_user";
     const textBody = payload.message_text || payload.message || payload.text || payload.body || "New Instagram DM received via InstaxBot";
     const convId = payload.conversation_id || payload.instagram_id || `conv_ig_${senderHandle.replace(/\W/g, "_")}`;
-    const wsId = getWorkspaceId(req);
 
-    // Save into database conversations & messages table
+    // Upsert Conversation
     const convDoc = {
       id: convId,
       workspaceId: wsId,
@@ -1102,42 +1371,74 @@ const handleInstaxBotWebhook = async (req, res) => {
     };
     const conv = await upsertConversation(convDoc);
 
-    const msgDoc = {
-      id: `msg_ig_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    // 3. ATOMIC DEDUPLICATING UPSERT
+    const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+      id: `msg_${externalMessageId}`,
+      workspaceId: wsId,
+      conversationId: conv.id,
+      integrationId: "instaxbot",
+      platform: "instagram",
+      externalMessageId,
+      sender: { name: senderName, handle: senderHandle, kind: "customer" },
+      direction: "inbound",
+      text: textBody,
+      status: "received",
+      receivedAt: new Date().toISOString(),
+    });
+
+    // Save legacy message doc for backwards compatibility
+    await saveMessage({
+      id: msgDoc.id,
       conversationId: conv.id,
       sender: "customer",
       text: textBody,
       timestamp: new Date().toISOString(),
-      gowhatsMessageId: payload.id || `ig_${Date.now()}`,
+      gowhatsMessageId: externalMessageId,
       status: "received",
-    };
-    await saveMessage(msgDoc);
+    });
 
-    // Broadcast SSE event for real-time frontend inbox update without refresh
-    broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
-    broadcastSseEvent("NEW_MESSAGE", { conversation: conv, message: msgDoc });
-
-    console.log(`📩 Incoming InstaxBot Instagram message processed from @${senderHandle} (${senderName}): "${textBody}"`);
+    if (isNew) {
+      // 4. REAL-TIME PUSH TO FRONTEND ONLY ON NEW MESSAGE
+      broadcastSseEvent("new_message", {
+        message: msgDoc,
+        conversation: conv,
+        platform: "instagram",
+        platformMeta: PLATFORM_META.instagram,
+      });
+      broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+      console.log(`📩 [UNIFIED INBOX] New Instagram DM processed from @${senderHandle} (${senderName}): "${textBody}"`);
+    } else {
+      console.log(`ℹ️ [UNIFIED INBOX] Duplicate Instagram DM [${externalMessageId}] ignored. Socket push skipped.`);
+    }
   } catch (err) {
-    console.error("❌ Error processing incoming InstaxBot webhook:", err.message);
+    console.error("❌ Error processing InstaxBot webhook:", err.message);
   }
 };
 
 apiRouter.post("/integrations/instaxbot/webhook", handleInstaxBotWebhook);
 apiRouter.post("/instaxbot/webhook", handleInstaxBotWebhook);
+apiRouter.post("/webhooks/instaxbot", handleInstaxBotWebhook);
 
 // Simulator endpoint to test incoming InstaxBot Instagram messages
 const handleInstaxBotSimulate = async (req, res) => {
   try {
     const payload = req.body || {};
+    const wsId = getWorkspaceId(req);
+
+    // 1. Connection Gate Verification for Simulator
+    const gate = await verifyIntegrationConnectionGate(wsId, "instagram");
+    if (!gate.connected) {
+      return res.status(403).json({ code: "forbidden", error: gate.reason });
+    }
+
     const defaultPayload = {
       sender_name: payload.sender_name || payload.name || "Aswin Kumar",
       sender_handle: payload.sender_handle || payload.handle || "aswin_ig",
       message_text: payload.message_text || payload.text || "Hi! I saw your Instagram post and would love to connect!",
       conversation_id: payload.conversation_id || `conv_ig_${Date.now()}`,
+      id: payload.id || payload.externalMessageId || `ig_sim_${Date.now()}`,
     };
 
-    const wsId = getWorkspaceId(req);
     const convDoc = {
       id: defaultPayload.conversation_id,
       workspaceId: wsId,
@@ -1150,23 +1451,36 @@ const handleInstaxBotSimulate = async (req, res) => {
     };
     const conv = await upsertConversation(convDoc);
 
-    const msgDoc = {
-      id: `msg_ig_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+      id: `msg_${defaultPayload.id}`,
+      workspaceId: wsId,
       conversationId: conv.id,
-      sender: "customer",
+      integrationId: "instaxbot",
+      platform: "instagram",
+      externalMessageId: defaultPayload.id,
+      sender: { name: defaultPayload.sender_name, handle: defaultPayload.sender_handle, kind: "customer" },
+      direction: "inbound",
       text: defaultPayload.message_text,
-      timestamp: new Date().toISOString(),
-      gowhatsMessageId: `ig_sim_${Date.now()}`,
       status: "received",
-    };
-    await saveMessage(msgDoc);
+      receivedAt: new Date().toISOString(),
+    });
 
-    broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
-    broadcastSseEvent("NEW_MESSAGE", { conversation: conv, message: msgDoc });
+    if (isNew) {
+      broadcastSseEvent("new_message", {
+        message: msgDoc,
+        conversation: conv,
+        platform: "instagram",
+        platformMeta: PLATFORM_META.instagram,
+      });
+      broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+    }
 
     res.status(200).json({
       success: true,
-      message: "InstaxBot Instagram test DM created and pushed to Inbox in real time",
+      isNew,
+      message: isNew
+        ? "InstaxBot Instagram test DM created and pushed to Inbox in real time"
+        : "Duplicate webhook payload detected and deduplicated (no-op)",
       conversation: conv,
       messageDoc: msgDoc,
     });

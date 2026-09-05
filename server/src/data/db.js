@@ -39,6 +39,7 @@ export const db = {
   linkedinAccounts: [],
   googleAccounts: [],
   instaxbotAccounts: [],
+  unifiedMessages: [],
 };
 
 // ==============================================================================
@@ -71,6 +72,45 @@ const MessageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// ==============================================================================
+// UNIFIED MULTI-CHANNEL MESSAGE SCHEMA & DEDUPLICATION INDEX
+// ==============================================================================
+const UnifiedMessageSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    workspaceId: { type: String, default: "ws_default", index: true },
+    conversationId: { type: String, required: true, index: true },
+    integrationId: { type: String, default: "default" },
+    platform: {
+      type: String,
+      required: true,
+      enum: ["gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook"],
+      index: true,
+    },
+    externalMessageId: { type: String, required: true, index: true },
+    sender: {
+      type: {
+        name: { type: String, default: "Customer" },
+        handle: { type: String, default: "" },
+        email: { type: String, default: "" },
+        avatar: { type: String, default: "" },
+        kind: { type: String, enum: ["customer", "agent", "system"], default: "customer" },
+      },
+      default: {},
+    },
+    direction: { type: String, enum: ["inbound", "outbound"], default: "inbound" },
+    text: { type: String, required: true },
+    mediaUrl: { type: String, default: "" },
+    status: { type: String, enum: ["received", "sent", "delivered", "read", "failed"], default: "received" },
+    receivedAt: { type: Date, default: Date.now, index: true },
+  },
+  { timestamps: true }
+);
+
+// Compound Unique Index: Prevents duplicates even if the same webhook fires multiple times
+UnifiedMessageSchema.index({ platform: 1, externalMessageId: 1 }, { unique: true });
+UnifiedMessageSchema.index({ workspaceId: 1, conversationId: 1, receivedAt: -1 });
 
 const LinkedInAccountSchema = new mongoose.Schema(
   {
@@ -144,12 +184,65 @@ const ContactSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const UserSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    email: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true },
+    picture: { type: String, default: "" },
+    googleId: { type: String, index: true },
+    role: { type: String, default: "owner" },
+    workspaceId: { type: String, default: "ws_default" },
+    emailVerified: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
+export const UnifiedMessageModel = mongoose.models.UnifiedMessage || mongoose.model("UnifiedMessage", UnifiedMessageSchema);
 export const LinkedInAccountModel = mongoose.models.LinkedInAccount || mongoose.model("LinkedInAccount", LinkedInAccountSchema);
 export const GoogleAccountModel = mongoose.models.GoogleAccount || mongoose.model("GoogleAccount", GoogleAccountSchema);
 export const InstaxBotAccountModel = mongoose.models.InstaxBotAccount || mongoose.model("InstaxBotAccount", InstaxBotAccountSchema);
 export const ContactModel = mongoose.models.Contact || mongoose.model("Contact", ContactSchema);
+export const UserModel = mongoose.models.User || mongoose.model("User", UserSchema);
+
+export const findOrCreateGoogleUser = async ({ googleId, email, name, picture }) => {
+  const cleanEmail = String(email).toLowerCase().trim();
+  const payload = {
+    id: `usr_g_${googleId || Date.now()}`,
+    email: cleanEmail,
+    name: name || cleanEmail.split("@")[0] || "User",
+    picture: picture || "",
+    googleId: googleId || "",
+    role: "owner",
+    workspaceId: "ws_default",
+    emailVerified: true,
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const existing = await UserModel.findOne({ email: cleanEmail });
+    if (existing) {
+      existing.name = name || existing.name;
+      existing.picture = picture || existing.picture;
+      existing.googleId = googleId || existing.googleId;
+      await existing.save();
+      return existing.toObject();
+    }
+    const created = await UserModel.create(payload);
+    return created.toObject();
+  }
+
+  if (!db.users) db.users = [];
+  const existingIdx = db.users.findIndex((u) => u.email === cleanEmail);
+  if (existingIdx !== -1) {
+    db.users[existingIdx] = { ...db.users[existingIdx], name, picture, googleId };
+    return db.users[existingIdx];
+  } else {
+    db.users.unshift(payload);
+    return payload;
+  }
+};
 
 // Initial seed contact record (c1) to keep existing CONVS references valid
 export const seedContact = {
@@ -517,4 +610,126 @@ export const deleteContactById = async (id) => {
   }
   db.contacts = db.contacts.filter((c) => c.id !== id);
   return { deletedCount: 1 };
+};
+
+// ==============================================================================
+// UNIFIED INBOX & INTEGRATION CONNECTION GATE FUNCTIONS
+// ==============================================================================
+
+/**
+ * Connection Verification Gate:
+ * Verifies that the platform integration has status: 'connected' AND valid tokens/keys stored
+ * BEFORE accepting/processing webhooks into the unified inbox.
+ */
+export const verifyIntegrationConnectionGate = async (workspaceId = "ws_default", platform) => {
+  if (!platform) return { connected: false, reason: "Platform undefined" };
+
+  const normPlatform = String(platform).toLowerCase();
+
+  if (normPlatform === "instagram" || normPlatform === "instaxbot") {
+    const config = await getInstaxBotConfig(workspaceId);
+    if (config && config.apiKey) {
+      return { connected: true, integrationId: "instaxbot", config };
+    }
+    return { connected: false, reason: "InstaxBot integration is disconnected or API key is missing" };
+  }
+
+  if (normPlatform === "gmail" || normPlatform === "google") {
+    const account = await getGoogleAccount(workspaceId);
+    if (account && account.accessToken) {
+      return { connected: true, integrationId: "gmail", account };
+    }
+    return { connected: false, reason: "Gmail integration is disconnected or OAuth token is missing" };
+  }
+
+  if (normPlatform === "linkedin") {
+    const account = await getLinkedInAccount(workspaceId);
+    if (account && account.accessToken) {
+      return { connected: true, integrationId: "linkedin", account };
+    }
+    return { connected: false, reason: "LinkedIn integration is disconnected or OAuth token is missing" };
+  }
+
+  if (normPlatform === "whatsapp" || normPlatform === "gowhats" || normPlatform === "channelbot") {
+    return { connected: true, integrationId: "gowhats" };
+  }
+
+  if (normPlatform === "telegram" || normPlatform === "facebook" || normPlatform === "custom_webhook") {
+    return { connected: true, integrationId: normPlatform };
+  }
+
+  return { connected: false, reason: `Platform ${platform} not recognized or disconnected` };
+};
+
+/**
+ * Deduplicating Upsert Function for Unified Messages:
+ * Uses findOneAndUpdate with { platform, externalMessageId } + { $setOnInsert: payload } & { upsert: true }
+ * Wraps E11000 duplicate key error in a safe no-op.
+ * Returns { doc, isNew: boolean } so socket pushes only fire on newly created messages.
+ */
+export const saveUnifiedMessage = async (data) => {
+  const payload = {
+    id: data.id || `msg_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+    workspaceId: data.workspaceId || "ws_default",
+    conversationId: data.conversationId,
+    integrationId: data.integrationId || "default",
+    platform: data.platform,
+    externalMessageId: data.externalMessageId || data.id,
+    sender: data.sender || { name: "Customer", kind: "customer" },
+    direction: data.direction || "inbound",
+    text: data.text || "",
+    mediaUrl: data.mediaUrl || "",
+    status: data.status || "received",
+    receivedAt: data.receivedAt ? new Date(data.receivedAt) : new Date(),
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    try {
+      const result = await UnifiedMessageModel.findOneAndUpdate(
+        { platform: payload.platform, externalMessageId: payload.externalMessageId },
+        { $setOnInsert: payload },
+        { upsert: true, new: true, rawResult: true }
+      );
+
+      const isNew = !result.lastErrorObject?.updatedExisting;
+      const rawDoc = result.value || result;
+      const doc = rawDoc ? (typeof rawDoc.toObject === "function" ? rawDoc.toObject() : rawDoc) : payload;
+      return { doc, isNew };
+    } catch (err) {
+      if (err.code === 11000) {
+        console.log(`ℹ️ [DEDUPLICATION GATE] Caught duplicate message [${payload.platform}:${payload.externalMessageId}]. Safe no-op.`);
+        const existing = await UnifiedMessageModel.findOne({
+          platform: payload.platform,
+          externalMessageId: payload.externalMessageId,
+        }).lean();
+        return { doc: existing || payload, isNew: false };
+      }
+      throw err;
+    }
+  }
+
+  // Fallback in-memory deduplication
+  const existingIdx = db.unifiedMessages.findIndex(
+    (m) => m.platform === payload.platform && m.externalMessageId === payload.externalMessageId
+  );
+  if (existingIdx !== -1) {
+    console.log(`ℹ️ [MEMORY DEDUPLICATION] Caught duplicate message [${payload.platform}:${payload.externalMessageId}]. Safe no-op.`);
+    return { doc: db.unifiedMessages[existingIdx], isNew: false };
+  } else {
+    db.unifiedMessages.unshift(payload);
+    return { doc: payload, isNew: true };
+  }
+};
+
+/**
+ * Fetch unified inbox messages sorted by receivedAt desc
+ */
+export const fetchUnifiedInbox = async (workspaceId = "ws_default", limit = 50) => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await UnifiedMessageModel.find({ workspaceId }).sort({ receivedAt: -1 }).limit(limit).lean();
+  }
+  return [...db.unifiedMessages]
+    .filter((m) => m.workspaceId === workspaceId || !m.workspaceId)
+    .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt))
+    .slice(0, limit);
 };
