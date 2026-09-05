@@ -91,11 +91,25 @@ app.use((err, req, res, _next) => {
 // Initialize DB and Start Server
 const startServer = async () => {
   await connectDB();
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`=======================================================`);
     console.log(`🚀 BUZZZ Express Server running on http://localhost:${PORT}`);
     console.log(`📡 API Base URL: http://localhost:${PORT}/api/v1`);
     console.log(`=======================================================`);
+  });
+
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`\n🚨 PORT COLLISION ERROR (EADDRINUSE):`);
+      console.error(`Port ${PORT} is already in use by another running process!`);
+      console.error(`To resolve this port conflict:`);
+      console.error(`  1. Kill the process running on port ${PORT}: npx kill-port ${PORT} (or taskkill /F /PID <pid> on Windows)`);
+      console.error(`  2. Or update the PORT variable in server/.env (e.g., PORT=5001)`);
+      process.exit(1);
+    } else {
+      console.error("❌ Unexpected server startup error:", err);
+      process.exit(1);
+    }
   });
 };
 

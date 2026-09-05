@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, createContext, useContext } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from "react";
 import { api } from "./lib/api-client.js";
 import {
   Inbox, Users, Bot, Workflow, Megaphone, Phone, BookOpen, BarChart3, Plug, Settings,
@@ -140,8 +140,22 @@ function Brand({ id, size = 16 }) {
       return tile("#128C7E", <text x="12" y="16.2" textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#fff" fontFamily="Inter,system-ui">GW</text>);
     case "instaxbot":
       return tile(
-        <><defs><linearGradient id="ixg" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stopColor="#F77737"/><stop offset="100%" stopColor="#833AB4"/></linearGradient></defs><rect width="24" height="24" rx="5.5" fill="url(#ixg)"/></>,
-        <text x="12" y="16.2" textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#fff" fontFamily="Inter,system-ui">IX</text>);
+        <>
+          <defs>
+            <linearGradient id="ixg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#FF7A00" />
+              <stop offset="100%" stopColor="#E63800" />
+            </linearGradient>
+          </defs>
+          <rect width="24" height="24" rx="5.5" fill="url(#ixg)" />
+        </>,
+        <g fill="#FFFFFF" transform="translate(1, 1)">
+          <path d="M5.5 6C5.5 4.89543 6.39543 4 7.5 4H16.5C17.6046 4 18.5 4.89543 18.5 6V13C18.5 14.1046 17.6046 15 16.5 15H10.5L7.2 17.5V15H7.5C6.39543 15 5.5 14.1046 5.5 13V6Z" />
+          <rect x="3.8" y="6.2" width="4.5" height="1.5" rx="0.75" fill="url(#ixg)" />
+          <rect x="2.8" y="9.2" width="5.5" height="1.5" rx="0.75" fill="url(#ixg)" />
+          <rect x="4.8" y="12.2" width="3.5" height="1.5" rx="0.75" fill="url(#ixg)" />
+        </g>
+      );
     case "hubspot":
       return tile("#FF7A59", <g fill="#fff"><circle cx="13.4" cy="13.2" r="3.1" fill="none" stroke="#fff" strokeWidth="1.8"/><rect x="12.6" y="5.5" width="1.7" height="3.6" rx="0.8"/><circle cx="13.4" cy="5.6" r="1.2"/><rect x="6.3" y="6.5" width="1.7" height="1.7" rx="0.5" transform="rotate(-40 7.1 7.3)"/><path d="m7.5 8 3.5 3-1.1 1.3-3.6-3z"/><rect x="8.2" y="16.4" width="1.7" height="1.7" rx="0.5" transform="rotate(45 9 17.2)"/><path d="m10.9 14.9-1.9 2 1.2 1.2 2-1.9z"/></g>);
     case "salesforce":
@@ -221,12 +235,7 @@ const PIPELINES_INIT = [
     { id: "s7", name: "Won", color: "#ef4444" },
   ] },
 ];
-const TICKETS_INIT = [
-  { id: "T-1042", s: "WMS sync failure (P1)", who: "Northbridge Logistics", st: "In progress", pri: "Critical", sla: "2h 12m left" },
-  { id: "T-1041", s: "Duplicate billing", who: "Orchid Hospitality", st: "Pending approval", pri: "Critical", sla: "On track" },
-  { id: "T-1039", s: "Refund request", who: "Fatima Rashid", st: "Resolved", pri: "Medium", sla: "Met" },
-  { id: "T-1036", s: "Onboarding question", who: "Halcyon Interiors", st: "Open", pri: "Low", sla: "On track" },
-];
+const TICKETS_INIT = []; // TODO_BACKEND
 
 const CONTACTS = [
   {
@@ -241,119 +250,26 @@ const CONTACTS = [
       "Company has around 120 employees across 14 stores",
       "Wants onboarding completed before Diwali season",
     ],
-    aiSummary: "Contacted 3 times in the last 7 days about the Enterprise plan. High purchase intent. Asked about annual pricing and implementation timeline. A demo is booked and a proposal was opened twice. Recommended follow up within 24 hours.",
+    aiSummary: "Contacted 3 times in the last 7 days about the Enterprise plan. High purchase intent. Recommended follow up within 24 hours.",
     engagement: 92,
-  },
-  {
-    id: "c2", name: "Sarah Tan", company: "Lumen Beauty Co", title: "Founder",
-    location: "Singapore, SG", email: "sarah@lumenbeauty.sg", phone: "+65 8123 5540",
-    stage: "Qualified Lead", score: 74, value: "$6,200", ltv: "$6,200", churn: "Low",
-    sentiment: "Positive", intent: "Product inquiry", channels: ["instagram", "whatsapp"],
-    tags: ["SMB", "Skincare", "Instagram"],
-    memory: ["Found us through an Instagram reel", "Interested in the Growth plan", "Runs a 6 person team"],
-    aiSummary: "Inbound from Instagram DM. Asked about product availability and pricing for the Growth plan. Qualified by the Sales Agent with budget confirmed above $5,000. Meeting suggested but not yet booked.",
-    engagement: 78,
-  },
-  {
-    id: "c3", name: "Daniel Wong", company: "Northbridge Logistics", title: "IT Director",
-    location: "Kuala Lumpur, MY", email: "d.wong@northbridge.com.my", phone: "+60 12 330 8821",
-    stage: "Customer", score: 91, value: "$42,000", ltv: "$96,500", churn: "Medium",
-    sentiment: "Negative", intent: "Support", channels: ["email", "voice"],
-    tags: ["VIP", "Renewal Q4", "SLA"],
-    memory: ["Renewal due in November", "Escalations must go to the enterprise support team", "Dislikes phone calls, prefers email"],
-    aiSummary: "Existing VIP customer reporting a sync failure between warehouse systems. Frustration detected in the last email thread. SLA requires first response within 5 minutes. Escalated to human support with a full handoff summary.",
-    engagement: 64,
-  },
-  {
-    id: "c4", name: "Priya Nair", company: "Aster Dental Clinics", title: "Practice Manager",
-    location: "Kochi, IN", email: "priya@asterdental.in", phone: "+91 90201 44567",
-    stage: "New Lead", score: 58, value: "$3,800", ltv: "$0", churn: "Unknown",
-    sentiment: "Neutral", intent: "Appointment", channels: ["facebook", "sms"],
-    tags: ["Healthcare", "Appointment"],
-    memory: ["Asked whether the platform supports appointment reminders in Malayalam"],
-    aiSummary: "New lead from a Facebook comment thread. Wants automated appointment reminders for 3 clinic locations. The Appointment Agent collected clinic count and preferred timing. Budget not yet confirmed.",
-    engagement: 45,
-  },
-  {
-    id: "c5", name: "Michael Chen", company: "Halcyon Ventures", title: "Partner",
-    location: "Hong Kong, HK", email: "mchen@halcyon.vc", phone: "+852 6301 9982",
-    stage: "Opportunity", score: 91, value: "$54,000", ltv: "$54,000", churn: "Low",
-    sentiment: "Positive", intent: "Purchase", channels: ["voice", "whatsapp", "linkedin"],
-    tags: ["High Intent", "VIP", "Enterprise"],
-    memory: ["Initial contact was an inbound call handled by MrAssistant.ai", "Wants a premium package for 3 portfolio companies", "Requested follow up on WhatsApp, not email"],
-    aiSummary: "Inbound voice call handled end to end by the MrAssistant.ai voice agent. Asked about the premium package for multiple companies. Intent classified as Purchase with lead score 91. Opportunity created automatically and a WhatsApp follow up was sent and answered.",
-    engagement: 88,
-  },
-  {
-    id: "c6", name: "Fatima Al Rashid", company: "Dune Interiors", title: "Marketing Lead",
-    location: "Dubai, AE", email: "fatima@duneinteriors.ae", phone: "+971 50 442 8810",
-    stage: "Nurture", score: 39, value: "$2,100", ltv: "$0", churn: "Unknown",
-    sentiment: "Neutral", intent: "Pricing", channels: ["email"],
-    tags: ["Nurture", "Pricing"],
-    memory: ["Asked for pricing then went quiet after 2 follow ups", "Moved to nurture sequence on 9 Aug"],
-    aiSummary: "Requested pricing by email, received it, then stopped responding. Two AI follow ups were sent per policy. Now in the nurture sequence with a monthly check in cadence.",
-    engagement: 22,
-  },
-  {
-    id: "c7", name: "Tom Okafor", company: "Kite Analytics", title: "COO",
-    location: "Lagos, NG", email: "tom@kiteanalytics.io", phone: "+234 803 771 2210",
-    stage: "Qualified Lead", score: 69, value: "$9,700", ltv: "$0", churn: "Unknown",
-    sentiment: "Urgent", intent: "Sales", channels: ["telegram", "email"],
-    tags: ["Urgent", "Data"],
-    memory: ["Needs a solution live before their board meeting on 28 Aug"],
-    aiSummary: "Telegram inbound with a hard deadline. Qualified with confirmed budget. Wants a technical call this week. Priority raised to High by the smart priority engine.",
-    engagement: 71,
-  },
-  {
-    id: "c8", name: "Grace Lim", company: "Orchid Hospitality", title: "GM",
-    location: "Penang, MY", email: "grace@orchidhosp.com", phone: "+60 16 224 7789",
-    stage: "Customer", score: 82, value: "$28,000", ltv: "$61,200", churn: "High",
-    sentiment: "Angry", intent: "Complaint", channels: ["whatsapp", "google"],
-    tags: ["VIP", "Churn Risk", "Complaint"],
-    memory: ["Left a 2 star Google review on 12 Aug", "Retention Agent opened a save play on 13 Aug"],
-    aiSummary: "VIP customer with an unresolved billing complaint and a negative public review. Churn risk flagged High by the Retention Agent. Human ownership assigned to the support manager with a recommended goodwill credit pending approval.",
-    engagement: 51,
-  },
-  {
-    id: "c9", name: "David Miller", company: "Apex Capital Partners", title: "Managing Director",
-    location: "London, UK", email: "david.miller@apexcapital.co.uk", phone: "+44 20 7946 0912",
-    stage: "Opportunity", score: 94, value: "$36,000", ltv: "$36,000", churn: "Low",
-    sentiment: "Positive", intent: "Purchase", channels: ["linkedin", "email"],
-    tags: ["LinkedIn Lead", "VIP", "Enterprise"],
-    memory: ["Connected via LinkedIn InMail", "Looking for multi-channel AI automation for fintech portfolio"],
-    aiSummary: "Inbound via LinkedIn message. Highly interested in AI automation & multi-channel unified inbox for portfolio companies. Requested an executive demo this week.",
-    engagement: 95,
-  },
-  {
-    id: "c10", name: "Deepa Raj", company: "Lumen Beauty Co", title: "Social Lead",
-    location: "Chennai, IN", email: "deepa@lumenbeauty.in", phone: "+91 98410 55401",
-    stage: "Qualified Lead", score: 78, value: "$7,500", ltv: "$7,500", churn: "Low",
-    sentiment: "Positive", intent: "Product inquiry", channels: ["channelbot", "youtube"],
-    tags: ["ChannelBot.in", "Tamil", "SMB"],
-    memory: ["Inquired via ChannelBot.in about Tamil language support"],
-    aiSummary: "Inbound via ChannelBot.in asking about Tamil multi-language support. High engagement.",
-    engagement: 82,
-  },
-  {
-    id: "c11", name: "Kavitha S", company: "Aster Dental", title: "Operations Manager",
-    location: "Kochi, IN", email: "kavitha@asterdental.in", phone: "+91 90200 99881",
-    stage: "New Lead", score: 62, value: "$4,200", ltv: "$0", churn: "Unknown",
-    sentiment: "Negative", intent: "Support", channels: ["channelbot", "youtube"],
-    tags: ["ChannelBot.in", "Escalated"],
-    memory: ["Reported contact sync issue via ChannelBot.in"],
-    aiSummary: "Inbound support request via ChannelBot.in. Escalated to support team.",
-    engagement: 55,
+    owner: "Rina Sato",
+    source: "Website",
+    archived: false,
+    notes: [],
+    cf: {},
+    created: "2026-07-10",
+    lastContact: 2,
   },
 ];
 CONTACTS.forEach((c, i) => {
   c.owner = c.owner || TEAM_USERS[i % 4];
   c.source = c.source || LEAD_SOURCES[i % LEAD_SOURCES.length];
   c.status = c.status || (c.stage === "Won" ? "Converted" : c.score >= 75 ? "Qualified" : c.score >= 50 ? "Working" : "New");
-  c.archived = false;
+  c.archived = !!c.archived;
   c.notes = c.notes || [];
   c.cf = c.cf || {};
-  c.created = c.created || "2026-07-" + String(10 + (i % 18)).padStart(2, "0");
-  c.lastContact = c.lastContact || (i % 3 === 0 ? 2 : i % 3 === 1 ? 11 : 38);   // days ago
+  c.created = c.created || "2026-07-10";
+  c.lastContact = c.lastContact || 0;
   c.phone = c.phone || "";
   c.email = c.email || "";
 });
@@ -500,15 +416,7 @@ CONVS.forEach((c) => {
 
 const STAGES = ["New Lead", "Contacted", "Qualified", "Demo Booked", "Proposal Sent", "Negotiation", "Won"];
 
-const DEALS = [
-  { id: "d1", name: "Vertex Retail · Enterprise", contactId: "c1", value: 18400, stage: "Demo Booked", prob: 65, close: "12 Sep", owner: "AI + Rina S.", next: "Customer opened the proposal twice but has not replied for 3 days. Send a follow up or initiate a voice call through MrAssistant.ai." },
-  { id: "d2", name: "Lumen Beauty · Growth", contactId: "c2", value: 6200, stage: "Qualified", prob: 45, close: "30 Aug", owner: "Sales Agent (AI)", next: "Budget confirmed. Book the automation builder demo she asked for." },
-  { id: "d3", name: "Halcyon · Premium multi brand", contactId: "c5", value: 54000, stage: "Demo Booked", prob: 70, close: "5 Sep", owner: "AI + Ken W.", next: "Prepare a briefing for Friday's demo. AI has drafted it in the meeting notes." },
-  { id: "d4", name: "Kite Analytics · Growth+", contactId: "c7", value: 9700, stage: "Contacted", prob: 35, close: "26 Aug", owner: "Unassigned", next: "Hard deadline 28 Aug. Assign a solutions engineer today." },
-  { id: "d5", name: "Aster Dental · Starter x3", contactId: "c4", value: 3800, stage: "New Lead", prob: 20, close: "20 Sep", owner: "Appointment Agent (AI)", next: "Confirm budget after the walkthrough on Tuesday." },
-  { id: "d6", name: "Northbridge · Renewal + expansion", contactId: "c3", value: 42000, stage: "Negotiation", prob: 55, close: "15 Nov", owner: "Maya O.", next: "Do not discuss renewal until the P1 incident is resolved. Retention play active." },
-  { id: "d7", name: "Orchid Hospitality · Renewal", contactId: "c8", value: 28000, stage: "Proposal Sent", prob: 40, close: "1 Oct", owner: "Ken W.", next: "Renewal at risk. Goodwill credit pending approval, personal call at 3pm today." },
-];
+const DEALS = []; // TODO_BACKEND
 
 /* ==================================================================== */
 /* DIGITAL WORKFORCE: governance engine                                  */
@@ -1104,40 +1012,16 @@ const APPT_STYLE = {
 const APPT_SOURCES = ["Manual", "Website", "WhatsApp", "Voice AI", "Chat AI", "Email", "SMS", "CRM", "Campaign", "API"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const LOCATIONS_INIT = [
-  { id: "L1", name: "Downtown branch", addr: "12 Marina Way", kind: "In person", rooms: ["Room A", "Room B"], hours: { 1: [9, 19], 2: [9, 19], 3: [9, 19], 4: [9, 19], 5: [9, 19], 6: [9, 17], 0: null } },
-  { id: "L2", name: "Eastside branch", addr: "88 Orchard Lane", kind: "In person", rooms: ["Room 1"], hours: { 1: [10, 20], 2: [10, 20], 3: [10, 20], 4: [10, 20], 5: [10, 20], 6: [10, 20], 0: [10, 16] } },
-  { id: "L3", name: "Online", addr: "Google Meet · Zoom", kind: "Video", rooms: [], hours: { 0: [8, 21], 1: [8, 21], 2: [8, 21], 3: [8, 21], 4: [8, 21], 5: [8, 21], 6: [8, 21] } },
-];
-const STAFF_INIT = [
-  { id: "st1", name: "Rina Sato", role: "Senior consultant", tz: "Asia/Singapore", services: ["sv1", "sv2", "sv3"], locations: ["L1", "L3"], hours: { 1: [9, 17], 2: [9, 17], 3: [9, 17], 4: [9, 17], 5: [9, 15], 6: null, 0: null }, breaks: [[13, 14]], off: [], capacity: 8, color: "#0ea5e9" },
-  { id: "st2", name: "Ken Watanabe", role: "Account director", tz: "Asia/Singapore", services: ["sv1", "sv3", "sv4"], locations: ["L1", "L2", "L3"], hours: { 1: [10, 18], 2: [10, 18], 3: [10, 18], 4: [10, 18], 5: [10, 18], 6: [10, 14], 0: null }, breaks: [[12, 13]], off: [], capacity: 6, color: "#8b5cf6" },
-  { id: "st3", name: "Maya Ortiz", role: "Support specialist", tz: "Asia/Singapore", services: ["sv2", "sv4"], locations: ["L2", "L3"], hours: { 1: [9, 18], 2: [9, 18], 3: null, 4: [9, 18], 5: [9, 18], 6: null, 0: null }, breaks: [[13, 14]], off: [], capacity: 10, color: "#10b981" },
-];
-const SERVICES_INIT = [
-  { id: "sv1", name: "Discovery call", dur: 30, price: 0, kind: "Video", buffBefore: 0, buffAfter: 10, staff: ["st1", "st2"], locations: ["L3"], approval: false, deposit: 0, policy: "Free to cancel up to 4 hours before.", desc: "Understand the requirement and qualify fit." },
-  { id: "sv2", name: "Consultation · 45 min", dur: 45, price: 60, kind: "In person", buffBefore: 5, buffAfter: 10, staff: ["st1", "st3"], locations: ["L1", "L2"], approval: false, deposit: 20, policy: "Cancel up to 24 hours before for a full refund.", desc: "Full consultation with a written summary." },
-  { id: "sv3", name: "Product demo · 60 min", dur: 60, price: 0, kind: "Video", buffBefore: 0, buffAfter: 15, staff: ["st1", "st2"], locations: ["L3"], approval: false, deposit: 0, policy: "Reschedule any time.", desc: "Live walkthrough tailored to the use case." },
-  { id: "sv4", name: "Onsite visit · 90 min", dur: 90, price: 150, kind: "In person", buffBefore: 15, buffAfter: 20, staff: ["st2", "st3"], locations: ["L1", "L2"], approval: true, deposit: 50, policy: "48 hour cancellation window; deposit is non refundable inside it.", desc: "We come to you. Requires manager approval." },
-];
+const LOCATIONS_INIT = []; // TODO_BACKEND
+const STAFF_INIT = []; // TODO_BACKEND
+const SERVICES_INIT = []; // TODO_BACKEND
 const BOOKING_RULES_INIT = {
   minNoticeH: 2, maxAdvanceD: 60, maxPerDay: 12, maxPerCustomer: 3, cancelWindowH: 24, rescheduleWindowH: 4,
   autoConfirm: true, slotStep: 15, tz: "Asia/Singapore (GMT+8)",
   reminders: [{ id: "r1", at: "On booking", ch: "whatsapp", on: true }, { id: "r2", at: "24 hours before", ch: "whatsapp", on: true }, { id: "r3", at: "2 hours before", ch: "sms", on: true }, { id: "r4", at: "After completion", ch: "whatsapp", on: false }],
 };
-const APPOINTMENTS_INIT = [
-  { id: "ap1", contactId: "c1", serviceId: "sv3", staffId: "st1", locationId: "L3", start: atDay(1, 11), durMin: 60, status: "Pending", source: "Voice AI", confirmChannel: "whatsapp", room: "", notes: [], cf: {}, title: "Product demo · 60 min" },
-  { id: "ap2", contactId: "c5", serviceId: "sv3", staffId: "st2", locationId: "L3", start: atDay(2, 10), durMin: 60, status: "Confirmed", source: "Voice AI", confirmChannel: "whatsapp", room: "", notes: [], cf: {}, title: "Premium multi brand demo" },
-  { id: "ap3", contactId: "c2", serviceId: "sv2", staffId: "st3", locationId: "L1", start: atDay(0, 14, 30), durMin: 45, status: "Pending", source: "Chat AI", confirmChannel: "instagram", room: "Room A", notes: [], cf: {}, title: "Automation builder walkthrough" },
-  { id: "ap4", contactId: "c4", serviceId: "sv1", staffId: "st1", locationId: "L3", start: atDay(0, 16), durMin: 30, status: "Confirmed", source: "Website", confirmChannel: "email", room: "", notes: [], cf: {}, title: "Discovery call" },
-  { id: "ap5", contactId: "c6", serviceId: "sv4", staffId: "st2", locationId: "L1", start: atDay(3, 9, 30), durMin: 90, status: "Pending", source: "WhatsApp", confirmChannel: "whatsapp", room: "Room B", notes: [], cf: {}, title: "Onsite visit · 90 min" },
-  { id: "ap6", contactId: "c7", serviceId: "sv2", staffId: "st3", locationId: "L2", start: atDay(-1, 15), durMin: 45, status: "No show", source: "WhatsApp", confirmChannel: "whatsapp", room: "Room 1", notes: [], cf: {}, title: "Consultation · 45 min" },
-  { id: "ap7", contactId: "c8", serviceId: "sv1", staffId: "st1", locationId: "L3", start: atDay(-2, 11), durMin: 30, status: "Completed", source: "Campaign", confirmChannel: "whatsapp", room: "", notes: [], cf: {}, title: "Discovery call" },
-];
-const WAITLIST_INIT = [
-  { id: "w1", contactId: "c3", serviceId: "sv2", pref: "Any afternoon this week", staffId: "", createdAt: atDay(-1, 9) },
-  { id: "w2", contactId: "c8", serviceId: "sv3", pref: "Friday morning", staffId: "st2", createdAt: atDay(0, 8) },
-];
+const APPOINTMENTS_INIT = []; // TODO_BACKEND
+const WAITLIST_INIT = []; // TODO_BACKEND
 
 /* ============ AVAILABILITY ENGINE ============ */
 const mins = (d) => d.getHours() * 60 + d.getMinutes();
@@ -1191,13 +1075,7 @@ function availability({ date, service, staff, location, appts, rules, staffList 
   return { slots: out, blocked };
 }
 
-const TASKS_INIT = [
-    { id: 1, txt: "Send security whitepaper to Arun Kumar", due: "Today", who: "Rina S.", ai: true },
-    { id: 2, txt: "Retention call with Grace Lim at 15:00", due: "Today", who: "Ken W.", ai: false },
-    { id: 3, txt: "Assign solutions engineer to Kite Analytics deep dive", due: "Today", who: "Unassigned", ai: true },
-    { id: 4, txt: "Review AI drafted briefing for Halcyon demo", due: "Thu", who: "Ken W.", ai: true },
-    { id: 5, txt: "Confirm v2.14 fix shipped for Northbridge P1", due: "Today", who: "Maya O.", ai: false },
-  ];
+const TASKS_INIT = []; // TODO_BACKEND
 
 /* ============ MARKETING ENGINE ============ */
 const PLATFORMS = {
@@ -1209,64 +1087,19 @@ const PLATFORMS = {
   google: { label: "Google Business", logo: "google", limit: 1500, tags: 0, kinds: ["Image", "Offer", "Update"], dims: { Image: "1200×900", Offer: "1200×900", Update: "1200×900" }, caps: { schedule: true, publish: true, comments: true, dm: true, analytics: true }, note: "Posts expire after 7 days unless they are offers." },
   tiktok: { label: "TikTok", logo: "youtube", limit: 2200, tags: 20, kinds: ["Short"], dims: { Short: "1080×1920" }, caps: { schedule: true, publish: false, comments: true, dm: false, analytics: true }, note: "Direct publishing needs TikTok content posting approval; drafts push to the app." },
 };
-const SOCIAL_ACCOUNTS_INIT = [
-  { id: "sa1", platform: "instagram", handle: "@acme.official", brand: "Acme Retail", on: true, followers: 18400, growth: 3.4 },
-  { id: "sa2", platform: "facebook", handle: "Acme Corporation", brand: "Acme Retail", on: true, followers: 9200, growth: 0.8 },
-  { id: "sa3", platform: "linkedin", handle: "Acme Corporation", brand: "Acme Retail", on: true, followers: 6100, growth: 5.2 },
-  { id: "sa4", platform: "google", handle: "Acme · Downtown", brand: "Acme Retail", on: true, followers: 0, growth: 0 },
-  { id: "sa5", platform: "x", handle: "@acmehq", brand: "Acme Retail", on: false, followers: 2400, growth: -0.4 },
-  { id: "sa6", platform: "youtube", handle: "Acme Channel", brand: "Acme Retail", on: false, followers: 1100, growth: 1.1 },
-  { id: "sa7", platform: "tiktok", handle: "@acme", brand: "Acme Retail", on: false, followers: 0, growth: 0 },
-];
-const PILLARS_INIT = [
-  { id: "p1", name: "Education", pct: 40, desc: "Teach one useful thing" },
-  { id: "p2", name: "Product", pct: 25, desc: "Show the product working" },
-  { id: "p3", name: "Customer stories", pct: 20, desc: "Proof from real customers" },
-  { id: "p4", name: "Behind the scenes", pct: 15, desc: "The people and the process" },
-];
+const SOCIAL_ACCOUNTS_INIT = []; // TODO_BACKEND
+const PILLARS_INIT = []; // TODO_BACKEND
 const BRAND_INIT = {
-  name: "Acme Corporation", desc: "AI powered customer communication for growing businesses.",
-  tone: "Warm, direct, never hypey", audience: "Owners and operators of 10 to 200 person businesses",
-  keywords: "automation, response time, no missed leads", forbidden: "revolutionary, game changer, synergy",
-  cta: "Book a demo", colors: ["#EF2B13", "#18181b", "#f4f4f5"], lang: "English", goal: "Leads",
-};
+  name: "", desc: "", tone: "", audience: "", keywords: "", forbidden: "", cta: "Contact Us", colors: ["#EF2B13", "#18181b", "#f4f4f5"], lang: "English", goal: "",
+}; // TODO_BACKEND
 const POST_STATUS = ["Idea", "Draft", "In review", "Approved", "Scheduled", "Published", "Archived"];
 const GOALS = ["Brand awareness", "Engagement", "Leads", "Website traffic", "Sales", "Appointments", "Retention"];
 const bestTimes = { instagram: "18:00 to 20:00", linkedin: "08:00 to 10:00", facebook: "12:00 to 14:00", x: "09:00 and 21:00", youtube: "17:00", google: "10:00", tiktok: "19:00" };
 
-const POSTS_INIT = [
-  { id: "sp1", text: "Behind every 4 second reply is an AI that never sleeps. Meet the new front desk.", channels: ["instagram", "facebook", "linkedin"], kind: "Reel", pillar: "Product",
-    status: "Published", start: atDay(-1, 18), by: "Sky · Social Agent", vis: "from-rose-500 to-orange-400", visLabel: "Reel · 15s", campaign: "cm1",
-    stats: { reach: 12400, likes: 861, comments: 47, shares: 96, clicks: 310, leads: 14 }, versions: [], reviewer: "", tags: ["#automation", "#customerservice"] },
-  { id: "sp2", text: "August offer: book any weekday slot this week and skip the wait. Link in bio.", channels: ["instagram", "google"], kind: "Image", pillar: "Product",
-    status: "Published", start: atDay(-3, 10), by: "You", vis: "from-red-500 to-rose-400", visLabel: "Image · 1:1", campaign: "cm1",
-    stats: { reach: 6100, likes: 402, comments: 19, shares: 22, clicks: 180, leads: 6 }, versions: [], reviewer: "", tags: ["#offer"] },
-  { id: "sp3", text: "3 questions we get every single day, answered in 30 seconds each. Save this one.", channels: ["instagram", "youtube", "x"], kind: "Carousel", pillar: "Education",
-    status: "Scheduled", start: atDay(1, 12, 30), by: "Sky · Social Agent", vis: "from-zinc-700 to-zinc-500", visLabel: "Carousel · 3 slides", campaign: "",
-    stats: null, versions: [], reviewer: "", tags: ["#faq", "#howto"] },
-  { id: "sp4", text: "Our customer Vertex Retail cut first response time from 4 hours to 40 seconds. Here is exactly how they did it.", channels: ["linkedin"], kind: "Text", pillar: "Customer stories",
-    status: "In review", start: atDay(2, 9), by: "Sky · Social Agent", vis: "from-sky-600 to-indigo-500", visLabel: "Text post", campaign: "cm1",
-    stats: null, versions: [], reviewer: "Ken Watanabe", tags: [] },
-  { id: "sp5", text: "Draft: a short reel showing the inbox triaging 40 messages in a minute.", channels: ["instagram"], kind: "Reel", pillar: "Behind the scenes",
-    status: "Draft", start: atDay(4, 18), by: "You", vis: "from-emerald-600 to-teal-400", visLabel: "Reel · 20s", campaign: "",
-    stats: null, versions: [], reviewer: "", tags: [] },
-];
-const SOCIAL_CAMPAIGNS_INIT = [
-  { id: "cm1", name: "August booking push", goal: "Leads", start: atDay(-7, 9), end: atDay(14, 18), platforms: ["instagram", "facebook", "linkedin"], budget: 1200, cta: "Book a demo",
-    utm: { source: "instagram", medium: "social", campaign: "august_booking" }, audience: "New leads", landing: "acme.com/book" },
-];
-const ASSETS_INIT = [
-  { id: "as1", name: "front-desk-reel.mp4", kind: "Video", tags: ["reel", "product"], fav: true, vis: "from-rose-500 to-orange-400", size: "18 MB" },
-  { id: "as2", name: "offer-august.png", kind: "Image", tags: ["offer"], fav: false, vis: "from-red-500 to-rose-400", size: "1.2 MB" },
-  { id: "as3", name: "logo-primary.svg", kind: "Brand", tags: ["logo"], fav: true, vis: "from-zinc-800 to-zinc-600", size: "24 KB" },
-  { id: "as4", name: "carousel-faq-template", kind: "Template", tags: ["carousel", "education"], fav: false, vis: "from-sky-600 to-indigo-500", size: "—" },
-];
-const SOCIAL_COMMENTS_INIT = [
-  { id: "sc1", postId: "sp1", platform: "instagram", who: "@priya.designs", text: "How much is this per month?", kind: "Question", at: atDay(0, 9, 12), replied: false, lead: true },
-  { id: "sc2", postId: "sp1", platform: "instagram", who: "@rk_stores", text: "Been using this for a month, our missed calls went to zero.", kind: "Positive", at: atDay(0, 8, 40), replied: false, lead: false },
-  { id: "sc3", postId: "sp2", platform: "facebook", who: "Dan Meyer", text: "Booked twice and no one called back. Not impressed.", kind: "Negative", at: atDay(-1, 17, 5), replied: false, lead: false },
-  { id: "sc4", postId: "sp2", platform: "instagram", who: "@cafe.luna", text: "Do you work for restaurants too? DM me pricing please", kind: "Question", at: atDay(-1, 12, 0), replied: false, lead: true },
-];
+const POSTS_INIT = []; // TODO_BACKEND
+const SOCIAL_CAMPAIGNS_INIT = []; // TODO_BACKEND
+const ASSETS_INIT = []; // TODO_BACKEND
+const SOCIAL_COMMENTS_INIT = []; // TODO_BACKEND
 
 /* content generation from brand + pillar + platform */
 const HOOKS = ["The one thing nobody tells you about", "We tested this for 30 days:", "Most businesses get this wrong:", "Here is what changed everything:", "Three questions we hear daily:"];
@@ -1345,18 +1178,7 @@ const AP_TINT = { Pending: "bg-amber-50 text-amber-700 border-amber-200", "In re
   Cancelled: "bg-zinc-100 text-zinc-400 border-zinc-200", Executing: "bg-sky-50 text-sky-700 border-sky-200", Failed: "bg-red-50 text-red-700 border-red-200" };
 const REJECT_REASONS = ["Incorrect information", "Wrong customer", "Too risky", "Needs clarification", "Policy violation", "Wrong tone", "Duplicate", "Not appropriate"];
 
-/* configurable policy rules, evaluated in order; first match wins */
-const POLICIES_INIT = [
-  { id: "pol1", label: "Refunds and credits over $1,000", action: "refund", field: "amount", op: "gt", value: 1000, role: "Finance Manager", risk: "Critical", slaMin: 60, expiryMin: 240, bulk: false },
-  { id: "pol2", label: "Refunds and credits $100 to $1,000", action: "refund", field: "amount", op: "gt", value: 100, role: "Manager", risk: "High", slaMin: 120, expiryMin: 480, bulk: false },
-  { id: "pol3", label: "Campaigns over 1,000 recipients", action: "campaign", field: "recipients", op: "gt", value: 1000, role: "Admin", risk: "Critical", slaMin: 60, expiryMin: 240, bulk: false },
-  { id: "pol4", label: "Campaigns of 100 or more recipients", action: "campaign", field: "recipients", op: "gte", value: 100, role: "Marketing Manager", risk: "High", slaMin: 240, expiryMin: 1440, bulk: false },
-  { id: "pol5", label: "Publishing to social", action: "social", role: "Marketing Manager", risk: "Medium", slaMin: 240, expiryMin: 1440, bulk: true },
-  { id: "pol6", label: "Outbound calls", action: "call", role: "Sales Manager", risk: "Medium", slaMin: 60, expiryMin: 240, bulk: true },
-  { id: "pol7", label: "Deleting CRM records", action: "delete", role: "Admin", risk: "Critical", slaMin: 120, expiryMin: 1440, bulk: false },
-  { id: "pol8", label: "Cancelling an appointment", action: "cancel_appt", role: "Manager", risk: "High", slaMin: 60, expiryMin: 240, bulk: false },
-  { id: "pol9", label: "Anything else needing a human", action: "*", role: "Manager", risk: "Low", slaMin: 240, expiryMin: 1440, bulk: true },
-];
+const POLICIES_INIT = []; // TODO_BACKEND
 
 /* map a platform action to a policy category */
 const policyCategory = (actionKey) => {
@@ -1409,23 +1231,7 @@ const apState = (a) => {
 };
 const fmtMins = (m) => m < 0 ? Math.abs(m) + "m overdue" : m < 60 ? "due in " + m + "m" : "due in " + Math.round(m / 60) + "h";
 
-const APPROVALS_INIT = [
-  { id: "p1", demo: true, agent: "Kai — Support Agent", agentId: "a2", actionKey: "CAN_SEND_WHATSAPP", category: "*",
-    title: "Send a WhatsApp reply", to: "Arun Kumar", contactId: "c1", channel: "whatsapp", status: "Pending",
-    body: "Great news Arun, Thursday 11:00 is confirmed for your scoping call. I have also attached the security whitepaper you asked about. Anything you want the engineers to prepare in advance?",
-    reason: "Kai runs at autonomy Level 2 and this workspace requires a human on outbound replies above Level 2.",
-    risk: "Low", role: "Manager", slaMin: 240, expiryMin: 1440, createdAt: atDay(0, 9, 12), meta: {}, editedBody: null, decidedBy: null, decidedAt: null, rejectReason: null, execResult: null, events: [] },
-  { id: "p2", demo: true, agent: "Mira — Follow up Agent", agentId: "a5", actionKey: "CAN_ISSUE_REFUND", category: "refund",
-    title: "Issue a goodwill credit", to: "Orchid Hospitality", contactId: "c3", channel: null, status: "Pending",
-    body: "Apply a one time 15% goodwill credit of $4,200 to the next invoice following the duplicate billing incident, per the retention playbook for VIP accounts.",
-    reason: "Credits above $1,000 require Finance Manager sign off under workspace policy.",
-    risk: "Critical", role: "Finance Manager", slaMin: 60, expiryMin: 240, createdAt: atDay(0, 8, 5), meta: { amount: 4200 }, editedBody: null, decidedBy: null, decidedAt: null, rejectReason: null, execResult: null, events: [] },
-  { id: "p3", demo: true, agent: "Voz — Voice Agent", agentId: "a4", actionKey: "CAN_PLACE_CALL", category: "call",
-    title: "Place an outbound call", to: "Tom Okafor", contactId: "c7", channel: "voice", status: "Pending",
-    body: "Call Tom to lock the technical deep dive slot this week, given the hard 28 Aug deadline. Script: confirm attendees, propose Wednesday 15:00, fall back to Thursday 10:00.",
-    reason: "Outbound calls require Sales Manager sign off under workspace policy.",
-    risk: "Medium", role: "Sales Manager", slaMin: 60, expiryMin: 240, createdAt: atDay(0, 7, 30), meta: {}, editedBody: null, decidedBy: null, decidedAt: null, rejectReason: null, execResult: null, events: [] },
-];
+const APPROVALS_INIT = []; // TODO_BACKEND
 
 const REACHED = ["Sent", "Delivered", "Opened", "Clicked", "Replied", "Converted"];
 const campMetrics = (c) => {
@@ -2484,14 +2290,7 @@ const mkSource = (o) => {
     createdAt: o.createdAt, indexedAt: o.indexedAt, version: 1, versions: [], archived: false,
     url: o.url || "", refresh: o.refresh || "Manual", uses: 0, citations: 0, lastUsed: null, error: null };
 };
-const KNOWLEDGE = [
-  mkSource({ id: "n1", name: "Refund and cancellation policy", type: "Document", text: KB_DOCS.refund, priority: 1, collection: "Company policies", createdAt: atDay(-40, 9), indexedAt: atDay(-6, 9) }),
-  mkSource({ id: "n2", name: "Pricing", type: "PDF", text: KB_DOCS.pricing, priority: 1, collection: "Sales knowledge", createdAt: atDay(-30, 9), indexedAt: atDay(-2, 9) }),
-  mkSource({ id: "n3", name: "Opening hours and locations", type: "FAQ", text: KB_DOCS.hours, priority: 2, collection: "General", createdAt: atDay(-25, 9), indexedAt: atDay(-3, 9) }),
-  mkSource({ id: "n4", name: "Shipping and delivery", type: "Website page", text: KB_DOCS.shipping, priority: 2, collection: "Support knowledge", url: "https://acme.example/shipping", refresh: "Weekly", createdAt: atDay(-70, 9), indexedAt: atDay(-70, 9) }),
-  mkSource({ id: "n5", name: "Internal HR policy", type: "Document", text: KB_DOCS.hr, priority: 1, collection: "HR knowledge", createdAt: atDay(-20, 9), indexedAt: atDay(-20, 9) }),
-  mkSource({ id: "n6", name: "Legacy refund terms", type: "Document", text: KB_DOCS.old_refund, priority: 4, collection: "Company policies", createdAt: atDay(-200, 9), indexedAt: atDay(-120, 9) }),
-];
+const KNOWLEDGE = []; // TODO_BACKEND
 const KB_COLLECTIONS = ["General", "Sales knowledge", "Support knowledge", "Company policies", "HR knowledge", "Product knowledge"];
 const KB_TEMPLATES = [
   { id: "t_clinic", industry: "healthcare", name: "Appointment and cancellation policy", body: "Appointment policy\nBooking\nDescribe how patients book.\nCancellation\nState your cancellation window here.\nNo shows\nState what happens after a missed appointment." },
@@ -2525,7 +2324,7 @@ const PROVIDERS = [
     caps: { messaging: true, sync: false, webhooks: true, actions: ["Send message", "Send template", "Send media"] },
     objects: [], events: ["message.received", "message.delivered", "message.read", "template.approved"],
     limits: "20 messages per second · template window 24h", scopes: ["messages:send", "messages:read"] },
-  { id: "instaxbot", name: "InstaxBot", logo: "instaxbot", cat: "Your ecosystem", auth: "internal", core: true,
+  { id: "instaxbot", name: "InstaxBot", logo: "instaxbot", cat: "Your ecosystem", auth: "apikey", core: true,
     d: "Instagram DMs, comments and story replies.",
     caps: { messaging: true, sync: false, webhooks: true, actions: ["Send DM", "Reply to comment"] },
     objects: [], events: ["dm.received", "comment.received", "mention.received"],
@@ -2539,6 +2338,10 @@ const PROVIDERS = [
     d: "Shared inboxes, threading and send as.",
     caps: { messaging: true, sync: false, webhooks: true, actions: ["Send email", "Reply", "Label"] },
     objects: [], events: ["mail.received"], limits: "250 quota units per second", scopes: ["gmail.send", "gmail.readonly"] },
+  { id: "gcontacts", name: "Google Contacts", logo: "google", cat: "Google", auth: "oauth",
+    d: "View, sync, and organize your Google contacts directly in your inbox.",
+    caps: { messaging: false, sync: true, webhooks: false, actions: ["View contacts", "Sync list", "Auto-update"] },
+    objects: ["contact"], events: ["contact.created"], limits: "100 contacts per sync", scopes: ["contacts.readonly"] },
   { id: "gcal", name: "Google Calendar", logo: "gcal", cat: "Google", auth: "oauth",
     d: "Two way appointment sync and free busy lookup.",
     caps: { messaging: false, sync: true, webhooks: true, actions: ["Create event", "Update event", "Check availability"] },
@@ -6601,6 +6404,8 @@ function AuthScreen({ mode, setMode, onAuthed, onBack }) {
 
 function AppShell({ __initialView, __openAI, route, onSignOut }) {
   const [dk, setDk] = useState(false);
+  const [toast, setToast] = useState(null);
+  const flash = useCallback((msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800); }, []);
   const [view, setView] = useState(__initialView || "home");
   const [selConv, setSelConv] = useState("v1");
   const [selContact, setSelContact] = useState(null);
@@ -6636,12 +6441,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
   const [suppression, setSuppression] = useState([]);          // {contactId, channel, at, why}
   const [commPrefs, setCommPrefs] = useState({});              // contactId -> {channel:bool}
   const [quiet, setQuiet] = useState({ from: 9, to: 19, on: true, tz: "Asia/Singapore (GMT+8)" });
-  const [msgTemplates, setMsgTemplates] = useState([
-    { id: "mt1", name: "Quotation follow up", channel: "whatsapp", body: "Hi {{first_name}}, following up on the quotation for {{company_name}}. Happy to walk you through it or adjust the scope. Want me to hold a slot this week?", fav: true },
-    { id: "mt2", name: "Re-engagement", channel: "whatsapp", body: "Hi {{first_name}}, it has been a while. We have shipped a lot since we last spoke. Worth a quick 15 minutes?", fav: false },
-    { id: "mt3", name: "Appointment reminder", channel: "sms", body: "Hi {{first_name}}, reminder about your appointment. Reply R to reschedule.", fav: false },
-    { id: "mt4", name: "New customer welcome", channel: "email", body: "Welcome aboard {{first_name}}. Here is everything you need for your first week with us.", fav: false },
-  ]);
+  const [msgTemplates, setMsgTemplates] = useState([]); // TODO_BACKEND
   const [kb, setKb] = useState(KNOWLEDGE);
   const [kbQueries, setKbQueries] = useState([]);      // every retrieval, real
   const [kbGaps, setKbGaps] = useState([]);            // questions with no confident answer
@@ -6656,6 +6456,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
       api.getWorkflows(wsId),
     ]).then(([resContacts, resConvs, resAgents, resWfs]) => {
       if (!active) return;
+      if (resContacts.status === "fulfilled" && resContacts.value?.data?.length) {
+        CONTACTS.length = 0;
+        resContacts.value.data.forEach((c) => CONTACTS.push(c));
+        setContactsV((v) => v + 1);
+      }
       if (resConvs.status === "fulfilled" && resConvs.value?.data?.length) setConvs(resConvs.value.data);
       if (resAgents.status === "fulfilled" && resAgents.value?.data?.length) setAgents(resAgents.value.data);
       if (resWfs.status === "fulfilled" && resWfs.value?.data?.length) setWfs(resWfs.value.data);
@@ -6677,7 +6482,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
             const { conversation: backendConv, message: backendMsg } = data.payload;
             if (!backendConv || !backendMsg) return;
 
-            const channelKey = "channelbot";
+            const isInstagram = backendConv?.channel === "Instagram" || backendConv?.channel === "instagram" || backendMsg?.platform === "instagram";
+            const channelKey = isInstagram ? "instaxbot" : "channelbot";
             const newMsgItem = {
               id: backendMsg.id || `msg_${Date.now()}`,
               from: backendMsg.sender === "customer" ? "customer" : "agent",
@@ -6708,10 +6514,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
                 return updated;
               } else {
                 const newConvObj = {
-                  id: backendConv.id || `conv_cb_${Date.now()}`,
+                  id: backendConv.id || `conv_ig_${Date.now()}`,
                   contactId: `cnt_${Date.now()}`,
-                  customerName: backendConv.customerName || backendConv.phone || "ChannelBot Customer",
-                  channel: channelKey,
+                  customerName: backendConv.customerName || backendConv.phone || (isInstagram ? "Instagram User" : "ChannelBot Customer"),
+                  channel: isInstagram ? "Instagram" : channelKey,
                   phone: backendConv.phone,
                   unread: 1,
                   ai: false,
@@ -6719,7 +6525,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
                   priority: "high",
                   msgs: [newMsgItem],
                   last: newMsgItem.text,
-                  tags: ["ChannelBot.in"],
+                  tags: isInstagram ? ["InstaxBot", "Instagram"] : ["ChannelBot.in"],
                 };
                 return [newConvObj, ...cs];
               }
@@ -6737,8 +6543,120 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     };
   }, []);
 
-  /* Listen for LinkedIn OAuth redirect URL parameters (?linkedin=connected / ?linkedin=error) */
+  const [conns, setConns] = useState(() => {
+    const o = {};
+    ["gowhats", "instaxbot", "mrassistant", "gmail", "gcontacts", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
+      o[id] = { on: !["instaxbot", "gcontacts"].includes(id), connectedAt: atDay(-20, 9), lastSync: atDay(0, 8), expiresAt: id === "gcal" ? atDay(2, 9) : null,
+        direction: "Two way", conflict: "Newest wins", freq: "Realtime", mapping: DEFAULT_MAPPING[id] || [], error: null, paused: false, syncing: false,
+        account: id === "gowhats" ? "+91 9047484484" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
+        key: id === "gowhats" ? "EAAS9L0ST948BQUFPJxcHdsCHEfJSHfM8LGbUb1Sao05JTqjtaWmjW0aTo46yPAZAw4qF3avtzXjYSJLXDzR4L5ZBM45jWgYCwMOZCLYt7PtLwkNDC6LPJhZB1zgtBb52GmCtyLWGwttI0SQErdowM22aXXVlKO9mwlatSe8F763Uo0dpYpfaDv7nZBx6wUZB7c2wZDZD" : id === "linkedin" ? "li_live_connected" : "" };
+    });
+    return o;
+  });
+
+  /* Fetch real connected Google/Gmail & Contacts API status from backend */
+  const syncGoogleConnectionStatus = useCallback(async () => {
+    try {
+      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
+        ? "http://localhost:5000" 
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+      const res = await fetch(`${apiHost}/api/google/status`);
+      const data = await res.json();
+      if (data && data.connected && data.email) {
+        setConns((prev) => ({
+          ...prev,
+          gmail: {
+            ...prev.gmail,
+            on: true,
+            account: data.email,
+            connectedAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : prev.gmail?.connectedAt,
+          },
+        }));
+      }
+
+      // Verify Google Contacts People API status
+      const contactsRes = await fetch(`${apiHost}/api/google/contacts/status`);
+      const contactsData = await contactsRes.json();
+      if (contactsData.connected) {
+        const realEmail = contactsData.email || data?.email || "";
+        setConns((prev) => ({
+          ...prev,
+          gcontacts: {
+            ...prev.gcontacts,
+            on: true,
+            error: null,
+            account: realEmail ? `Connected as ${realEmail}` : prev.gcontacts?.account || "Connected",
+            lastSync: contactsData.syncedAt || new Date().toISOString(),
+          },
+        }));
+      } else if (contactsData.state === "Needs attention" || contactsData.error) {
+        setConns((prev) => ({
+          ...prev,
+          gcontacts: {
+            ...prev.gcontacts,
+            on: false,
+            error: contactsData.message || "Needs attention: Contacts API scope missing or People API not enabled.",
+            account: contactsData.email ? `Connected as ${contactsData.email}` : data?.email ? `Connected as ${data.email}` : prev.gcontacts?.account,
+          },
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to sync Google connection status:", e);
+    }
+  }, []);
+
+  /* Fetch real connected InstaxBot status from backend */
+  const syncInstaxBotConnectionStatus = useCallback(async () => {
+    try {
+      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
+        ? "http://localhost:5000" 
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/status`);
+      const data = await res.json();
+      if (data && data.connected) {
+        setConns((prev) => ({
+          ...prev,
+          instaxbot: {
+            ...prev.instaxbot,
+            on: true,
+            status: "connected",
+            account: data.account || `InstaxBot Account (${data.maskedKey})`,
+            maskedKey: data.maskedKey,
+            connectedAt: data.connectedAt,
+            error: null,
+          },
+        }));
+      } else {
+        setConns((prev) => ({
+          ...prev,
+          instaxbot: {
+            ...prev.instaxbot,
+            on: false,
+            status: data?.state === "Needs attention" ? "needs_attention" : "available",
+            account: null,
+            maskedKey: null,
+            error: data?.error || null,
+          },
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to sync InstaxBot connection status:", e);
+    }
+  }, []);
+
+  /* Listen for OAuth redirect URL parameters & sync status on mount/focus */
   useEffect(() => {
+    syncGoogleConnectionStatus();
+    syncInstaxBotConnectionStatus();
+
+    const onFocus = () => {
+      syncGoogleConnectionStatus();
+      syncInstaxBotConnectionStatus();
+    };
+    window.addEventListener("focus", onFocus);
+
     if (typeof window !== "undefined" && window.location.search) {
       const params = new URLSearchParams(window.location.search);
       if (params.get("linkedin") === "connected") {
@@ -6751,7 +6669,14 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (params.get("google") === "connected") {
         const user = params.get("user") || "Google Account";
+        if (user && user !== "Google Account") {
+          setConns((prev) => ({
+            ...prev,
+            gmail: { ...prev.gmail, on: true, account: user },
+          }));
+        }
         flash(`Google email account connected successfully as ${user}!`);
+        syncGoogleConnectionStatus();
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (params.get("google") === "error") {
         const msg = params.get("msg") || "Google authorization failed";
@@ -6759,17 +6684,9 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
-  }, [flash]);
-  const [conns, setConns] = useState(() => {
-    const o = {};
-    ["gowhats", "instaxbot", "mrassistant", "gmail", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
-      o[id] = { on: true, connectedAt: atDay(-20, 9), lastSync: atDay(0, 8), expiresAt: id === "gcal" ? atDay(2, 9) : null,
-        direction: "Two way", conflict: "Newest wins", freq: "Realtime", mapping: DEFAULT_MAPPING[id] || [], error: null, paused: false, syncing: false,
-        account: id === "gowhats" ? "+91 9047484484" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
-        key: id === "gowhats" ? "EAAS9L0ST948BQUFPJxcHdsCHEfJSHfM8LGbUb1Sao05JTqjtaWmjW0aTo46yPAZAw4qF3avtzXjYSJLXDzR4L5ZBM45jWgYCwMOZCLYt7PtLwkNDC6LPJhZB1zgtBb52GmCtyLWGwttI0SQErdowM22aXXVlKO9mwlatSe8F763Uo0dpYpfaDv7nZBx6wUZB7c2wZDZD" : id === "linkedin" ? "li_live_connected" : "" };
-    });
-    return o;
-  });
+
+    return () => window.removeEventListener("focus", onFocus);
+  }, [flash, syncGoogleConnectionStatus, syncInstaxBotConnectionStatus]);
   const [syncRuns, setSyncRuns] = useState([]);
   const [apiKeys, setApiKeys] = useState([{ id: "k1", name: "Production", key: "bz_live_9f2ac41d77e0", created: atDay(-30, 9), lastUsed: atDay(0, 7), scopes: ["contacts:read", "contacts:write", "messages:send"] }]);
   const [outHooks, setOutHooks] = useState([{ id: "h1", url: "https://acme.example/hooks/buzzz", events: ["contact.created", "deal.won"], on: true, lastStatus: 200, lastAt: atDay(0, 8), failures: 0 }]);
@@ -6846,7 +6763,6 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
   const [touches, setTouches] = useState([]);
   const [handoffs, setHandoffs] = useState([]);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [toast, setToast] = useState(null);
   const T = themes[dk ? "dark" : "light"];
 
   useEffect(() => {
@@ -6860,7 +6776,6 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  const flash = (msg, kind = "ok") => { setToast({ msg, kind }); setTimeout(() => setToast(null), 2800); };
   const log = (agent, action, detail, extra) =>
     setActivity((a) => [makeEvent({ actor: agent, action, detail, ...(extra || {}) }), ...a].slice(0, 500));
 
@@ -6984,7 +6899,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
     if (!f.name || !f.name.trim()) return { ok: false, why: "A name is required." };
     if (CONTACTS.some((c) => c.name.toLowerCase() === f.name.trim().toLowerCase() && !c.archived)) return { ok: false, why: "A contact named " + f.name.trim() + " already exists." };
     const id = "c" + Date.now();
-    CONTACTS.push({
+    const newContactObj = {
       id, name: f.name.trim(), company: f.company || "—", title: f.title || "", location: f.location || "", loc: f.location || "",
       email: f.email || "", phone: f.phone || "", stage: f.stage || "New Lead", status: f.status || "New", source: f.source || "Manual entry",
       owner: f.owner || "Unassigned", score: f.score ?? 40, value: f.value || "$0", ltv: "$0", churn: "Low", sentiment: "Neutral", intent: "Unknown",
@@ -6992,8 +6907,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut }) {
       created: new Date().toISOString().slice(0, 10), lastContact: 0,
       memory: ["Record created " + new Date().toLocaleDateString()],
       aiSummary: "New record. No conversation history yet.",
-    });
+    };
+    CONTACTS.push(newContactObj);
     setContactsV((v) => v + 1);
+    const wsId = route?.workspaceId || "ws_default";
+    api.createContact(wsId, newContactObj).catch((e) => console.warn("Failed to persist contact to MongoDB:", e));
     trail("Contact created", f.name.trim(), "", (f.company || "no company"), f.bySource || "You");
     log(f.bySource || "You", "Contact created", f.name.trim() + (f.company ? " · " + f.company : ""));
     return { ok: true, id };
@@ -10224,17 +10142,8 @@ const fmtDateLocale = (d, locale) => new Date(d).toLocaleDateString(locale === "
 const fmtNumberLocale = (n, locale) => Number(n).toLocaleString(locale === "en" ? "en-GB" : locale);
 
 /* ---- routing queues and shifts ---- */
-const QUEUES_INIT = [
-  { id: "qu1", name: "Sales", channels: ["whatsapp", "webchat", "email"], intents: ["sales", "pricing", "purchase"],
-    members: ["Rina Sato", "Ken Watanabe"], strategy: "round_robin", slaMinutes: 15, fallback: "Manager" },
-  { id: "qu2", name: "Support", channels: ["whatsapp", "email", "instagram"], intents: ["support", "complaint", "billing"],
-    members: ["Maya Ortiz"], strategy: "load", slaMinutes: 30, fallback: "Support Lead" },
-];
-const SHIFTS_INIT = [
-  { id: "sh1", user: "Rina Sato", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], start: "09:00", end: "18:00", tz: "Asia/Singapore" },
-  { id: "sh2", user: "Ken Watanabe", days: ["Mon", "Tue", "Wed", "Thu", "Fri"], start: "13:00", end: "22:00", tz: "Asia/Singapore" },
-  { id: "sh3", user: "Maya Ortiz", days: ["Sat", "Sun", "Mon", "Tue", "Wed"], start: "08:00", end: "17:00", tz: "Asia/Singapore" },
-];
+const QUEUES_INIT = []; // TODO_BACKEND
+const SHIFTS_INIT = []; // TODO_BACKEND
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function onDuty(shifts, when = new Date()) {
   const day = DAY_NAMES[when.getDay()];
@@ -10298,13 +10207,7 @@ function expandRecurrence(rule, { from = new Date(), limit = 25 } = {}) {
 const PRODUCT_KINDS = ["Subscription", "One off", "Service", "Usage"];
 const BILLING_PERIODS = { once: { label: "one off", months: 0 }, monthly: { label: "a month", months: 1 }, quarterly: { label: "a quarter", months: 3 }, annual: { label: "a year", months: 12 } };
 
-const PRODUCTS_INIT = [
-  { id: "pr1", sku: "GROWTH-SEAT", name: "Growth plan seat", kind: "Subscription", period: "monthly", price: 9900, cost: 2200, taxRate: 9, active: true, desc: "Per seat, includes three channels." },
-  { id: "pr2", sku: "ENT-BASE", name: "Enterprise base", kind: "Subscription", period: "annual", price: 599000, cost: 120000, taxRate: 9, active: true, desc: "Annual platform fee." },
-  { id: "pr3", sku: "ONBOARD", name: "Onboarding and migration", kind: "Service", period: "once", price: 250000, cost: 90000, taxRate: 9, active: true, desc: "Data migration, agent setup and training." },
-  { id: "pr4", sku: "WA-NUM", name: "Additional WhatsApp number", kind: "Subscription", period: "monthly", price: 1500, cost: 400, taxRate: 9, active: true, desc: "Per number." },
-  { id: "pr5", sku: "VOICE-MIN", name: "Voice minutes bundle", kind: "Usage", period: "monthly", price: 5000, cost: 2600, taxRate: 9, active: true, desc: "5,000 minutes." },
-];
+const PRODUCTS_INIT = []; // TODO_BACKEND
 
 /* line item maths in minor units, so nothing rounds badly */
 function lineTotal(item, product) {
@@ -21406,12 +21309,14 @@ function ConnectModal({ provider, onClose }) {
     : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
   const webhookEndpoint = provider.id === "gowhats"
     ? `${apiHost}/api/v1/inbox/webhook`
+    : provider.id === "instaxbot"
+    ? `${apiHost}/api/integrations/instaxbot/webhook`
     : `${apiHost}/hooks/${provider.id}/wk_${provider.id}9f2a`;
   const copyEndpoint = () => {
     navigator.clipboard?.writeText(webhookEndpoint).catch(() => {});
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
-  const run = () => {
+  const run = async () => {
     if (provider.id === "linkedin") {
       const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
         ? "http://localhost:5000"
@@ -21419,15 +21324,47 @@ function ConnectModal({ provider, onClose }) {
       window.location.href = `${targetHost}/api/linkedin/auth`;
       return;
     }
-    if (provider.id === "gmail" || provider.id === "google") {
+    if (provider.id === "gmail" || provider.id === "google" || provider.id === "gcontacts") {
       const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
         ? "http://localhost:5000"
         : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
       window.location.href = `${targetHost}/api/google/auth`;
       return;
     }
-      if (!email || !email.includes("@")) { setErr("Please enter a valid Gmail address."); return; }
-    } else if (provider.auth === "apikey" && key.trim().length < 8) {
+    if (provider.id === "instaxbot") {
+      if (!key.trim() || key.trim().length < 8) {
+        setErr("API key is too short or missing. Please enter a valid InstaxBot API key.");
+        return;
+      }
+      setErr(null); setStep("connecting");
+      try {
+        const res = await fetch(`${apiHost}/api/integrations/instaxbot/connect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: key.trim() }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          connectProvider("instaxbot", {
+            key: data.maskedKey,
+            account: data.account,
+            maskedKey: data.maskedKey,
+            connectedAt: data.connectedAt,
+          });
+          flash("InstaxBot connected successfully! Real-time Instagram DM & comment integration active.");
+          onClose();
+        } else {
+          setStep("failed");
+          setErr(data.message || "Authentication was rejected by InstaxBot. The key may be invalid or revoked.");
+        }
+      } catch (e) {
+        setStep("failed");
+        setErr("Network error while verifying InstaxBot API key.");
+      }
+      return;
+    }
+
+    if (provider.auth === "apikey" && key.trim().length < 8) {
       setErr("That key is too short to be valid. Copy the full key from your " + provider.name + " dashboard.");
       return;
     }
@@ -21478,7 +21415,7 @@ function ConnectModal({ provider, onClose }) {
         ) : provider.auth === "apikey" ? (
           <Field label="API key" hint="Stored encrypted on our server and never sent to the browser again." error={err}>
             <input value={key} onChange={(e) => setKey(e.target.value)}
-              placeholder={provider.id === "gowhats" ? "gw_live_…" : provider.id === "youtube" ? "yt_…" : "sk_live_…"}
+              placeholder={provider.id === "gowhats" ? "gw_live_…" : provider.id === "instaxbot" ? "ix_live_…" : provider.id === "youtube" ? "yt_…" : "sk_live_…"}
               className={inputCls(T, err)} />
           </Field>
         ) : null}
@@ -21499,7 +21436,7 @@ function ConnectModal({ provider, onClose }) {
         <div className="flex justify-end gap-2 mt-5">
           <button onClick={onClose} className={`px-3.5 h-9 rounded-xl text-xs font-semibold border ${T.chip}`}>Cancel</button>
           <button onClick={run} className="px-4 h-9 rounded-xl text-xs font-semibold text-white" style={{ background: BRAND }}>
-            {provider.id === "gmail" ? "Connect Account" : provider.auth === "oauth" ? "Continue to " + provider.name : "Connect"}
+            {provider.id === "gcontacts" ? "Continue to Google Contacts" : provider.id === "gmail" ? "Continue to Gmail OAuth" : provider.auth === "oauth" ? "Continue to " + provider.name : "Verify & Connect"}
           </button>
         </div>
       </>)}
@@ -21534,18 +21471,38 @@ function ProviderDetail({ provider, onClose }) {
   const [tab, setTab] = useState("Overview");
   const depCount = deps.agents.length + deps.workflows.length + deps.campaigns.length;
 
+  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+    ? "http://localhost:5000"
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+  const handleDisconnect = async () => {
+    if (provider.id === "instaxbot") {
+      try {
+        await fetch(`${apiHost}/api/integrations/instaxbot/disconnect`, { method: "POST" });
+        disconnectProvider("instaxbot");
+        flash("InstaxBot disconnected successfully.");
+        onClose();
+      } catch (e) {
+        flash("Failed to disconnect InstaxBot", "err");
+      }
+      return;
+    }
+    disconnectProvider(provider.id);
+    flash(provider.name + " disconnected.");
+  };
+
   return (
     <Modal title={provider.name} onClose={onClose} wide>
       <div className="flex items-center gap-3 flex-wrap mb-3">
         <Brand id={provider.logo} size={22} />
         <Pill c={HEALTH_TINT2[h.state]}>{h.state}</Pill>
         <Pill c={T.chip}>{AUTH_LABEL[provider.auth]}</Pill>
-        <span className={`text-[11px] ${T.faint}`}>{c.on ? (c.account || "connected") + (c.key ? " · " + maskKey(c.key) : "") : provider.d}</span>
+        <span className={`text-[11px] ${T.faint}`}>{c.on ? (c.account || "connected") + (c.maskedKey ? " · " + c.maskedKey : c.key ? " · " + maskKey(c.key) : "") : provider.d}</span>
         <div className="flex-1" />
         {c.on
           ? <button onClick={() => setConfirm({ text: "Disconnect " + provider.name + "?",
               detail: depCount ? `${deps.agents.length} agents, ${deps.workflows.length} workflows and ${deps.campaigns.length} live campaigns depend on it. They will stop being able to use it immediately, with a stated reason rather than silent failure. Existing history stays.` : "Nothing currently depends on it. Existing history stays.",
-              yes: "Disconnect", onYes: () => { disconnectProvider(provider.id); flash(provider.name + " disconnected."); } })}
+              yes: "Disconnect", onYes: handleDisconnect })}
               className={`h-8 px-3 rounded-xl border text-[11px] font-semibold ${T.chip} ${T.hover}`}>Disconnect</button>
           : <button onClick={() => { connectProvider(provider.id, {}); flash(provider.name + " connected."); }} className="h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>Connect</button>}
       </div>
@@ -21558,6 +21515,8 @@ function ProviderDetail({ provider, onClose }) {
 
       {tab === "Overview" && (
         <div className="space-y-3">
+          {provider.id === "linkedin" && <LinkedInShareWidget />}
+          {provider.id === "gcontacts" && <GoogleContactsView />}
           <div className={`rounded-xl p-3 ${T.softcard}`}>
             <div className={`text-[10px] font-medium uppercase tracking-widest mb-1.5 ${T.faint}`}>What it can do</div>
             <div className="flex flex-wrap gap-1.5">{(provider.caps.actions || []).map((a) => <Pill key={a} c={T.chip}>{a}</Pill>)}</div>
@@ -21806,6 +21765,195 @@ function LinkedInShareWidget() {
   );
 }
 
+function GoogleContactsView() {
+  const { T, flash } = useApp();
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [status, setStatus] = useState({ connected: false, error: null });
+
+  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+    ? "http://localhost:5000"
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+  const loadContacts = async () => {
+    setLoading(true);
+    try {
+      const dbRes = await fetch(`${apiHost}/api/contacts`);
+      const dbData = await dbRes.json();
+      const list = dbData.contacts || [];
+      const googleContacts = list.filter((c) => c.source === "Google Contacts" || (c.id && c.id.startsWith("gc_")));
+      setContacts(googleContacts.length > 0 ? googleContacts : list);
+
+      const statusRes = await fetch(`${apiHost}/api/google/contacts`);
+      const statusData = await statusRes.json();
+      if (statusRes.status === 403 || statusData.error === "insufficient_scope") {
+        setStatus({ connected: false, error: "insufficient_scope", message: statusData.message });
+      } else if (statusData.error === "rate_limit") {
+        setStatus({ connected: true, error: "rate_limit", message: statusData.message });
+      } else {
+        setStatus({ connected: statusData.connected, error: null, count: statusData.count });
+      }
+    } catch (e) {
+      console.warn("Error loading Google contacts:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadContacts();
+  }, []);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch(`${apiHost}/api/google/contacts/sync`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        flash(`Successfully synced ${data.count} contacts from Google People API!`, "ok");
+        loadContacts();
+      } else if (res.status === 403 || data.error === "insufficient_scope") {
+        setStatus({ connected: false, error: "insufficient_scope", message: data.message });
+        flash("Contacts API permission scope not granted. Re-authorization required.", "err");
+      } else if (res.status === 429 || data.error === "rate_limit") {
+        flash("Sync failed: Google Contacts API rate limit reached. Please try again later.", "err");
+      } else {
+        flash(data.message || "Failed to sync Google Contacts", "err");
+      }
+    } catch (e) {
+      flash("Network error while syncing Google Contacts", "err");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const reauthorize = () => {
+    window.location.href = `${apiHost}/api/google/auth`;
+  };
+
+  const lastSyncedAt = contacts.length > 0 && contacts[0].synced_at
+    ? new Date(contacts[0].synced_at).toLocaleString()
+    : "Not synced yet";
+
+  return (
+    <div className={`rounded-2xl p-5 border space-y-4 ${T.card} ${T.border}`}>
+      <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 grid place-items-center shrink-0">
+            <Brand id="google" size={22} />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              Google Contacts & Address Book
+              {status.connected && !status.error && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  Connected / API Enabled
+                </span>
+              )}
+              {status.error === "insufficient_scope" && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                  Needs Attention
+                </span>
+              )}
+            </h3>
+            <p className={`text-xs ${T.sub}`}>
+              {status.error === "insufficient_scope"
+                ? "Contacts API scope not granted. Please re-authorize to enable sync."
+                : status.email
+                ? `Synced from ${status.email} · ${contacts.length} contacts · Last synced: ${lastSyncedAt}`
+                : `Synced ${contacts.length} contacts from Google People API · Last synced: ${lastSyncedAt}`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {status.error === "insufficient_scope" ? (
+            <button
+              onClick={reauthorize}
+              className="h-9 px-4 rounded-xl text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 transition-colors"
+            >
+              Re-authorize Google Contacts
+            </button>
+          ) : (
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="h-9 px-4 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            >
+              <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Syncing..." : "Sync Now"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {status.error && (
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-xs space-y-2">
+          <p className="font-semibold flex items-center gap-1.5">
+            ⚠️ {status.error === "people_api_disabled" ? "Google People API Not Yet Enabled / Propagation Delay" : "Contacts Scope Permission Required"}
+          </p>
+          <p>
+            {status.message || "Your Google Account is connected, but Google People API needs to be enabled in Google Cloud Console."}
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="h-8 px-3 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+            >
+              <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "Retrying..." : "Retry Sync"}
+            </button>
+            <button
+              onClick={reauthorize}
+              className="h-8 px-3 rounded-lg text-xs font-semibold bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+            >
+              Re-authorize Google Contacts
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-6 text-center text-xs text-zinc-500">Loading contacts from local database...</div>
+      ) : contacts.length === 0 ? (
+        <div className="py-8 text-center space-y-3">
+          <p className={`text-xs ${T.sub}`}>No Google contacts synced yet.</p>
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="h-8 px-4 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+          >
+            Sync Google Contacts
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-80 overflow-y-auto bz-scroll">
+          {contacts.map((c) => (
+            <div key={c.id || c.email} className={`flex items-center justify-between p-3 rounded-xl border text-xs ${T.softcard} ${T.border}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-semibold grid place-items-center text-xs shrink-0">
+                  {(c.name || "C").charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="font-semibold text-zinc-900 dark:text-zinc-100">{c.name}</div>
+                  <div className={`text-[11px] ${T.sub}`}>{c.email || "No email"} {c.phone ? `· ${c.phone}` : ""}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  {c.source || "Google Contacts"}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IntegrationsView() {
   const { T, dk, connOf, isConnected, apiKeys, setApiKeys, outHooks, setOutHooks, flash, setConfirm, log, agents, wfs, camps } = useApp();
   const [tab, setTab] = useState("Connectors");
@@ -21853,7 +22001,6 @@ function IntegrationsView() {
           ))}
         </div>
         <div className="flex-1 overflow-y-auto bz-scroll p-6 space-y-5">
-          <LinkedInShareWidget />
           {cats.map((cat) => {
             const items = list.filter((x) => x.p.cat === cat);
             if (!items.length) return null;

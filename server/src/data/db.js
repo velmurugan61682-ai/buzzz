@@ -38,6 +38,7 @@ export const db = {
   workflows: [],
   linkedinAccounts: [],
   googleAccounts: [],
+  instaxbotAccounts: [],
 };
 
 // ==============================================================================
@@ -98,10 +99,97 @@ const GoogleAccountSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const InstaxBotAccountSchema = new mongoose.Schema(
+  {
+    workspaceId: { type: String, default: "ws_default", index: true },
+    apiKey: { type: String, required: true },
+    maskedKey: { type: String, required: true },
+    accountName: { type: String, default: "InstaxBot Account" },
+    connectedAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true }
+);
+
+const ContactSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    workspaceId: { type: String, default: "ws_default", index: true },
+    name: { type: String, required: true },
+    email: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    company: { type: String, default: "—" },
+    title: { type: String, default: "" },
+    location: { type: String, default: "" },
+    stage: { type: String, default: "New Lead" },
+    status: { type: String, default: "New" },
+    score: { type: Number, default: 50 },
+    value: { type: String, default: "$0" },
+    ltv: { type: String, default: "$0" },
+    churn: { type: String, default: "Low" },
+    sentiment: { type: String, default: "Neutral" },
+    intent: { type: String, default: "Unknown" },
+    channels: { type: [String], default: ["whatsapp"] },
+    tags: { type: [String], default: [] },
+    memory: { type: [String], default: [] },
+    aiSummary: { type: String, default: "" },
+    engagement: { type: Number, default: 50 },
+    owner: { type: String, default: "Unassigned" },
+    source: { type: String, default: "Manual entry" },
+    archived: { type: Boolean, default: false },
+    notes: { type: Array, default: [] },
+    cf: { type: Object, default: {} },
+    created: { type: String, default: () => new Date().toISOString().slice(0, 10) },
+    lastContact: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
 export const LinkedInAccountModel = mongoose.models.LinkedInAccount || mongoose.model("LinkedInAccount", LinkedInAccountSchema);
 export const GoogleAccountModel = mongoose.models.GoogleAccount || mongoose.model("GoogleAccount", GoogleAccountSchema);
+export const InstaxBotAccountModel = mongoose.models.InstaxBotAccount || mongoose.model("InstaxBotAccount", InstaxBotAccountSchema);
+export const ContactModel = mongoose.models.Contact || mongoose.model("Contact", ContactSchema);
+
+// Initial seed contact record (c1) to keep existing CONVS references valid
+export const seedContact = {
+  id: "c1",
+  workspaceId: "ws_default",
+  name: "Arun Kumar",
+  company: "Vertex Retail Group",
+  title: "Head of Operations",
+  location: "Chennai, IN",
+  email: "arun.kumar@vertexretail.in",
+  phone: "+91 98407 22110",
+  stage: "Opportunity",
+  status: "Qualified",
+  score: 87,
+  value: "$18,400",
+  ltv: "$18,400",
+  churn: "Low",
+  sentiment: "Positive",
+  intent: "Purchase",
+  channels: ["whatsapp", "voice", "email"],
+  tags: ["High Intent", "Enterprise", "Pricing"],
+  memory: [
+    "Prefers WhatsApp over email",
+    "Asked about Enterprise annual pricing twice",
+    "Company has around 120 employees across 14 stores",
+    "Wants onboarding completed before Diwali season",
+  ],
+  aiSummary: "Contacted 3 times in the last 7 days about the Enterprise plan. High purchase intent. Asked about annual pricing and implementation timeline.",
+  engagement: 92,
+  owner: "Rina Sato",
+  source: "Website",
+  archived: false,
+  notes: [],
+  cf: {},
+  created: "2026-07-10",
+  lastContact: 2,
+};
+
+// Also put seed contact in in-memory fallback array db.contacts
+db.contacts = [seedContact];
 
 // ==============================================================================
 // 3. MONGODB CONNECTION SETUP & SEEDING
@@ -131,6 +219,13 @@ export const connectDB = async () => {
           await MessageModel.create(msg);
         }
       }
+    }
+
+    // Seed initial demo contact (c1) into MongoDB if empty
+    const contactCount = await ContactModel.countDocuments();
+    if (contactCount === 0) {
+      console.log("🌱 Seeding initial demo contact (c1) into MongoDB...");
+      await ContactModel.create(seedContact);
     }
 
     return true;
@@ -285,11 +380,12 @@ export const saveGoogleAccount = async (data) => {
     ...data,
     workspaceId: data.workspaceId || "ws_default",
     expiresAt: data.expiresAt ? new Date(data.expiresAt) : new Date(Date.now() + 3600000),
+    updatedAt: new Date(),
   };
 
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const doc = await GoogleAccountModel.findOneAndUpdate(
-      { workspaceId: payload.workspaceId, email: payload.email },
+      { workspaceId: payload.workspaceId },
       { $set: payload },
       { upsert: true, new: true }
     ).lean();
@@ -297,11 +393,13 @@ export const saveGoogleAccount = async (data) => {
   }
 
   const idx = db.googleAccounts.findIndex(
-    (a) => a.workspaceId === payload.workspaceId && a.email === payload.email
+    (a) => a.workspaceId === payload.workspaceId
   );
   if (idx !== -1) {
     db.googleAccounts[idx] = { ...db.googleAccounts[idx], ...payload };
-    return db.googleAccounts[idx];
+    const [updated] = db.googleAccounts.splice(idx, 1);
+    db.googleAccounts.unshift(updated);
+    return updated;
   } else {
     db.googleAccounts.unshift(payload);
     return payload;
@@ -312,5 +410,111 @@ export const getGoogleAccount = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     return await GoogleAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
   }
-  return db.googleAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
+  const accounts = db.googleAccounts.filter((a) => a.workspaceId === workspaceId || !a.workspaceId);
+  if (!accounts.length) return null;
+  accounts.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
+  return accounts[0];
+};
+
+export const saveInstaxBotConfig = async (data) => {
+  const payload = {
+    ...data,
+    workspaceId: data.workspaceId || "ws_default",
+    connectedAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const doc = await InstaxBotAccountModel.findOneAndUpdate(
+      { workspaceId: payload.workspaceId },
+      { $set: payload },
+      { upsert: true, new: true }
+    ).lean();
+    return doc;
+  }
+
+  const idx = db.instaxbotAccounts.findIndex((a) => a.workspaceId === payload.workspaceId);
+  if (idx !== -1) {
+    db.instaxbotAccounts[idx] = { ...db.instaxbotAccounts[idx], ...payload };
+    return db.instaxbotAccounts[idx];
+  } else {
+    db.instaxbotAccounts.unshift(payload);
+    return payload;
+  }
+};
+
+export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await InstaxBotAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
+  }
+  return db.instaxbotAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
+};
+
+export const deleteInstaxBotConfig = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await InstaxBotAccountModel.deleteOne({ workspaceId });
+  }
+  db.instaxbotAccounts = db.instaxbotAccounts.filter((a) => a.workspaceId !== workspaceId);
+  return { deletedCount: 1 };
+};
+
+// ==============================================================================
+// CONTACTS DATA ACCESS FUNCTIONS (MONGO DB WITH IN-MEMORY FALLBACK)
+// ==============================================================================
+export const fetchContacts = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const filter = workspaceId ? { $or: [{ workspaceId }, { workspaceId: "ws_default" }] } : {};
+    let contacts = await ContactModel.find(filter).sort({ createdAt: -1 }).lean();
+    const hasSeed = contacts.some((c) => c.id === "c1");
+    if (!hasSeed) {
+      try {
+        await ContactModel.findOneAndUpdate({ id: "c1" }, { $set: seedContact }, { upsert: true });
+        contacts = await ContactModel.find(filter).sort({ createdAt: -1 }).lean();
+      } catch (err) {
+        console.warn("⚠️ Contact seed warning:", err.message);
+      }
+    }
+    return contacts;
+  }
+  return db.contacts.filter((c) => !c.workspaceId || c.workspaceId === workspaceId || workspaceId === "ws_default");
+};
+
+export const fetchContactById = async (id) => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await ContactModel.findOne({ id }).lean();
+  }
+  return db.contacts.find((c) => c.id === id) || null;
+};
+
+export const upsertContact = async (data) => {
+  const payload = {
+    ...data,
+    workspaceId: data.workspaceId || "ws_default",
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const doc = await ContactModel.findOneAndUpdate(
+      { id: payload.id },
+      { $set: payload },
+      { upsert: true, new: true }
+    ).lean();
+    return doc;
+  }
+
+  const idx = db.contacts.findIndex((c) => c.id === payload.id);
+  if (idx !== -1) {
+    db.contacts[idx] = { ...db.contacts[idx], ...payload };
+    return db.contacts[idx];
+  } else {
+    db.contacts.unshift(payload);
+    return payload;
+  }
+};
+
+export const deleteContactById = async (id) => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await ContactModel.deleteOne({ id });
+  }
+  db.contacts = db.contacts.filter((c) => c.id !== id);
+  return { deletedCount: 1 };
 };

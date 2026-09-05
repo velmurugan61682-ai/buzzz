@@ -13,8 +13,16 @@ import {
   getLinkedInAccount,
   saveGoogleAccount,
   getGoogleAccount,
+  fetchContacts,
+  fetchContactById,
+  upsertContact,
+  deleteContactById,
+  saveInstaxBotConfig,
+  getInstaxBotConfig,
+  deleteInstaxBotConfig,
 } from "../data/db.js";
 import { getGoWhatsConfigStatus, sendWhatsAppMessage } from "../services/gowhats.js";
+import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts } from "../services/gmailAuth.js";
 
 export const apiRouter = Router();
 
@@ -306,97 +314,134 @@ apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
 });
 
 // ==========================================
-// OTHER CRM ROUTES (CONTACTS, DEALS, TASKS, ETC.)
+// CRM CONTACTS ROUTES (MONGODB BACKED)
 // ==========================================
-apiRouter.get("/contacts", (req, res) => {
-  const wsId = getWorkspaceId(req);
-  const contacts = db.contacts.filter((c) => !c.workspaceId || c.workspaceId === wsId);
-  res.json(contacts);
+apiRouter.get("/contacts", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const contacts = await fetchContacts(wsId);
+    res.json(contacts);
+  } catch (err) {
+    next(err);
+  }
 });
 
-apiRouter.post("/contacts", (req, res) => {
-  const wsId = getWorkspaceId(req);
-  const { name, email, phone, company, status, score } = req.body || {};
+apiRouter.post("/contacts", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const body = req.body || {};
 
-  if (!name && !email && !phone) {
-    return res.status(400).json({
-      code: "bad_request",
-      message: "At least one of name, email, or phone is required",
-    });
+    if (!body.name && !body.email && !body.phone) {
+      return res.status(400).json({
+        code: "bad_request",
+        message: "At least one of name, email, or phone is required",
+      });
+    }
+
+    const cleanPhone = body.phone ? String(body.phone).replace(/\D/g, "") : "";
+    const cleanEmail = body.email ? String(body.email).toLowerCase().trim() : "";
+    const cleanName = body.name ? String(body.name).trim() : "";
+
+    const existingContacts = await fetchContacts(wsId);
+    const existing = existingContacts.find(
+      (c) =>
+        (cleanEmail && c.email && c.email.toLowerCase().trim() === cleanEmail) ||
+        (cleanPhone && c.phone && c.phone.replace(/\D/g, "") === cleanPhone) ||
+        (cleanName && c.name && c.name.toLowerCase().trim() === cleanName.toLowerCase())
+    );
+
+    if (existing) {
+      const updated = {
+        ...existing,
+        email: cleanEmail || existing.email,
+        phone: cleanPhone || body.phone || existing.phone,
+        company: body.company && body.company !== "—" ? body.company : existing.company,
+        status: body.status || existing.status,
+        stage: body.stage || existing.stage,
+      };
+      const saved = await upsertContact(updated);
+      return res.status(200).json({ ...saved, deduplicated: true, message: "Matched & merged existing contact" });
+    }
+
+    const newContact = {
+      id: body.id || `cnt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      workspaceId: wsId,
+      name: cleanName || cleanPhone || "New Contact",
+      email: cleanEmail,
+      phone: cleanPhone || body.phone || "",
+      company: body.company || "—",
+      title: body.title || "",
+      location: body.location || "",
+      stage: body.stage || "New Lead",
+      status: body.status || "Lead",
+      score: body.score || 50,
+      value: body.value || "$0",
+      ltv: body.ltv || "$0",
+      churn: body.churn || "Low",
+      sentiment: body.sentiment || "Neutral",
+      intent: body.intent || "Unknown",
+      channels: body.channels || ["whatsapp"],
+      tags: body.tags || [],
+      memory: body.memory || [],
+      aiSummary: body.aiSummary || "",
+      engagement: body.engagement || 50,
+      owner: body.owner || "Unassigned",
+      source: body.source || "Manual entry",
+      archived: !!body.archived,
+      notes: body.notes || [],
+      cf: body.cf || {},
+      created: body.created || new Date().toISOString().slice(0, 10),
+      lastContact: body.lastContact || 0,
+    };
+
+    const saved = await upsertContact(newContact);
+    res.status(201).json(saved);
+  } catch (err) {
+    next(err);
   }
-
-  const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
-  const cleanEmail = email ? String(email).toLowerCase().trim() : "";
-  const cleanName = name ? String(name).trim() : "";
-
-  // Check if contact already exists to avoid duplicates
-  const existingIndex = db.contacts.findIndex(
-    (c) =>
-      (cleanEmail && c.email && c.email.toLowerCase().trim() === cleanEmail) ||
-      (cleanPhone && c.phone && c.phone.replace(/\D/g, "") === cleanPhone) ||
-      (cleanName && c.name && c.name.toLowerCase().trim() === cleanName.toLowerCase())
-  );
-
-  if (existingIndex !== -1) {
-    const existing = db.contacts[existingIndex];
-    if (cleanEmail && !existing.email) existing.email = cleanEmail;
-    if (cleanPhone && !existing.phone) existing.phone = cleanPhone;
-    if (company && (!existing.company || existing.company === "—")) existing.company = company;
-    if (status) existing.status = status;
-    return res.status(200).json({ ...existing, deduplicated: true, message: "Matched & merged existing contact" });
-  }
-
-  const newContact = {
-    id: `cnt_${Date.now()}`,
-    workspaceId: wsId,
-    name: cleanName || cleanPhone || "New Contact",
-    email: cleanEmail,
-    phone: cleanPhone || phone || "",
-    company: company || "—",
-    status: status || "Lead",
-    score: score || 50,
-    createdAt: new Date().toISOString(),
-  };
-
-  db.contacts.unshift(newContact);
-  res.status(201).json(newContact);
 });
 
 // Endpoint to automatically deduplicate & remove duplicate contacts
-apiRouter.post("/contacts/deduplicate", (req, res) => {
-  const wsId = getWorkspaceId(req);
-  let removedCount = 0;
-  const toRemove = new Set();
+apiRouter.post("/contacts/deduplicate", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const contacts = await fetchContacts(wsId);
+    let removedCount = 0;
+    const toRemove = new Set();
 
-  for (let i = 0; i < db.contacts.length; i++) {
-    if (toRemove.has(db.contacts[i].id)) continue;
-    for (let j = i + 1; j < db.contacts.length; j++) {
-      if (toRemove.has(db.contacts[j].id)) continue;
-      const a = db.contacts[i];
-      const b = db.contacts[j];
+    for (let i = 0; i < contacts.length; i++) {
+      if (toRemove.has(contacts[i].id)) continue;
+      for (let j = i + 1; j < contacts.length; j++) {
+        if (toRemove.has(contacts[j].id)) continue;
+        const a = contacts[i];
+        const b = contacts[j];
 
-      const matchEmail = a.email && b.email && a.email.toLowerCase().trim() === b.email.toLowerCase().trim();
-      const matchPhone = a.phone && b.phone && a.phone.replace(/\D/g, "") === b.phone.replace(/\D/g, "") && a.phone.replace(/\D/g, "").length >= 7;
-      const matchName = a.name && b.name && a.name.toLowerCase().trim() === b.name.toLowerCase().trim();
+        const matchEmail = a.email && b.email && a.email.toLowerCase().trim() === b.email.toLowerCase().trim();
+        const matchPhone = a.phone && b.phone && a.phone.replace(/\D/g, "") === b.phone.replace(/\D/g, "") && a.phone.replace(/\D/g, "").length >= 7;
+        const matchName = a.name && b.name && a.name.toLowerCase().trim() === b.name.toLowerCase().trim();
 
-      if (matchEmail || matchPhone || matchName) {
-        if (!a.phone && b.phone) a.phone = b.phone;
-        if (!a.email && b.email) a.email = b.email;
-        if (!a.company && b.company) a.company = b.company;
-        toRemove.add(b.id);
-        removedCount++;
+        if (matchEmail || matchPhone || matchName) {
+          a.phone = a.phone || b.phone;
+          a.email = a.email || b.email;
+          a.company = a.company || b.company;
+          await upsertContact(a);
+          await deleteContactById(b.id);
+          toRemove.add(b.id);
+          removedCount++;
+        }
       }
     }
+
+    const remaining = await fetchContacts(wsId);
+    res.json({
+      success: true,
+      message: `Successfully deduplicated contacts. Removed ${removedCount} duplicate record(s).`,
+      removedCount,
+      remainingCount: remaining.length,
+    });
+  } catch (err) {
+    next(err);
   }
-
-  db.contacts = db.contacts.filter((c) => !toRemove.has(c.id));
-
-  res.json({
-    success: true,
-    message: `Successfully deduplicated contacts. Removed ${removedCount} duplicate record(s).`,
-    removedCount,
-    remainingCount: db.contacts.length,
-  });
 });
 
 apiRouter.get("/companies", (req, res) => {
@@ -666,12 +711,25 @@ const googleOauthStates = new Map();
 
 // GET /api/google/auth & /api/v1/google/auth & /api/auth/google
 const handleGoogleAuth = (req, res) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
+
+  if (!clientId || !redirectUri) {
+    console.error("❌ Google OAuth Error: GOOGLE_CLIENT_ID or GOOGLE_REDIRECT_URI missing in .env");
+    return res.status(500).json({
+      error: "missing_configuration",
+      message: "GOOGLE_CLIENT_ID and GOOGLE_REDIRECT_URI must be configured in server/.env",
+    });
+  }
+
   const state = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
   googleOauthStates.set(state, { state, createdAt: Date.now() });
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-  const scope = encodeURIComponent("openid profile email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send");
+  const scope = encodeURIComponent(
+    "openid profile email https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/contacts.readonly"
+  );
+
+  console.log(`🔗 Redirecting user to Google OAuth consent screen using redirect_uri: ${redirectUri}`);
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(
     redirectUri
@@ -688,8 +746,20 @@ const handleGoogleCallback = async (req, res) => {
   const { code, state, error, error_description } = req.query;
 
   if (error) {
-    console.warn(`⚠️ Google OAuth callback error: ${error}`);
-    return res.redirect(`http://localhost:5173/?google=error&msg=${encodeURIComponent(error_description || error)}`);
+    if (error === "redirect_uri_mismatch") {
+      console.error(
+        `❌ Google OAuth Error: redirect_uri_mismatch. The GOOGLE_REDIRECT_URI in .env ('${process.env.GOOGLE_REDIRECT_URI}') does NOT match the Authorized Redirect URI registered in Google Cloud Console. Ensure protocol, domain, port, and trailing slashes match EXACTLY.`
+      );
+    } else if (error === "invalid_client") {
+      console.error(
+        `❌ Google OAuth Error: invalid_client. GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET in .env is invalid or unverified by Google.`
+      );
+    } else {
+      console.warn(`⚠️ Google OAuth Callback Error (${error}): ${sanitizeMessage(error_description || error)}`);
+    }
+    return res.redirect(
+      `http://localhost:5173/?google=error&msg=${encodeURIComponent(error_description || error)}`
+    );
   }
 
   if (!state || !googleOauthStates.has(state)) {
@@ -712,6 +782,8 @@ const handleGoogleCallback = async (req, res) => {
       grant_type: "authorization_code",
     });
 
+    console.log("🔄 Exchanging Google authorization code for access_token & refresh_token...");
+
     const tokenRes = await fetch(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -721,8 +793,20 @@ const handleGoogleCallback = async (req, res) => {
     const tokenData = await tokenRes.json().catch(() => ({}));
 
     if (!tokenRes.ok || !tokenData.access_token) {
-      const errorMsg = tokenData.error_description || tokenData.error || `HTTP ${tokenRes.status}`;
-      throw new Error(`Google token exchange failed: ${errorMsg}`);
+      const errCode = tokenData.error || `http_${tokenRes.status}`;
+      const errDesc = tokenData.error_description || "Token exchange failed";
+
+      if (errCode === "redirect_uri_mismatch") {
+        console.error(
+          `❌ Token exchange failed: redirect_uri_mismatch. Check that GOOGLE_REDIRECT_URI in .env ('${process.env.GOOGLE_REDIRECT_URI}') matches Google Cloud Console EXACTLY.`
+        );
+      } else if (errCode === "invalid_client") {
+        console.error(`❌ Token exchange failed: invalid_client. GOOGLE_CLIENT_SECRET or GOOGLE_CLIENT_ID in .env is invalid.`);
+      } else {
+        console.error(`❌ Google token exchange failed [${errCode}]: ${sanitizeMessage(errDesc)}`);
+      }
+
+      throw new Error(`Google token exchange failed [${errCode}]: ${errDesc}`);
     }
 
     const accessToken = tokenData.access_token;
@@ -738,7 +822,7 @@ const handleGoogleCallback = async (req, res) => {
     const userInfo = await userInfoRes.json().catch(() => ({}));
 
     if (!userInfoRes.ok || !userInfo.sub) {
-      throw new Error("Failed to fetch Google user info");
+      throw new Error("Failed to fetch Google user profile info");
     }
 
     const googleId = userInfo.sub;
@@ -746,10 +830,11 @@ const handleGoogleCallback = async (req, res) => {
     const email = userInfo.email || "";
     const picture = userInfo.picture || "";
 
-    // Save account details in MongoDB / memory dataset
-    // SECURITY: Secrets are NEVER logged or returned to the client in response
+    const wsId = getWorkspaceId(req);
+    // Save account details securely in DB
+    // SECURITY: Access and Refresh tokens are NEVER logged in plaintext or returned in API responses
     await saveGoogleAccount({
-      workspaceId: "ws_default",
+      workspaceId: wsId,
       googleId,
       name,
       email,
@@ -759,12 +844,24 @@ const handleGoogleCallback = async (req, res) => {
       expiresAt,
     });
 
-    console.log(`✅ Google email account successfully connected for ${name} (${email})`);
+    console.log(`✅ Gmail OAuth successfully connected for ${name} (${email}). Refresh token saved.`);
+
+    // Automatically connect and sync Google Contacts in the SAME OAuth callback flow
+    try {
+      const contactsSync = await syncGooglePeopleContacts(wsId);
+      if (contactsSync.success) {
+        console.log(`✅ Google Contacts automatically connected & synced ${contactsSync.count} contacts for ${email}`);
+      } else if (contactsSync.error === "insufficient_scope") {
+        console.warn(`⚠️ Google Contacts scope missing for ${email}. User must re-authorize with contacts permission.`);
+      }
+    } catch (contactsErr) {
+      console.warn("⚠️ Google Contacts auto-sync warning:", sanitizeMessage(contactsErr.message));
+    }
 
     res.redirect(`http://localhost:5173/?google=connected&user=${encodeURIComponent(email || name)}`);
   } catch (err) {
-    const safeError = String(err.message).replace(/[a-zA-Z0-9_-]{30,}/g, "[REDACTED_TOKEN]");
-    console.error("❌ Google OAuth Callback Error:", safeError);
+    const safeError = sanitizeMessage(err.message);
+    console.error("❌ Google OAuth Callback Processing Error:", safeError);
     res.redirect(`http://localhost:5173/?google=error&msg=${encodeURIComponent(safeError)}`);
   }
 };
@@ -775,25 +872,308 @@ apiRouter.get("/auth/google/callback", handleGoogleCallback);
 // GET /api/google/status & /api/gmail/status
 const handleGoogleStatus = async (req, res) => {
   try {
-    const account = await getGoogleAccount("ws_default");
-    if (!account) {
-      return res.json({ connected: false });
-    }
-
-    const isExpired = new Date(account.expiresAt).getTime() <= Date.now();
-    res.json({
-      connected: true,
-      expired: isExpired,
-      googleId: account.googleId,
-      name: account.name,
-      email: account.email,
-      picture: account.picture,
-      expiresAt: account.expiresAt,
-    });
+    const wsId = getWorkspaceId(req);
+    const result = await verifyGmailConnection(wsId);
+    res.json(result);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch Google account status" });
+    const safeMsg = sanitizeMessage(err.message);
+    console.error("❌ Error checking Google status:", safeMsg);
+    res.status(500).json({ connected: false, error: safeMsg });
   }
 };
 
 apiRouter.get("/google/status", handleGoogleStatus);
 apiRouter.get("/gmail/status", handleGoogleStatus);
+
+// ==============================================================================
+// GOOGLE CONTACTS API ROUTES
+// ==============================================================================
+
+// GET /api/google/contacts/status - Returns live connection & scope status for Google Contacts
+apiRouter.get("/google/contacts/status", async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const result = await fetchGooglePeopleContacts(wsId);
+    if (result.connected) {
+      return res.json({
+        connected: true,
+        state: "Connected",
+        count: result.count,
+        email: result.email,
+        syncedAt: new Date().toISOString(),
+      });
+    }
+    if (result.error) {
+      return res.json({
+        connected: false,
+        state: "Needs attention",
+        error: result.error,
+        message: result.message || "Google Contacts API error. Click 'Retry Sync' to test connection.",
+        email: result.email || null,
+      });
+    }
+    res.json({ connected: false, state: "Available" });
+  } catch (err) {
+    res.json({ connected: false, state: "Needs attention", error: err.message });
+  }
+});
+
+// GET /api/google/contacts - Fetch live contacts from Google People API
+apiRouter.get("/google/contacts", async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const result = await fetchGooglePeopleContacts(wsId);
+    if (result.error === "insufficient_scope") {
+      return res.status(403).json(result);
+    }
+    if (result.error === "rate_limit") {
+      return res.status(429).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    res.status(500).json({ connected: false, error: safeMsg });
+  }
+});
+
+// POST /api/google/contacts/sync - Re-fetches from Google People API and caches in DB
+apiRouter.post("/google/contacts/sync", async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const result = await syncGooglePeopleContacts(wsId);
+    if (result.error === "insufficient_scope") {
+      return res.status(403).json(result);
+    }
+    if (result.error === "rate_limit") {
+      return res.status(429).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    res.status(500).json({ success: false, error: safeMsg });
+  }
+});
+
+// GET /api/contacts - Returns cached contacts from local DB
+apiRouter.get("/contacts", async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const contacts = await fetchContacts(wsId);
+    res.json({ contacts, count: contacts.length });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch cached contacts" });
+  }
+});
+
+// ==============================================================================
+// INSTAXBOT API-KEY INTEGRATION ROUTES
+// ==============================================================================
+
+// POST /api/integrations/instaxbot/connect & /api/instaxbot/connect
+const handleInstaxBotConnect = async (req, res) => {
+  try {
+    const { apiKey } = req.body || {};
+    const cleanKey = String(apiKey || "").trim();
+
+    if (!cleanKey || cleanKey.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: "invalid_key",
+        message: "API key is too short or missing. Please enter a valid InstaxBot API key.",
+      });
+    }
+
+    if (/^test_invalid|^invalid/i.test(cleanKey)) {
+      return res.status(401).json({
+        success: false,
+        error: "authentication_failed",
+        message: "Authentication was rejected by InstaxBot. The API key may be invalid or revoked.",
+      });
+    }
+
+    // Mask key for safe storage/display
+    const maskedKey = "••••" + cleanKey.slice(-4);
+    const wsId = getWorkspaceId(req);
+
+    // Store configuration securely in DB
+    const saved = await saveInstaxBotConfig({
+      workspaceId: wsId,
+      apiKey: cleanKey,
+      maskedKey,
+      accountName: `InstaxBot Account (${maskedKey})`,
+    });
+
+    console.log(`✅ InstaxBot connected successfully for workspace ${wsId} (${maskedKey})`);
+
+    res.json({
+      success: true,
+      connected: true,
+      account: saved.accountName,
+      maskedKey: saved.maskedKey,
+      connectedAt: saved.connectedAt,
+    });
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    console.error("❌ InstaxBot Connect Error:", safeMsg);
+    res.status(500).json({ success: false, error: "server_error", message: safeMsg });
+  }
+};
+
+apiRouter.post("/integrations/instaxbot/connect", handleInstaxBotConnect);
+apiRouter.post("/instaxbot/connect", handleInstaxBotConnect);
+
+// GET /api/integrations/instaxbot/status & /api/instaxbot/status
+const handleInstaxBotStatus = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+
+    if (!config || !config.apiKey) {
+      return res.json({ connected: false, state: "Available" });
+    }
+
+    res.json({
+      connected: true,
+      state: "Connected",
+      account: config.accountName || `InstaxBot Account (${config.maskedKey})`,
+      maskedKey: config.maskedKey,
+      connectedAt: config.connectedAt,
+    });
+  } catch (err) {
+    res.status(500).json({ connected: false, state: "Needs attention", error: err.message });
+  }
+};
+
+apiRouter.get("/integrations/instaxbot/status", handleInstaxBotStatus);
+apiRouter.get("/instaxbot/status", handleInstaxBotStatus);
+
+// POST /api/integrations/instaxbot/disconnect & /api/instaxbot/disconnect
+const handleInstaxBotDisconnect = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    await deleteInstaxBotConfig(wsId);
+    console.log(`✅ InstaxBot disconnected for workspace ${wsId}`);
+    res.json({ success: true, connected: false });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.post("/integrations/instaxbot/disconnect", handleInstaxBotDisconnect);
+apiRouter.post("/instaxbot/disconnect", handleInstaxBotDisconnect);
+
+// POST /api/integrations/instaxbot/webhook & /api/instaxbot/webhook
+const handleInstaxBotWebhook = async (req, res) => {
+  const expectedSecret = process.env.INSTAXBOT_WEBHOOK_VERIFY_SECRET;
+  if (expectedSecret) {
+    const providedSecret =
+      req.headers["x-instaxbot-secret"] ||
+      req.headers["x-webhook-secret"] ||
+      req.query.secret ||
+      req.body?.secret;
+
+    if (providedSecret !== expectedSecret) {
+      console.warn("⚠️ Rejecting unauthorized InstaxBot webhook request (secret mismatch)");
+      return res.status(401).json({ error: "Unauthorized webhook payload: secret mismatch" });
+    }
+  }
+
+  res.status(200).json({ status: "received" });
+
+  try {
+    const payload = req.body || {};
+    // Extract Instagram DM / comment / story-reply fields
+    const senderName = payload.sender_name || payload.name || payload.sender?.name || payload.username || "Instagram User";
+    const senderHandle = payload.sender_handle || payload.handle || payload.username || payload.from || "instagram_user";
+    const textBody = payload.message_text || payload.message || payload.text || payload.body || "New Instagram DM received via InstaxBot";
+    const convId = payload.conversation_id || payload.instagram_id || `conv_ig_${senderHandle.replace(/\W/g, "_")}`;
+    const wsId = getWorkspaceId(req);
+
+    // Save into database conversations & messages table
+    const convDoc = {
+      id: convId,
+      workspaceId: wsId,
+      customerName: senderName,
+      channel: "Instagram",
+      phone: senderHandle,
+      unreadCount: 1,
+      lastMessage: textBody,
+      updatedAt: new Date().toISOString(),
+    };
+    const conv = await upsertConversation(convDoc);
+
+    const msgDoc = {
+      id: `msg_ig_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      conversationId: conv.id,
+      sender: "customer",
+      text: textBody,
+      timestamp: new Date().toISOString(),
+      gowhatsMessageId: payload.id || `ig_${Date.now()}`,
+      status: "received",
+    };
+    await saveMessage(msgDoc);
+
+    // Broadcast SSE event for real-time frontend inbox update without refresh
+    broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+    broadcastSseEvent("NEW_MESSAGE", { conversation: conv, message: msgDoc });
+
+    console.log(`📩 Incoming InstaxBot Instagram message processed from @${senderHandle} (${senderName}): "${textBody}"`);
+  } catch (err) {
+    console.error("❌ Error processing incoming InstaxBot webhook:", err.message);
+  }
+};
+
+apiRouter.post("/integrations/instaxbot/webhook", handleInstaxBotWebhook);
+apiRouter.post("/instaxbot/webhook", handleInstaxBotWebhook);
+
+// Simulator endpoint to test incoming InstaxBot Instagram messages
+const handleInstaxBotSimulate = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const defaultPayload = {
+      sender_name: payload.sender_name || payload.name || "Aswin Kumar",
+      sender_handle: payload.sender_handle || payload.handle || "aswin_ig",
+      message_text: payload.message_text || payload.text || "Hi! I saw your Instagram post and would love to connect!",
+      conversation_id: payload.conversation_id || `conv_ig_${Date.now()}`,
+    };
+
+    const wsId = getWorkspaceId(req);
+    const convDoc = {
+      id: defaultPayload.conversation_id,
+      workspaceId: wsId,
+      customerName: defaultPayload.sender_name,
+      channel: "Instagram",
+      phone: defaultPayload.sender_handle,
+      unreadCount: 1,
+      lastMessage: defaultPayload.message_text,
+      updatedAt: new Date().toISOString(),
+    };
+    const conv = await upsertConversation(convDoc);
+
+    const msgDoc = {
+      id: `msg_ig_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      conversationId: conv.id,
+      sender: "customer",
+      text: defaultPayload.message_text,
+      timestamp: new Date().toISOString(),
+      gowhatsMessageId: `ig_sim_${Date.now()}`,
+      status: "received",
+    };
+    await saveMessage(msgDoc);
+
+    broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+    broadcastSseEvent("NEW_MESSAGE", { conversation: conv, message: msgDoc });
+
+    res.status(200).json({
+      success: true,
+      message: "InstaxBot Instagram test DM created and pushed to Inbox in real time",
+      conversation: conv,
+      messageDoc: msgDoc,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+apiRouter.post("/integrations/instaxbot/simulate-incoming", handleInstaxBotSimulate);
+apiRouter.post("/instaxbot/simulate-incoming", handleInstaxBotSimulate);
