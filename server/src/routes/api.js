@@ -33,7 +33,13 @@ import { PLATFORM_META } from "../constants/platformMeta.js";
 export const apiRouter = Router();
 
 // Helper to extract workspace context
-const getWorkspaceId = (req) => req.headers["x-workspace-id"] || "ws_default";
+const getWorkspaceId = (req) =>
+  req.headers["x-workspace-id"] ||
+  req.query?.workspaceId ||
+  req.query?.workspace_id ||
+  req.body?.workspaceId ||
+  req.body?.workspace_id ||
+  "ws_default";
 
 // Server-Sent Events (SSE) clients set for real-time push updates
 const sseClients = new Set();
@@ -1331,11 +1337,17 @@ const handleInstaxBotWebhook = async (req, res) => {
     const providedSecret =
       req.headers["x-instaxbot-secret"] ||
       req.headers["x-webhook-secret"] ||
-      req.query.secret ||
-      req.body?.secret;
+      req.headers["x-api-key"] ||
+      req.headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
+      req.query?.secret ||
+      req.query?.verify_token ||
+      req.query?.api_key ||
+      req.body?.secret ||
+      req.body?.verify_token ||
+      req.body?.api_key;
 
     if (providedSecret !== expectedSecret) {
-      console.warn("⚠️ [SECURITY 401] Rejecting InstaxBot webhook: signature/secret mismatch");
+      console.warn(`⚠️ [SECURITY 401] Rejecting InstaxBot webhook: signature/secret mismatch (provided: ${providedSecret || "none"})`);
       return res.status(401).json({ code: "unauthorized", error: "Signature/secret mismatch" });
     }
   }
@@ -1351,12 +1363,57 @@ const handleInstaxBotWebhook = async (req, res) => {
   res.status(200).json({ status: "received" });
 
   try {
-    const payload = req.body || {};
-    const externalMessageId = payload.id || payload.message_id || `ig_msg_${Date.now()}`;
-    const senderName = payload.sender_name || payload.name || payload.sender?.name || payload.username || "Instagram User";
-    const senderHandle = payload.sender_handle || payload.handle || payload.username || payload.from || "instagram_user";
-    const textBody = payload.message_text || payload.message || payload.text || payload.body || "New Instagram DM received via InstaxBot";
-    const convId = payload.conversation_id || payload.instagram_id || `conv_ig_${senderHandle.replace(/\W/g, "_")}`;
+    let payload = req.body || {};
+    console.log(`📩 [INSTAXBOT WEBHOOK] Processing incoming webhook (ws: ${wsId}):`, JSON.stringify(payload));
+
+    // Handle Meta / Instagram Graph API nested payload format if present
+    if (payload.entry?.[0]?.messaging?.[0]) {
+      const msgItem = payload.entry[0].messaging[0];
+      payload = {
+        id: msgItem.message?.mid || msgItem.message?.id || payload.id,
+        sender_handle: msgItem.sender?.id || msgItem.sender?.username || payload.sender_handle,
+        sender_name: msgItem.sender?.name || msgItem.sender?.username || payload.sender_name,
+        message_text: msgItem.message?.text || msgItem.message?.caption || payload.message_text,
+        conversation_id: msgItem.sender?.id ? `conv_ig_${msgItem.sender.id}` : payload.conversation_id,
+        ...payload,
+      };
+    }
+
+    const externalMessageId =
+      payload.id ||
+      payload.message_id ||
+      payload.mid ||
+      payload.externalMessageId ||
+      `ig_msg_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+
+    const senderName =
+      payload.sender_name ||
+      payload.name ||
+      payload.sender?.name ||
+      payload.username ||
+      payload.from_name ||
+      "Instagram User";
+
+    const senderHandle =
+      payload.sender_handle ||
+      payload.handle ||
+      payload.username ||
+      payload.from ||
+      payload.sender_id ||
+      "instagram_user";
+
+    const textBody =
+      payload.message_text ||
+      payload.message ||
+      payload.text ||
+      payload.body ||
+      "New Instagram DM received via InstaxBot";
+
+    const convId =
+      payload.conversation_id ||
+      payload.instagram_id ||
+      payload.conv_id ||
+      `conv_ig_${senderHandle.replace(/\W/g, "_")}`;
 
     // Upsert Conversation
     const convDoc = {
@@ -1411,7 +1468,7 @@ const handleInstaxBotWebhook = async (req, res) => {
       console.log(`ℹ️ [UNIFIED INBOX] Duplicate Instagram DM [${externalMessageId}] ignored. Socket push skipped.`);
     }
   } catch (err) {
-    console.error("❌ Error processing InstaxBot webhook:", err.message);
+    console.error("❌ [INSTAXBOT WEBHOOK ERROR]:", err.stack || err.message);
   }
 };
 

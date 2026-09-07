@@ -538,9 +538,26 @@ export const saveInstaxBotConfig = async (data) => {
 
 export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    return await InstaxBotAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
+    const doc = await InstaxBotAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
+    if (doc) return doc;
+    if (workspaceId !== "ws_default") {
+      const defaultDoc = await InstaxBotAccountModel.findOne({ workspaceId: "ws_default" }).sort({ updatedAt: -1 }).lean();
+      if (defaultDoc) return defaultDoc;
+    }
   }
-  return db.instaxbotAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
+  const mem = db.instaxbotAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId);
+  if (mem) return mem;
+
+  const envKey = process.env.ISTRA_XBOT || process.env.INSTAXBOT_API_KEY;
+  if (envKey) {
+    return {
+      workspaceId,
+      apiKey: envKey,
+      status: "connected",
+      verifiedAt: new Date().toISOString(),
+    };
+  }
+  return null;
 };
 
 export const deleteInstaxBotConfig = async (workspaceId = "ws_default") => {
@@ -726,10 +743,13 @@ export const saveUnifiedMessage = async (data) => {
  */
 export const fetchUnifiedInbox = async (workspaceId = "ws_default", limit = 50) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    return await UnifiedMessageModel.find({ workspaceId }).sort({ receivedAt: -1 }).limit(limit).lean();
+    const filter = workspaceId
+      ? { $or: [{ workspaceId }, { workspaceId: "ws_default" }, { workspaceId: { $exists: false } }] }
+      : {};
+    return await UnifiedMessageModel.find(filter).sort({ receivedAt: -1 }).limit(limit).lean();
   }
   return [...db.unifiedMessages]
-    .filter((m) => m.workspaceId === workspaceId || !m.workspaceId)
+    .filter((m) => !workspaceId || m.workspaceId === workspaceId || m.workspaceId === "ws_default" || !m.workspaceId)
     .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt))
     .slice(0, limit);
 };

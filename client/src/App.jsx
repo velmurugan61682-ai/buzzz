@@ -6532,7 +6532,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
 
   /* Real-time SSE listener for channelbot.in incoming messages */
   useEffect(() => {
-    const apiBaseUrl = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:4000";
+    const apiBaseUrl = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
     const sseUrl = `${apiBaseUrl}/api/v1/events`;
     let es;
     try {
