@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from "react";
-import { api } from "./lib/api-client.js";
+import { api, apiRequest } from "./lib/api-client.js";
+if (typeof api.getInbox !== "function") {
+  api.getInbox = (wsId) => apiRequest("/inbox", { workspaceId: wsId });
+}
 import {
   Inbox, Users, Bot, Workflow, Megaphone, Phone, BookOpen, BarChart3, Plug, Settings,
   Search, Bell, Moon, Sun, Sparkles, Send, Check, X, Pencil, ChevronRight, ChevronDown,
@@ -176,6 +179,8 @@ function Brand({ id, size = 16 }) {
       return (
         <svg {...S}><rect width="24" height="24" rx="5.5" fill="#fff" stroke="#e4e4e7" strokeWidth="0.8"/>
           <g transform="translate(4.5 4.5)"><rect width="15" height="15" rx="2" fill="#fff"/><path fill="#4285F4" d="M3 3h9v9H3z"/><path fill="#1967D2" d="M12 12h3v-2l-3-1v3Z" opacity="0"/><path fill="#FBBC04" d="M12 3h3v9h-3z"/><path fill="#34A853" d="M3 12h9v3H3z"/><path fill="#EA4335" d="M0 12h3v3H0z" opacity="0"/><path fill="#1967D2" d="M12 12v3l3-3h-3Z"/><path fill="#4285F4" d="M0 3h3v9H0z" opacity="0"/><text x="7.5" y="10.4" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#fff" fontFamily="Inter,system-ui">16</text></g></svg>);
+    case "missed_call":
+      return tile("#EF4444", <g fill="#fff"><path d="M6.62 10.79a15.053 15.053 0 0 0 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></g>);
     default:
       return tile("#71717a", <circle cx="12" cy="12" r="4" fill="#fff" />);
   }
@@ -186,9 +191,11 @@ const CH = {
   channelbot: { label: "ChannelBot.in", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
   whatsapp:  { label: "WhatsApp (GoWhats)",  Icon: BIcon("whatsapp"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
   gowhats:   { label: "ChannelBot (GoWhats)", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
-  instagram: { label: "Instagram", Icon: BIcon("instagram"), dot: "bg-pink-500",   l: "bg-pink-50 text-pink-700 border-pink-200",      d: "bg-pink-950 text-pink-400 border-pink-900" },
+  instagram: { label: "Instagram", Icon: BIcon("instaxbot"), dot: "bg-pink-500",   l: "bg-pink-50 text-pink-700 border-pink-200",      d: "bg-pink-950 text-pink-400 border-pink-900" },
   facebook:  { label: "Facebook",  Icon: BIcon("facebook"), dot: "bg-blue-600",   l: "bg-blue-50 text-blue-700 border-blue-200",      d: "bg-blue-950 text-blue-400 border-blue-900" },
   email:     { label: "Email",     Icon: BIcon("gmail"), dot: "bg-sky-500",    l: "bg-sky-50 text-sky-700 border-sky-200",         d: "bg-sky-950 text-sky-400 border-sky-900" },
+  missed_call: { label: "Missed Call", Icon: BIcon("missed_call"), dot: "bg-red-500", l: "bg-rose-50 text-rose-700 border-rose-200", d: "bg-rose-950 text-rose-400 border-rose-900" },
+
   sms:       { label: "SMS",       Icon: BIcon("sms"), dot: "bg-violet-500", l: "bg-violet-50 text-violet-700 border-violet-200",d: "bg-violet-950 text-violet-400 border-violet-900" },
   telegram:  { label: "Telegram",  Icon: BIcon("telegram"), dot: "bg-cyan-500",   l: "bg-cyan-50 text-cyan-700 border-cyan-200",      d: "bg-cyan-950 text-cyan-400 border-cyan-900" },
   linkedin:  { label: "LinkedIn",  Icon: BIcon("linkedin"), dot: "bg-blue-700",   l: "bg-blue-50 text-blue-800 border-blue-200",      d: "bg-blue-950 text-blue-300 border-blue-900" },
@@ -407,8 +414,8 @@ const CONVS = [
 ];
 /* normalize seed shape: at/last/assignee/priority are what the UI reads */
 CONVS.forEach((c) => {
-  c.msgs.forEach((m) => { if (!m.at) m.at = m.time; });
-  if (!c.last) { const lm = [...c.msgs].reverse().find((m) => m.text && m.from !== "system"); c.last = lm ? lm.text : ""; }
+  (c.msgs || []).forEach((m) => { if (!m.at) m.at = m.time; });
+  if (!c.last) { const lm = [...(c.msgs || [])].reverse().find((m) => m.text && m.from !== "system"); c.last = lm ? lm.text : ""; }
   if (!c.assignee && !c.ai && c.assigned) c.assignee = c.assigned;
   c.priority = (c.priority || "").toLowerCase();
 });
@@ -1032,42 +1039,50 @@ const fmtWhen = (a) => { const d = new Date(a.start); return fmtD(d) + " · " + 
 const addMin = (d, m) => new Date(new Date(d).getTime() + m * 60000);
 
 /* returns { slots:[Date], blocked:[{time,why}] } — never returns an unavailable slot */
-function availability({ date, service, staff, location, appts, rules, staffList }) {
+function availability({ date = new Date(), service, staff, location, appts = [], rules = {}, staffList = [] }) {
   const out = [], blocked = [];
   if (!service) return { slots: out, blocked };
-  const dow = date.getDay();
-  const cands = staff ? [staff] : staffList.filter((p) => p.services.includes(service.id));
+  const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+  const dow = d.getDay();
+  const safeStaffList = Array.isArray(staffList) ? staffList : [];
+  const cands = staff ? [staff] : safeStaffList.filter((p) => p && Array.isArray(p.services) && p.services.includes(service.id));
   const loc = location;
-  const locHours = loc ? loc.hours[dow] : [8, 21];
+  const locHours = (loc && loc.hours && Array.isArray(loc.hours[dow])) ? loc.hours[dow] : (loc && loc.hours && loc.hours[dow] !== undefined ? loc.hours[dow] : [8, 21]);
   if (!locHours) return { slots: out, blocked: [{ why: (loc ? loc.name : "The business") + " is closed on " + DAYS[dow] + "." }] };
-  const step = rules.slotStep;
+  const step = rules?.slotStep || 15;
   const now = new Date();
-  const minStart = new Date(now.getTime() + rules.minNoticeH * 3600000);
-  const maxDate = new Date(now.getTime() + rules.maxAdvanceD * 86400000);
-  if (date > maxDate) return { slots: out, blocked: [{ why: "Bookings only open " + rules.maxAdvanceD + " days ahead." }] };
-  const dayAppts = appts.filter((a) => sameDay(new Date(a.start), date) && !["Cancelled", "No show"].includes(a.status));
-  if (dayAppts.length >= rules.maxPerDay) return { slots: out, blocked: [{ why: "Daily booking limit of " + rules.maxPerDay + " reached." }] };
+  const minNoticeH = rules?.minNoticeH ?? 2;
+  const maxAdvanceD = rules?.maxAdvanceD ?? 60;
+  const maxPerDay = rules?.maxPerDay ?? 12;
 
-  for (let m = locHours[0] * 60; m + service.dur <= locHours[1] * 60; m += step) {
-    const slot = new Date(date); slot.setHours(0, m, 0, 0);
-    const end = addMin(slot, service.dur);
-    if (slot < minStart) { blocked.push({ time: fmtT(slot), why: "inside the " + rules.minNoticeH + "h notice window" }); continue; }
-    const free = cands.some((p) => {
-      const ph = p.hours[dow];
+  const minStart = new Date(now.getTime() + minNoticeH * 3600000);
+  const maxDate = new Date(now.getTime() + maxAdvanceD * 86400000);
+  if (d > maxDate) return { slots: out, blocked: [{ why: "Bookings only open " + maxAdvanceD + " days ahead." }] };
+  const safeAppts = Array.isArray(appts) ? appts : [];
+  const dayAppts = safeAppts.filter((a) => a && a.start && sameDay(new Date(a.start), d) && !["Cancelled", "No show"].includes(a.status));
+  if (dayAppts.length >= maxPerDay) return { slots: out, blocked: [{ why: "Daily booking limit of " + maxPerDay + " reached." }] };
+
+  for (let m = (locHours[0] || 8) * 60; m + (service.dur || 30) <= (locHours[1] || 21) * 60; m += step) {
+    const slot = new Date(d); slot.setHours(0, m, 0, 0);
+    const end = addMin(slot, service.dur || 30);
+    if (slot < minStart) { blocked.push({ time: fmtT(slot), why: "inside the " + minNoticeH + "h notice window" }); continue; }
+    const free = cands.length === 0 ? true : cands.some((p) => {
+      if (!p) return false;
+      const ph = (p.hours && Array.isArray(p.hours[dow])) ? p.hours[dow] : (p.hours && p.hours[dow] !== undefined ? p.hours[dow] : [8, 21]);
       if (!ph) return false;
-      if (mins(slot) < ph[0] * 60 || mins(end) > ph[1] * 60) return false;
-      if ((p.breaks || []).some(([bs, be]) => mins(slot) < be * 60 && mins(end) > bs * 60)) return false;
-      if ((p.off || []).some((o) => sameDay(new Date(o), date))) return false;
-      if (loc && !p.locations.includes(loc.id)) return false;
+      if (mins(slot) < (ph[0] || 8) * 60 || mins(end) > (ph[1] || 21) * 60) return false;
+      if (Array.isArray(p.breaks) && p.breaks.some(([bs, be]) => mins(slot) < be * 60 && mins(end) > bs * 60)) return false;
+      if (Array.isArray(p.off) && p.off.some((o) => sameDay(new Date(o), d))) return false;
+      if (loc && Array.isArray(p.locations) && !p.locations.includes(loc.id)) return false;
       const busy = dayAppts.some((a) => {
         if (a.staffId !== p.id) return false;
-        const as = new Date(a.start), ae = addMin(as, a.durMin + (service.buffAfter || 0));
+        const as = new Date(a.start), ae = addMin(as, (a.durMin || 30) + (service.buffAfter || 0));
         return slot < ae && addMin(end, service.buffBefore || 0) > as;
       });
       return !busy;
     });
-    const roomClash = loc && loc.rooms.length > 0 && dayAppts.filter((a) => a.locationId === loc.id && a.room).length >= loc.rooms.length &&
-      dayAppts.some((a) => { const as = new Date(a.start), ae = addMin(as, a.durMin); return a.locationId === loc.id && slot < ae && end > as; });
+    const roomClash = loc && Array.isArray(loc.rooms) && loc.rooms.length > 0 && dayAppts.filter((a) => a.locationId === loc.id && a.room).length >= loc.rooms.length &&
+      dayAppts.some((a) => { const as = new Date(a.start), ae = addMin(as, a.durMin || 30); return a.locationId === loc.id && slot < ae && end > as; });
     if (!free) blocked.push({ time: fmtT(slot), why: "no staff free" });
     else if (roomClash) blocked.push({ time: fmtT(slot), why: "all rooms in use" });
     else out.push(slot);
@@ -2634,7 +2649,11 @@ const timeAgo = (iso) => {
   return `${Math.round(h / 24)}d`;
 };
 const msgAt = (m) => (m && (m.at || m.time)) || null;
-const lastMsgOf = (c) => { for (let i = c.msgs.length - 1; i >= 0; i--) if (c.msgs[i].from !== "system") return c.msgs[i]; return c.msgs[c.msgs.length - 1]; };
+const lastMsgOf = (c) => {
+  const msgs = (c && c.msgs) || [];
+  for (let i = msgs.length - 1; i >= 0; i--) if (msgs[i] && msgs[i].from !== "system") return msgs[i];
+  return msgs[msgs.length - 1] || null;
+};
 const previewOf = (c) => { if (c.last) return c.last; const m = lastMsgOf(c); return m ? (m.attachment ? "📎 " + m.attachment : m.text || "") : ""; };
 
 /* ------------------------------------------------------------------ */
@@ -6513,7 +6532,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       api.getConversations(wsId),
       api.getAgents(wsId),
       api.getWorkflows(wsId),
-    ]).then(([resContacts, resConvs, resAgents, resWfs]) => {
+      api.getInbox(wsId),
+    ]).then(([resContacts, resConvs, resAgents, resWfs, resInbox]) => {
       if (!active) return;
       if (resContacts.status === "fulfilled" && resContacts.value?.data?.length) {
         CONTACTS.length = 0;
@@ -6521,8 +6541,58 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         setContactsV((v) => v + 1);
       }
       if (resConvs.status === "fulfilled") {
-        const convData = Array.isArray(resConvs.value) ? resConvs.value : (resConvs.value?.data || resConvs.value?.conversations);
-        if (Array.isArray(convData) && convData.length > 0) setConvs(convData);
+        const rawConvData = Array.isArray(resConvs.value)
+          ? resConvs.value
+          : (resConvs.value?.data || resConvs.value?.conversations);
+        if (Array.isArray(rawConvData) && rawConvData.length > 0) {
+          let inboxMessages = [];
+          if (resInbox?.status === "fulfilled" && resInbox.value) {
+            inboxMessages = Array.isArray(resInbox.value)
+              ? resInbox.value
+              : (resInbox.value.messages || resInbox.value.data || []);
+          }
+
+          const msgsByConvId = {};
+          (inboxMessages || []).forEach((m) => {
+            const cid = m.conversationId;
+            if (!cid) return;
+            if (!msgsByConvId[cid]) msgsByConvId[cid] = [];
+            const isInstagram = m.platform === "instagram" || m.platform === "Instagram";
+            const isEmail = m.platform === "gmail" || m.platform === "email" || m.platform === "Email" || m.channel === "Email" || m.channel === "email";
+            const channelKey = isEmail ? "email" : (isInstagram ? "instaxbot" : (m.platform === "whatsapp" || m.platform === "gowhats" ? "channelbot" : (m.channel || "channelbot")));
+            const normMsg = {
+              id: m.id || m._id || `msg_${Date.now()}`,
+              from: (m.sender === "customer" || m.direction === "inbound" || m.sender?.kind === "customer") ? "customer" : "agent",
+              text: m.text || "",
+              time: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
+              at: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
+              channel: channelKey,
+            };
+            msgsByConvId[cid].push(normMsg);
+          });
+
+          // Sort messages chronologically
+          Object.values(msgsByConvId).forEach((msgs) => {
+            msgs.sort((a, b) => new Date(a.at || a.time || 0) - new Date(b.at || b.time || 0));
+          });
+
+          const convData = rawConvData.map((c) => {
+            const attachedMsgs = (Array.isArray(c.msgs) && c.msgs.length > 0)
+              ? c.msgs
+              : (msgsByConvId[c.id] || []);
+            const lastMsgItem = attachedMsgs.length > 0 ? attachedMsgs[attachedMsgs.length - 1] : null;
+            const cIsEmail = c.channel === "Email" || c.channel === "email" || c.channel === "gmail";
+            return {
+              ...c,
+              channel: cIsEmail ? "email" : c.channel,
+              msgs: attachedMsgs,
+              unread: c.unread !== undefined ? c.unread : (c.unreadCount || 0),
+              last: c.last || c.lastMessage || (lastMsgItem ? lastMsgItem.text : ""),
+            };
+          });
+
+          setConvs(convData);
+        }
       }
       if (resAgents.status === "fulfilled" && resAgents.value?.data?.length) setAgents(resAgents.value.data);
       if (resWfs.status === "fulfilled" && resWfs.value?.data?.length) setWfs(resWfs.value.data);
@@ -6530,7 +6600,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return () => { active = false; };
   }, [route]);
 
-  /* Real-time SSE listener for channelbot.in incoming messages */
+  /* Real-time SSE listener for multi-channel incoming messages (ChannelBot, InstaxBot, Gmail) */
   useEffect(() => {
     const apiBaseUrl = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
     const sseUrl = `${apiBaseUrl}/api/v1/events`;
@@ -6545,20 +6615,21 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             if (!backendConv || !backendMsg) return;
 
             const isInstagram = backendConv?.channel === "Instagram" || backendConv?.channel === "instagram" || backendMsg?.platform === "instagram";
-            const channelKey = isInstagram ? "instaxbot" : "channelbot";
+            const isEmail = backendConv?.channel === "Email" || backendConv?.channel === "email" || backendMsg?.platform === "gmail" || backendMsg?.platform === "email";
+            const channelKey = isEmail ? "email" : (isInstagram ? "instaxbot" : "channelbot");
             const newMsgItem = {
               id: backendMsg.id || `msg_${Date.now()}`,
-              from: backendMsg.sender === "customer" ? "customer" : "agent",
+              from: (backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer") ? "customer" : "agent",
               text: backendMsg.text,
-              time: backendMsg.timestamp,
-              at: backendMsg.timestamp,
+              time: backendMsg.timestamp || backendMsg.receivedAt || new Date().toISOString(),
+              at: backendMsg.timestamp || backendMsg.receivedAt || new Date().toISOString(),
               channel: channelKey,
             };
 
             setConvs((cs) => {
               const cleanPhone = backendConv.phone ? String(backendConv.phone).replace(/\D/g, "") : "";
               const existingIdx = cs.findIndex(
-                (c) => c.id === backendConv.id || (c.phone && cleanPhone && String(c.phone).replace(/\D/g, "") === cleanPhone)
+                (c) => c.id === backendConv.id || (cleanPhone && c.phone && String(c.phone).replace(/\D/g, "") === cleanPhone) || (isEmail && (c.phone === backendConv.phone || c.email === backendConv.email))
               );
 
               if (existingIdx !== -1) {
@@ -6569,25 +6640,26 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
                 updated[existingIdx] = {
                   ...target,
                   customerName: backendConv.customerName || target.customerName,
-                  unread: backendMsg.sender === "customer" ? (target.unread || 0) + 1 : target.unread,
+                  unread: (backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer") ? (target.unread || 0) + 1 : target.unread,
                   last: newMsgItem.text,
                   msgs: newMsgs,
                 };
                 return updated;
               } else {
                 const newConvObj = {
-                  id: backendConv.id || `conv_ig_${Date.now()}`,
-                  contactId: `cnt_${Date.now()}`,
-                  customerName: backendConv.customerName || backendConv.phone || (isInstagram ? "Instagram User" : "ChannelBot Customer"),
-                  channel: isInstagram ? "Instagram" : channelKey,
-                  phone: backendConv.phone,
+                  id: backendConv.id || `conv_${Date.now()}`,
+                  contactId: backendConv.contactId || `cnt_${Date.now()}`,
+                  customerName: backendConv.customerName || backendConv.phone || (isEmail ? "Email Sender" : (isInstagram ? "Instagram User" : "ChannelBot Customer")),
+                  channel: isEmail ? "email" : (isInstagram ? "Instagram" : channelKey),
+                  phone: backendConv.phone || "",
+                  email: backendConv.email || (isEmail ? backendConv.phone : ""),
                   unread: 1,
                   ai: false,
                   state: "New Lead",
                   priority: "high",
                   msgs: [newMsgItem],
                   last: newMsgItem.text,
-                  tags: isInstagram ? ["InstaxBot", "Instagram"] : ["ChannelBot.in"],
+                  tags: isEmail ? ["Gmail", "Email"] : (isInstagram ? ["InstaxBot", "Instagram"] : ["ChannelBot.in"]),
                 };
                 return [newConvObj, ...cs];
               }
@@ -6708,14 +6780,57 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     }
   }, []);
 
+  /* Fetch real connected LinkedIn status from backend */
+  const syncLinkedInConnectionStatus = useCallback(async () => {
+    try {
+      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
+        ? "http://localhost:5000" 
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+      const res = await fetch(`${apiHost}/api/linkedin/status`);
+      const data = await res.json();
+      if (data && data.connected) {
+        setConns((prev) => ({
+          ...prev,
+          linkedin: {
+            ...prev.linkedin,
+            on: true,
+            status: "connected",
+            account: data.name ? `${data.name}${data.email ? ` (${data.email})` : ""}` : "Connected LinkedIn Profile",
+            email: data.email || null,
+            picture: data.picture || null,
+            linkedinId: data.linkedinId,
+            expiresAt: data.expiresAt,
+            error: null,
+          },
+        }));
+      } else {
+        setConns((prev) => ({
+          ...prev,
+          linkedin: {
+            ...prev.linkedin,
+            on: false,
+            status: data?.expired ? "expired" : "available",
+            account: null,
+            error: data?.expired ? "LinkedIn access token expired. Re-authentication required." : null,
+          },
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to sync LinkedIn connection status:", e);
+    }
+  }, []);
+
   /* Listen for OAuth redirect URL parameters & sync status on mount/focus */
   useEffect(() => {
     syncGoogleConnectionStatus();
     syncInstaxBotConnectionStatus();
+    syncLinkedInConnectionStatus();
 
     const onFocus = () => {
       syncGoogleConnectionStatus();
       syncInstaxBotConnectionStatus();
+      syncLinkedInConnectionStatus();
     };
     window.addEventListener("focus", onFocus);
 
@@ -6948,9 +7063,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
 
   /* ---- deals ---- */
   const createDeal = (d) => {
-    const deal = { id: "d" + Date.now(), stage: d.stage || pipelines[0].stages[0].name, pipelineId: d.pipelineId || pipelines[0].id, next: "Qualify the opportunity and confirm the decision maker.", owner: "Jordan Lee", prob: 30, close: "", ...d };
+    const defaultStage = pipelines?.[0]?.stages?.[0]?.name || "New";
+    const defaultPipeId = pipelines?.[0]?.id || "p1";
+    const deal = { id: "d" + Date.now(), stage: d.stage || defaultStage, pipelineId: d.pipelineId || defaultPipeId, next: "Qualify the opportunity and confirm the decision maker.", owner: "Jordan Lee", prob: 30, close: "", ...d };
     setDeals((ds) => [deal, ...ds]);
-    trail("Deal created", deal.name, "", "$" + deal.value.toLocaleString());
+    trail("Deal created", deal.name, "", "$" + (deal.value || 0).toLocaleString());
     log("You", "Deal created", deal.name);
     return deal;
   };
@@ -7310,7 +7427,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         case "assign_conv": { const v = convs.find((x) => x.contactId === (c || {}).id); if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, ai: false, assignee: op.node.assignee || "Jordan Lee" } : x)); break; }
         case "send_message": case "send_email": {
           const v = c ? convs.find((x) => x.contactId === c.id) : null;
-          if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, msgs: [...x.msgs, { from: "ai", agent: "Workflow", text: op.body, at: new Date().toISOString(), channel: op.node.channel || x.channel }], last: (op.body || "").slice(0, 60) } : x));
+          if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, msgs: [...(x.msgs || []), { from: "ai", agent: "Workflow", text: op.body, at: new Date().toISOString(), channel: op.node.channel || x.channel }], last: (op.body || "").slice(0, 60) } : x));
           break;
         }
         case "notify": createTask({ txt: op.body || "Workflow notification", who: op.node.assignee || "Jordan Lee", contactId: c ? c.id : null, type: "Task", ai: true }); break;
@@ -7628,7 +7745,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         if (due.kind === "message") {
           const v = convs.find((x) => x.contactId === c.id);
           const body = personalize(due.body, c);
-          if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, msgs: [...x.msgs, { from: "ai", agent: "Sequence", text: body, at: new Date().toISOString(), channel: due.channel }], last: body.slice(0, 60) } : x));
+          if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, msgs: [...(x.msgs || []), { from: "ai", agent: "Sequence", text: body, at: new Date().toISOString(), channel: due.channel }], last: body.slice(0, 60) } : x));
           recordTouch(c.id, due.channel);
           log("Sequence", "Step sent", `${seq.name} step ${due.id} → ${c.name}`, { category: "message", mode: "autonomous" });
         } else {
@@ -8039,7 +8156,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
           if (p.actionKey === "CAN_PLACE_CALL" && c) { placeCall(c.id, c.phone, "Approved outbound call"); result = { ok: true, note: "Call placed through MrAssistant.ai" }; }
           else if (c && finalBody) {
             const v = convs.find((x) => x.contactId === c.id);
-            if (v) { setConvs((cs) => cs.map((x) => x.id !== v.id ? x : { ...x, msgs: [...x.msgs, { from: "ai", agent: p.agent, text: finalBody, at: new Date().toISOString(), channel: p.channel || x.channel }], last: finalBody.slice(0, 60) })); result = { ok: true, note: "Delivered into the conversation" }; }
+            if (v) { setConvs((cs) => cs.map((x) => x.id !== v.id ? x : { ...x, msgs: [...(x.msgs || []), { from: "ai", agent: p.agent, text: finalBody, at: new Date().toISOString(), channel: p.channel || x.channel }], last: finalBody.slice(0, 60) })); result = { ok: true, note: "Delivered into the conversation" }; }
             else result = { ok: true, note: "Recorded; the customer has no open conversation on this channel" };
           } else result = { ok: true, note: "Executed" };
         }
@@ -8084,7 +8201,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     setConvs((cs) => cs.map((c) => c.id !== convId ? c : {
       ...c,
       state: "Waiting for Customer",
-      msgs: [...c.msgs, { id: c.msgs.length + 1, from: asAI ? "ai" : "human", who: asAI ? undefined : "You", agent: asAI ? (agent || "Sales Agent") : undefined, channel: c.channel, time: new Date().toISOString(), text }],
+      msgs: [...(c.msgs || []), { id: (c.msgs || []).length + 1, from: asAI ? "ai" : "human", who: asAI ? undefined : "You", agent: asAI ? (agent || "Sales Agent") : undefined, channel: c.channel, time: new Date().toISOString(), text }],
     }));
     log(asAI ? (agent || "Sales Agent") : "You", asAI ? "Sent response" : "Human reply sent", `${CH[convs.find(c=>c.id===convId)?.channel]?.label || ""} · ${text.slice(0, 60)}${text.length > 60 ? "…" : ""}`);
   };
@@ -8872,7 +8989,7 @@ function BuzzzAI({ close }) {
     }
     if (/(haven'?t|not) been contacted|no contact in|inactive|stale/.test(s)) {
       const cutoff = Date.now() - 30 * 864e5;
-      const stale = CONTACTS.filter((c) => { const v = convs.find((x) => x.contactId === c.id); const last = v && v.msgs.length ? new Date(msgAt(v.msgs[v.msgs.length - 1]) || 0).getTime() : 0; return !v || last < cutoff; });
+      const stale = CONTACTS.filter((c) => { const v = convs.find((x) => x.contactId === c.id); const last = v && (v.msgs || []).length ? new Date(msgAt(v.msgs[v.msgs.length - 1]) || 0).getTime() : 0; return !v || last < cutoff; });
       const list = stale.length ? stale : CONTACTS.filter((c) => c.tags.includes("Nurture") || c.stage === "Nurture");
       return { text: list.length ? `${list.length} customers have gone quiet. I can start the win back workflow for them if you want.` : "Good news: everyone has been contacted within 30 days.", render: list.length ? contactCard(list) : undefined };
     }
@@ -8885,7 +9002,7 @@ function BuzzzAI({ close }) {
       if (!c) return { text: "I could not match that name to a contact, so I have nothing to summarize." };
       setLastContact(c.id);
       const v = convs.find((x) => x.contactId === c.id);
-      return { text: `${c.name}: ${c.aiSummary}${v ? ` The thread has ${v.msgs.length} messages on ${CH[v.channel].label}; state: ${v.state}.` : ""}`, render: contactCard([c]) };
+      return { text: `${c.name}: ${c.aiSummary}${v ? ` The thread has ${(v.msgs || []).length} messages on ${CH[v.channel].label}; state: ${v.state}.` : ""}`, render: contactCard([c]) };
     }
     if (/assign (.+?)(?:'s)? conversation to (me|support|sales)/.test(s)) {
       m = s.match(/assign (.+?)(?:'s)? conversation to (me|support|sales)/);
@@ -9801,7 +9918,7 @@ const STATUS_STYLES = {
   Open: "bg-sky-50 text-sky-700 border-sky-200", Waiting: "bg-amber-50 text-amber-700 border-amber-200",
   Escalated: "bg-red-50 text-red-700 border-red-200", Resolved: "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
-const statusOf = (c) => c.state === "Resolved" ? "Resolved" : c.state === "Escalated" ? "Escalated" : (c.msgs || []).length && (c.msgs[c.msgs.length - 1] || {}).from === "customer" ? "Waiting" : "Open";
+const statusOf = (c) => { if (!c) return "Open"; const msgs = c.msgs || []; return c.state === "Resolved" ? "Resolved" : c.state === "Escalated" ? "Escalated" : msgs.length && (msgs[msgs.length - 1] || {}).from === "customer" ? "Waiting" : "Open"; };
 
 /* ==================================================================== */
 /* ENTERPRISE LAYER                                                      */
@@ -12059,7 +12176,7 @@ function InboxView() {
                     <div className="flex items-center gap-1.5">
                       <span className={`text-[13px] leading-tight truncate ${c.unread ? "font-bold" : "font-semibold"}`}>{k.name}</span>
                       {["high", "critical"].includes((c.priority || "").toLowerCase()) && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${PRI[(c.priority || "").toLowerCase()] || "bg-zinc-300"}`} />}
-                      <span className={`ml-auto text-[10px] tabular-nums shrink-0 ${T.faint}`}>{c.msgs.length ? timeAgo(msgAt(c.msgs[c.msgs.length - 1])) : ""}</span>
+                      <span className={`ml-auto text-[10px] tabular-nums shrink-0 ${T.faint}`}>{(c.msgs || []).length ? timeAgo(msgAt(c.msgs[c.msgs.length - 1])) : ""}</span>
                     </div>
                     <div className="flex items-center gap-1.5 mt-[3px]">
                       <span className={`text-[11px] leading-tight truncate flex-1 ${c.unread ? T.strong + " font-medium" : T.faint}`}>{previewOf(c)}</span>
@@ -12099,7 +12216,7 @@ function Msg({ m, contact, first = true, last = true, mt = "" }) {
       {!first
         ? <div className="w-7 shrink-0" />
         : m.from === "customer"
-          ? <Avatar name={contact.name} i={CONTACTS.indexOf(contact)} size="w-7 h-7 text-[10px]" />
+          ? <Avatar name={contact?.name || "Customer"} i={CONTACTS.indexOf(contact)} size="w-7 h-7 text-[10px]" />
           : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white shrink-0 ${m.from === "ai" ? "" : "bg-zinc-600"}`} style={m.from === "ai" ? { background: BRAND } : {}}>{m.from === "ai" ? <Bot size={13} /> : <User size={13} />}</div>}
       <div className={`max-w-[78%] sm:max-w-[72%] min-w-0 ${you ? "text-right" : ""}`}>
         <div className={`inline-block text-left px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${m.note ? (dk ? "bg-yellow-950 border border-yellow-900" : "bg-yellow-50 border border-yellow-200") : you ? (dk ? "bg-zinc-800" : "bg-zinc-100") : `${T.card}`}`}>
@@ -12120,13 +12237,16 @@ function Msg({ m, contact, first = true, last = true, mt = "" }) {
 
 /* Contextual BUZZZ AI: detection + one recommended, executable action per thread */
 const detectContext = (conv, contact) => {
+  if (!conv || !contact) return null;
   const i = (conv.intent || "").toLowerCase(), s = (conv.sentiment || "").toLowerCase();
-  if (s.includes("negative") || (contact.tags || []).some((t) => /churn|angry|risk/i.test(t)))
-    return { note: `${contact.name.split(" ")[0]} sounds frustrated and is a ${contact.stage === "Won" ? "paying customer" : "warm lead"}.`, rec: "Send an empathetic response with a concrete fix and flag a goodwill credit for approval.", act: "Draft apology + fix", kind: "apology" };
+  const tags = contact.tags ?? [];
+  const nameFirst = (contact.name || "Customer").split(" ")[0];
+  if (s.includes("negative") || tags.some((t) => /churn|angry|risk/i.test(t)))
+    return { note: `${nameFirst} sounds frustrated and is a ${contact.stage === "Won" ? "paying customer" : "warm lead"}.`, rec: "Send an empathetic response with a concrete fix and flag a goodwill credit for approval.", act: "Draft apology + fix", kind: "apology" };
   if (i.includes("booking") || i.includes("appointment"))
-    return { note: `${contact.name.split(" ")[0]} wants to schedule.`, rec: "Offer Thursday 11:00 or Friday 15:00 and hold the slot.", act: "Offer available times", kind: "slots" };
+    return { note: `${nameFirst} wants to schedule.`, rec: "Offer Thursday 11:00 or Friday 15:00 and hold the slot.", act: "Offer available times", kind: "slots" };
   if (i.includes("sales") || i.includes("pricing"))
-    return { note: `${contact.name.split(" ")[0]} is evaluating (lead score ${contact.score}).`, rec: "Send the pricing overview and create a follow up task for sales.", act: "Send pricing + create task", kind: "pricing" };
+    return { note: `${nameFirst} is evaluating (lead score ${contact.score ?? 50}).`, rec: "Send the pricing overview and create a follow up task for sales.", act: "Send pricing + create task", kind: "pricing" };
   if (i.includes("support"))
     return { note: `Support request in progress.`, rec: "Confirm the fix timeline and schedule a check in for tomorrow.", act: "Confirm + schedule check in", kind: "checkin" };
   return null;
@@ -12134,7 +12254,8 @@ const detectContext = (conv, contact) => {
 
 function Thread({ conv, showPanel, setShowPanel }) {
   const { T, dk, flash, autonomy, setConvs, log, addTask, bookAppointment, setSelConv, agents, agentAct, approvals, go } = useApp();
-  const contact = CONTACTS.find((c) => c.id === conv.contactId);
+  if (!conv) return null;
+  const contact = CONTACTS.find((c) => (c?.id || (c?._id ? String(c._id) : null)) === conv.contactId) || null;
   const [text, setText] = useState("");
   const [tone, setTone] = useState("Professional");
   const [note, setNote] = useState(false);
@@ -12142,63 +12263,67 @@ function Thread({ conv, showPanel, setShowPanel }) {
   const [sendCh, setSendCh] = useState(conv.channel);
   const [dismissed, setDismissed] = useState({});
   const endRef = useRef(null);
-  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [conv.msgs.length, conv.id]);
+  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [(conv.msgs || []).length, conv.id]);
   useEffect(() => { setSendCh(conv.channel); setMenu(null); }, [conv.id]);
 
   const st = statusOf(conv);
-  const pendingAp = approvals.filter((a) => apState(a) === "Pending" && (a.contactId === conv.contactId || a.to === contact.name));
-  const patchConv = (p, logMsg) => { setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, ...p } : x)); if (logMsg) log("You", logMsg, contact.name); };
-  const addMsg = (m) => setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, msgs: [...x.msgs, { at: new Date().toISOString(), channel: sendCh, ...m }], last: (m.text || m.attachment || "").slice(0, 60) } : x));
+  const pendingAp = (approvals || []).filter((a) => a && apState(a) === "Pending" && (a.contactId === conv.contactId || (contact?.name && a.to === contact.name)));
+  const patchConv = (p, logMsg) => { setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, ...p } : x)); if (logMsg && contact?.name) log("You", logMsg, contact.name); };
+  const addMsg = (m) => setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, msgs: [...(x.msgs || []), { at: new Date().toISOString(), channel: sendCh, ...m }], last: (m.text || m.attachment || "").slice(0, 60) } : x));
 
-  const ctxAI = !dismissed[conv.id] && detectContext(conv, contact);
+  const ctxAI = (!dismissed[conv.id] && conv && contact) ? detectContext(conv, contact) : null;
   const runCtx = () => {
+    if (!ctxAI) return;
     if (ctxAI.kind === "slots") addMsg({ from: "ai", agent: "Ana · Appointment Agent", text: "I can offer Thursday 11:00 or Friday 15:00 this week. Which works better for you? I will confirm instantly." });
-    if (ctxAI.kind === "pricing") { addMsg({ from: "ai", agent: "Sarah · Sales Agent", text: TEMPLATES[0].t }); addTask("Follow up with " + contact.name + " on pricing", "Rina S."); }
-    if (ctxAI.kind === "apology") { addMsg({ from: "ai", agent: "Mira · Retention Agent", text: CANNED.Empathetic }); log("BUZZZ AI", "Goodwill credit flagged", contact.name); }
-    if (ctxAI.kind === "checkin") { addMsg({ from: "ai", agent: "Kai · Support Agent", text: "The fix is on track. I will message you the moment it lands, and I have scheduled a check in for tomorrow." }); bookAppointment(contact.id, "Support check in", "Scheduled from thread", "Tomorrow · 10:00"); }
+    if (ctxAI.kind === "pricing") { addMsg({ from: "ai", agent: "Sarah · Sales Agent", text: TEMPLATES[0].t }); addTask("Follow up with " + (contact?.name || "customer") + " on pricing", "Rina S."); }
+    if (ctxAI.kind === "apology") { addMsg({ from: "ai", agent: "Mira · Retention Agent", text: CANNED.Empathetic }); log("BUZZZ AI", "Goodwill credit flagged", contact?.name || "customer"); }
+    if (ctxAI.kind === "checkin") { addMsg({ from: "ai", agent: "Kai · Support Agent", text: "The fix is on track. I will message you the moment it lands, and I have scheduled a check in for tomorrow." }); if (contact?.id) bookAppointment(contact.id, "Support check in", "Scheduled from thread", "Tomorrow · 10:00"); }
     setDismissed((d) => ({ ...d, [conv.id]: true }));
     flash("Done. BUZZZ AI executed the recommendation.");
   };
 
   const sendPlain = () => {
-    if (contact) recordTouch(contact.id, sendCh);
+    if (contact?.id) recordTouch(contact.id, sendCh);
     if (!text.trim()) return;
     addMsg(note ? { from: "human", who: "Jordan Lee", text, note: true, channel: null } : { from: "human", who: "Jordan Lee", text });
     if (!note) patchConv({ state: "Waiting", unread: 0 });
-    log("You", note ? "Internal note added" : "Reply sent", contact.name);
+    log("You", note ? "Internal note added" : "Reply sent", contact?.name || "Customer");
     setText(""); setNote(false);
   };
   const sendAsAI = () => {
     if (!text.trim()) return;
     const handler = routeAgent(agents, { intent: conv.intent, channel: sendCh });
     const action = sendCh === "email" ? "CAN_SEND_EMAIL" : sendCh === "sms" ? "CAN_SEND_SMS" : sendCh === "instagram" ? "CAN_REPLY_SOCIAL" : "CAN_SEND_WHATSAPP";
-    const r = agentAct({ agentId: handler && handler.id, action, channel: sendCh, text, contactId: contact.id,
+    const r = agentAct({ agentId: handler && handler.id, action, channel: sendCh, text, contactId: contact?.id || conv.contactId,
       describe: "reply on " + (CH[sendCh] ? CH[sendCh].label : sendCh),
       run: () => { addMsg({ from: "ai", agent: handler ? agentFullName(handler) : "AI", text }); patchConv({ state: "Waiting" }); } });
     if (r.ok) flash("Sent as " + (handler ? handler.name : "AI"));
     setText(""); setNote(false);
   };
   const attach = () => {
-    addMsg({ from: "human", who: "Jordan Lee", text: "", attachment: "quotation_" + contact.name.split(" ")[0].toLowerCase() + ".pdf" });
-    log("You", "Attachment sent", contact.name); flash("Attachment sent");
+    const cName = contact?.name || conv.customerName || "Customer";
+    addMsg({ from: "human", who: "Jordan Lee", text: "", attachment: "quotation_" + cName.split(" ")[0].toLowerCase() + ".pdf" });
+    log("You", "Attachment sent", cName); flash("Attachment sent");
   };
 
   const MenuPop = ({ children, w = "w-52" }) => (
     <div className={`absolute bottom-[52px] left-0 z-30 ${w} rounded-xl border shadow-xl overflow-hidden ${T.border} ${dk ? "bg-zinc-900" : "bg-white"}`}>{children}</div>
   );
 
+  const displayName = contact?.name || conv.customerName || "Customer";
+
   return (
     <div className={`flex-1 min-w-0 flex flex-col ${T.shell}`}>
       {/* header */}
       <div className={`h-14 shrink-0 flex items-center gap-2.5 px-4 border-b ${T.border} ${T.panel}`}>
         <button onClick={() => setSelConv(null)} className={`md:hidden -ml-1 w-8 h-8 grid place-items-center rounded-lg shrink-0 ${T.hover}`}><ArrowLeft size={15} /></button>
-        <Avatar name={contact.name} i={CONTACTS.indexOf(contact)} size="w-8 h-8 text-[11px]" />
+        <Avatar name={displayName} i={contact ? CONTACTS.indexOf(contact) : 0} size="w-8 h-8 text-[11px]" />
         <div className="min-w-0 flex-1 md:flex-none">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[13px] font-semibold leading-none truncate">{contact.name}</span>
+            <span className="text-[13px] font-semibold leading-none truncate">{displayName}</span>
             <span className="shrink-0 grid place-items-center"><Brand id={conv.channel === "email" ? "gmail" : conv.channel} size={13} /></span>
           </div>
-          <div className={`text-[10px] mt-1 leading-none truncate ${T.faint}`}>{conv.ai ? "BUZZZ AI · " + (conv.agent || "handling") : (conv.assignee || "Unassigned") + " · human"}{contact.company !== "—" ? " · " + contact.company : ""}</div>
+          <div className={`text-[10px] mt-1 leading-none truncate ${T.faint}`}>{conv.ai ? "BUZZZ AI · " + (conv.agent || "handling") : (conv.assignee || "Unassigned") + " · human"}{contact && contact.company && contact.company !== "—" ? " · " + contact.company : ""}</div>
         </div>
         <div className="flex-1" />
         {/* status changer */}
@@ -12233,10 +12358,10 @@ function Thread({ conv, showPanel, setShowPanel }) {
       {/* messages */}
       <div className="flex-1 overflow-y-auto bz-scroll px-6 py-6">
         <div className="max-w-2xl mx-auto w-full">
-          {conv.msgs.map((m, i) => {
+          {(conv.msgs || []).map((m, i) => {
             const side = (x) => !x ? null : x.from === "system" ? "sys" : x.note ? "note" : x.from === "customer" ? "c" : "y";
-            const first = side(conv.msgs[i - 1]) !== side(m) || m.from === "system";
-            const last = side(conv.msgs[i + 1]) !== side(m) || m.from === "system";
+            const first = side((conv.msgs || [])[i - 1]) !== side(m) || m.from === "system";
+            const last = side((conv.msgs || [])[i + 1]) !== side(m) || m.from === "system";
             return <Msg key={i} m={m} contact={contact} first={first} last={last} mt={i === 0 ? "" : first ? "mt-5" : "mt-1.5"} />;
           })}
           <div ref={endRef} />
@@ -12273,7 +12398,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
         <div className={`rounded-2xl border ${T.border} ${T.panel} ${note ? (dk ? "ring-1 ring-yellow-700" : "ring-1 ring-yellow-300") : ""}`}>
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPlain(); } }}
-            placeholder={note ? "Internal note · your customer never sees this" : `Reply to ${contact.name.split(" ")[0]}…`}
+            placeholder={note ? "Internal note · your customer never sees this" : `Reply to ${displayName.split(" ")[0]}…`}
             className="w-full px-4 pt-3 pb-1 bg-transparent text-[13px] leading-relaxed outline-none resize-none" />
           <div className="h-12 flex items-center gap-0.5 px-2 relative">
             {/* AI assist */}
@@ -12308,9 +12433,9 @@ function Thread({ conv, showPanel, setShowPanel }) {
               <button onClick={() => setMenu(menu === "quick" ? null : "quick")} title="Quick actions" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover}`}><Zap size={14} className={T.faint} /></button>
               {menu === "quick" && (
                 <MenuPop>
-                  <button onClick={() => { addTask("Follow up with " + contact.name, "Jordan Lee"); setMenu(null); flash("Task created and visible in CRM → Tasks"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Create task</button>
-                  <button onClick={() => { bookAppointment(contact.id, "Meeting with " + contact.name.split(" ")[0], "Booked from thread", "Tomorrow · 10:00"); setMenu(null); flash("Appointment created for tomorrow 10:00"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Schedule appointment</button>
-                  <button onClick={() => { log("You", "Workflow triggered", "24 hour lead follow up · " + contact.name); setMenu(null); flash("Workflow triggered for " + contact.name.split(" ")[0]); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Trigger follow up workflow</button>
+                  <button onClick={() => { addTask("Follow up with " + displayName, "Jordan Lee"); setMenu(null); flash("Task created and visible in CRM → Tasks"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Create task</button>
+                  <button onClick={() => { if (contact?.id) bookAppointment(contact.id, "Meeting with " + displayName.split(" ")[0], "Booked from thread", "Tomorrow · 10:00"); setMenu(null); flash("Appointment created for tomorrow 10:00"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Schedule appointment</button>
+                  <button onClick={() => { log("You", "Workflow triggered", "24 hour lead follow up · " + displayName); setMenu(null); flash("Workflow triggered for " + displayName.split(" ")[0]); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Trigger follow up workflow</button>
                 </MenuPop>
               )}
             </div>
@@ -12321,9 +12446,9 @@ function Thread({ conv, showPanel, setShowPanel }) {
               </button>
               {menu === "channel" && (
                 <MenuPop w="w-44">
-                  {contact.channels.map((ch) => (
-                    <button key={ch} onClick={() => { setSendCh(ch); setMenu(null); if (ch !== conv.channel) flash("Reply will go out on " + CH[ch].label); }} className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${T.hover} ${sendCh === ch ? "font-bold" : ""}`}>
-                      <Brand id={ch === "email" ? "gmail" : ch} size={13} /> {CH[ch].label}
+                  {(contact?.channels || [conv.channel || "whatsapp"]).map((ch) => (
+                    <button key={ch} onClick={() => { setSendCh(ch); setMenu(null); if (ch !== conv.channel) flash("Reply will go out on " + (CH[ch]?.label || ch)); }} className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${T.hover} ${sendCh === ch ? "font-bold" : ""}`}>
+                      <Brand id={ch === "email" ? "gmail" : ch} size={13} /> {CH[ch]?.label || ch}
                     </button>
                   ))}
                 </MenuPop>
@@ -12359,39 +12484,57 @@ function PanelSection({ title, defaultOpen, children }) {
 
 function ContextPanel({ conv, close }) {
   const { T, dk, deals, appts, convs, openContact, updateContact, addTask, bookAppointment, flash, log } = useApp();
-  const c = CONTACTS.find((x) => x.id === conv.contactId);
-  const deal = deals.find((d) => d.contactId === c.id);
-  const myAppts = appts.filter((a) => a.contactId === c.id && !["Completed", "Cancelled"].includes(a.status));
-  const myConvs = convs.filter((v) => v.contactId === c.id);
+  if (!conv) return null;
+  const c = CONTACTS.find((x) => (x?.id || (x?._id ? String(x._id) : null)) === conv.contactId) || null;
+  const targetId = c?.id || (c?._id ? String(c._id) : null);
+  const deal = targetId ? (deals || []).find((d) => d && d.contactId === targetId) : null;
+  const myAppts = targetId ? (appts || []).filter((a) => a && a.contactId === targetId && !["Completed", "Cancelled"].includes(a.status)) : [];
+  const myConvs = targetId ? (convs || []).filter((v) => v && v.contactId === targetId) : [];
   const [tagIn, setTagIn] = useState("");
   const agent = conv.agent || "Kai · Support Agent";
+
+  if (!c) {
+    return (
+      <div className={`fixed inset-y-0 right-0 z-40 w-[300px] shadow-2xl lg:shadow-none lg:static lg:z-auto lg:w-64 xl:w-72 2xl:w-80 shrink-0 border-l flex flex-col min-h-0 ${T.border} ${T.panel}`}>
+        <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
+          <span className="text-sm font-semibold bz-display tracking-tight">Details</span>
+          <button onClick={close} className={`lg:hidden w-8 h-8 grid place-items-center rounded-lg ${T.hover}`}><X size={14} /></button>
+        </div>
+        <div className="p-6 text-xs text-center text-zinc-400">
+          No contact associated with this conversation.
+        </div>
+      </div>
+    );
+  }
+
+  const tagsList = c.tags ?? [];
   return (
     <div className={`fixed inset-y-0 right-0 z-40 w-[300px] shadow-2xl lg:shadow-none lg:static lg:z-auto lg:w-64 xl:w-72 2xl:w-80 shrink-0 border-l flex flex-col min-h-0 ${T.border} ${T.panel}`}>
       <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
         <span className="text-sm font-semibold bz-display tracking-tight">Details</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => openContact(c.id)} className={`h-8 px-2 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 ${T.hover}`} style={{ color: BRAND }}>Customer 360 <ArrowRight size={11} /></button>
+          <button onClick={() => c.id && openContact(c.id)} className={`h-8 px-2 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 ${T.hover}`} style={{ color: BRAND }}>Customer 360 <ArrowRight size={11} /></button>
           <button onClick={close} className={`lg:hidden w-8 h-8 grid place-items-center rounded-lg ${T.hover}`}><X size={14} /></button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto bz-scroll">
       <div className={`px-4 py-5 text-center border-b ${T.border}`}>
-        <Avatar name={c.name} i={CONTACTS.indexOf(c)} size="w-12 h-12 text-sm mx-auto" />
-        <div className="text-[13px] font-semibold mt-2.5 truncate">{c.name}</div>
-        <div className={`text-[11px] mt-1 truncate ${T.faint}`}>{c.title ? c.title + " · " : ""}{c.company}</div>
+        <Avatar name={c.name || "?"} i={CONTACTS.indexOf(c)} size="w-12 h-12 text-sm mx-auto" />
+        <div className="text-[13px] font-semibold mt-2.5 truncate">{c.name || "Customer"}</div>
+        <div className={`text-[11px] mt-1 truncate ${T.faint}`}>{c.title ? c.title + " · " : ""}{c.company || "—"}</div>
       </div>
 
       <PanelSection title="Customer" defaultOpen>
         <div className="space-y-2 text-[11px] leading-none">
-          {[["Phone", c.phone || "+65 9··· on file"], ["Location", c.loc || "—"], ["Stage", c.stage], ["Value", c.value], ["Last contact", myConvs.length && myConvs[0].msgs.length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "—"]].map(([k, v]) => (
+          {[["Phone", c.phone || "+65 9··· on file"], ["Location", c.loc || "—"], ["Stage", c.stage || "—"], ["Value", c.value || "—"], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "—"]].map(([k, v]) => (
             <div key={k} className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>{k}</span><span className="font-medium text-right truncate min-w-0">{v}</span></div>
           ))}
         </div>
         <div className="flex flex-wrap gap-1 mt-3">
-          {c.tags.map((t) => <Pill key={t} c={T.chip}>{t}</Pill>)}
+          {tagsList.map((t) => <Pill key={t} c={T.chip}>{t}</Pill>)}
         </div>
         <div className="mt-2">
-          <input value={tagIn} onChange={(e) => setTagIn(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tagIn.trim()) { updateContact(c.id, { tags: [...c.tags, tagIn.trim()] }, "tag added"); setTagIn(""); flash("Tag added"); } }} placeholder="Add tag…" className={`w-full h-8 px-2.5 rounded-lg text-[11px] outline-none ${T.input}`} />
+          <input value={tagIn} onChange={(e) => setTagIn(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tagIn.trim()) { updateContact(c.id, { tags: [...tagsList, tagIn.trim()] }, "tag added"); setTagIn(""); flash("Tag added"); } }} placeholder="Add tag…" className={`w-full h-8 px-2.5 rounded-lg text-[11px] outline-none ${T.input}`} />
         </div>
       </PanelSection>
 
@@ -12959,9 +13102,11 @@ function RowMenu({ contact, onEdit, archived }) {
 
 /* ================= PIPELINE / DEALS ================= */
 function DealForm({ initial, pipelineId, stage, onClose }) {
-  const { T, createDeal, updateDeal, pipelines, flash } = useApp();
-  const pipe = pipelines.find((p) => p.id === (initial ? initial.pipelineId : pipelineId)) || pipelines[0];
-  const [f, setF] = useState(initial ? { ...initial } : { name: "", contactId: CONTACTS[0] ? CONTACTS[0].id : "", value: 5000, stage: stage || pipe.stages[0].name, pipelineId: pipe.id, owner: "Jordan Lee", prob: 40, close: "", next: "" });
+  const { T, createDeal, updateDeal, pipelines = [], flash } = useApp();
+  const safePipelines = Array.isArray(pipelines) && pipelines.length > 0 ? pipelines : [{ id: "p1", name: "Sales Pipeline", stages: [{ id: "s1", name: "Lead" }, { id: "s2", name: "Qualified" }] }];
+  const pipe = safePipelines.find((p) => p.id === (initial ? initial.pipelineId : pipelineId)) || safePipelines[0];
+  const safeContacts = Array.isArray(CONTACTS) && CONTACTS.length > 0 ? CONTACTS : [{ id: "c1", name: "Default Customer" }];
+  const [f, setF] = useState(initial ? { ...initial } : { name: "", contactId: safeContacts[0]?.id || "", value: 5000, stage: stage || pipe?.stages?.[0]?.name || "Lead", pipelineId: pipe?.id || "p1", owner: "Jordan Lee", prob: 40, close: "", next: "" });
   const [err, setErr] = useState({});
   const save = () => {
     const e = {};
@@ -12980,18 +13125,18 @@ function DealForm({ initial, pipelineId, stage, onClose }) {
         <div className="grid grid-cols-2 gap-3">
           <Field label="Contact" error={err.contactId}>
             <select value={f.contactId} onChange={(e) => setF({ ...f, contactId: e.target.value })} className={inputCls(T, err.contactId)}>
-              {CONTACTS.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {safeContacts.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
           <Field label="Value (INR ₹)" error={err.value}><input type="number" value={f.value} onChange={(e) => setF({ ...f, value: e.target.value })} className={inputCls(T, err.value)} /></Field>
           <Field label="Pipeline">
-            <select value={f.pipelineId} onChange={(e) => { const p = pipelines.find((x) => x.id === e.target.value); setF({ ...f, pipelineId: e.target.value, stage: p.stages[0].name }); }} className={inputCls(T)}>
-              {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <select value={f.pipelineId} onChange={(e) => { const p = safePipelines.find((x) => x.id === e.target.value); setF({ ...f, pipelineId: e.target.value, stage: p?.stages?.[0]?.name || "Lead" }); }} className={inputCls(T)}>
+              {safePipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </Field>
           <Field label="Stage">
             <select value={f.stage} onChange={(e) => setF({ ...f, stage: e.target.value })} className={inputCls(T)}>
-              {(pipelines.find((p) => p.id === f.pipelineId) || pipe).stages.map((st) => <option key={st.id}>{st.name}</option>)}
+              {(safePipelines.find((p) => p.id === f.pipelineId) || pipe)?.stages?.map((st) => <option key={st.id}>{st.name}</option>)}
             </select>
           </Field>
           <Field label="Owner"><select value={f.owner} onChange={(e) => setF({ ...f, owner: e.target.value })} className={inputCls(T)}>{TEAM_USERS.map((u) => <option key={u}>{u}</option>)}</select></Field>
@@ -13010,18 +13155,18 @@ function DealForm({ initial, pipelineId, stage, onClose }) {
 
 function StageEditor({ pipe, onClose }) {
   const { T, dk, pipelines, setPipelines, setDeals, flash, trail } = useApp();
-  const [name, setName] = useState(pipe.name);
-  const [stages, setStages] = useState(pipe.stages.map((x) => ({ ...x })));
+  const [name, setName] = useState(pipe?.name || "Pipeline");
+  const [stages, setStages] = useState((pipe?.stages || []).map((x) => ({ ...x })));
   const move = (i, d) => setStages((st) => { const a = [...st], j = i + d; if (j < 0 || j >= a.length) return a; [a[i], a[j]] = [a[j], a[i]]; return a; });
   const save = () => {
     if (!name.trim() || stages.some((x) => !x.name.trim())) { flash("Every pipeline and stage needs a name", "err"); return; }
-    pipe.stages.forEach((old) => {
+    (pipe?.stages || []).forEach((old) => {
       const now = stages.find((x) => x.id === old.id);
       if (now && now.name !== old.name) setDeals((ds) => ds.map((d) => d.stage === old.name ? { ...d, stage: now.name } : d));
-      if (!now) setDeals((ds) => ds.map((d) => d.stage === old.name ? { ...d, stage: stages[0].name } : d));
+      if (!now) setDeals((ds) => ds.map((d) => d.stage === old.name ? { ...d, stage: stages[0]?.name || "Lead" } : d));
     });
     setPipelines((ps) => ps.map((p) => p.id === pipe.id ? { ...p, name: name.trim(), stages } : p));
-    trail("Pipeline updated", name.trim(), pipe.stages.length + " stages", stages.length + " stages");
+    trail("Pipeline updated", name.trim(), (pipe?.stages?.length || 0) + " stages", stages.length + " stages");
     flash("Pipeline saved"); onClose();
   };
   return (
@@ -13055,21 +13200,22 @@ function StageEditor({ pipe, onClose }) {
 }
 
 function PipelineView() {
-  const { T, dk, deals, moveDeal, openContact, pipelines, setPipelines, deleteDeal, setConfirm, flash, trail, contactsV } = useApp();
-  const [pid, setPid] = useState(pipelines[0].id);
+  const { T, dk, deals = [], moveDeal, openContact, pipelines = [], setPipelines, deleteDeal, setConfirm, flash, trail, contactsV } = useApp();
+  const safePipelines = Array.isArray(pipelines) && pipelines.length > 0 ? pipelines : [{ id: "p1", name: "Sales Pipeline", stages: [{ id: "s1", name: "Lead", color: STAGE_COLORS[0] }] }];
+  const [pid, setPid] = useState(() => safePipelines[0]?.id || "p1");
   const [view, setView] = useState("Kanban");
   const [dragId, setDragId] = useState(null);
   const [form, setForm] = useState(null);      // {stage} | deal
   const [editStages, setEditStages] = useState(false);
   const [pmenu, setPmenu] = useState(false);
-  const pipe = pipelines.find((p) => p.id === pid) || pipelines[0];
-  useEffect(() => { if (!pipelines.some((p) => p.id === pid)) setPid(pipelines[0].id); }, [pipelines]);
-  const mine = deals.filter((d) => (d.pipelineId || pipelines[0].id) === pipe.id);
-  const total = mine.reduce((s2, d) => s2 + d.value, 0);
-  const weighted = mine.reduce((s2, d) => s2 + d.value * ((d.prob ?? 50) / 100), 0);
+  const pipe = safePipelines.find((p) => p.id === pid) || safePipelines[0];
+  useEffect(() => { if (!safePipelines.some((p) => p.id === pid)) setPid(safePipelines[0]?.id || "p1"); }, [pipelines]);
+  const mine = (deals || []).filter((d) => (d.pipelineId || safePipelines[0]?.id) === pipe?.id);
+  const total = mine.reduce((s2, d) => s2 + (d.value || 0), 0);
+  const weighted = mine.reduce((s2, d) => s2 + (d.value || 0) * ((d.prob ?? 50) / 100), 0);
 
   const DealCard = ({ d }) => {
-    const c = CONTACTS.find((x) => x.id === d.contactId);
+    const c = (CONTACTS || []).find((x) => x.id === d.contactId);
     return (
       <div draggable onDragStart={() => setDragId(d.id)} onDragEnd={() => setDragId(null)}
         className={`rounded-xl p-3 cursor-grab active:cursor-grabbing group ${T.card}`}>
@@ -13081,7 +13227,7 @@ function PipelineView() {
         <div className="flex items-center gap-2 mt-2">
           {c && <button onClick={() => openContact(c.id)}><Avatar name={c.name} i={CONTACTS.indexOf(c)} size="w-5 h-5 text-[8px]" /></button>}
           <span className={`text-[10px] flex-1 truncate ${T.faint}`}>{c ? c.name : "unlinked"}</span>
-          <span className="text-xs font-bold bz-display tabular-nums">${(d.value / 1000).toFixed(0)}k</span>
+          <span className="text-xs font-bold bz-display tabular-nums">${((d.value || 0) / 1000).toFixed(0)}k</span>
         </div>
         <div className={`flex items-center gap-2 mt-1.5 text-[9px] ${T.faint}`}>
           <span>{d.owner || "Unassigned"}</span>{d.close && <span>· closes {d.close}</span>}<span className="ml-auto tabular-nums">{d.prob ?? 50}%</span>
@@ -13095,18 +13241,18 @@ function PipelineView() {
     <div className="h-full flex flex-col min-h-0" key={contactsV}>
       <div className={`shrink-0 px-6 py-3 border-b ${T.border} flex items-center gap-2 flex-wrap`}>
         <div className="relative">
-          <button onClick={() => setPmenu(!pmenu)} className="h-9 px-3 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: BRAND }}>{pipe.name} <ChevronDown size={12} /></button>
+          <button onClick={() => setPmenu(!pmenu)} className="h-9 px-3 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: BRAND }}>{pipe?.name || "Pipeline"} <ChevronDown size={12} /></button>
           {pmenu && (<><div className="fixed inset-0 z-20" onClick={() => setPmenu(false)} />
             <div className={`absolute left-0 top-10 z-30 w-60 rounded-xl border shadow-xl overflow-hidden ${T.border} ${dk ? "bg-zinc-900" : "bg-white"}`}>
-              {pipelines.map((p) => (
-                <button key={p.id} onClick={() => { setPid(p.id); setPmenu(false); }} className={`w-full text-left px-3 py-2 text-xs ${T.hover} ${p.id === pid ? "font-bold" : ""}`}>{p.name} <span className={T.faint}>· {p.stages.length} stages</span></button>
+              {safePipelines.map((p) => (
+                <button key={p.id} onClick={() => { setPid(p.id); setPmenu(false); }} className={`w-full text-left px-3 py-2 text-xs ${T.hover} ${p.id === pid ? "font-bold" : ""}`}>{p.name} <span className={T.faint}>· {p.stages?.length || 0} stages</span></button>
               ))}
               <div className={`border-t ${T.border}`}>
-                <button onClick={() => { const p = { id: "p" + Date.now(), name: "New pipeline", stages: [{ id: "n1", name: "New", color: STAGE_COLORS[0] }, { id: "n2", name: "In progress", color: STAGE_COLORS[1] }, { id: "n3", name: "Closed", color: STAGE_COLORS[5] }] }; setPipelines([...pipelines, p]); setPid(p.id); setPmenu(false); setEditStages(true); trail("Pipeline created", p.name, "", "3 stages"); }}
+                <button onClick={() => { const p = { id: "p" + Date.now(), name: "New pipeline", stages: [{ id: "n1", name: "New", color: STAGE_COLORS[0] }, { id: "n2", name: "In progress", color: STAGE_COLORS[1] }, { id: "n3", name: "Closed", color: STAGE_COLORS[5] }] }; setPipelines([...safePipelines, p]); setPid(p.id); setPmenu(false); setEditStages(true); trail("Pipeline created", p.name, "", "3 stages"); }}
                   className={`w-full text-left px-3 py-2 text-xs ${T.hover}`}>Create pipeline</button>
-                <button onClick={() => { const c = { ...pipe, id: "p" + Date.now(), name: pipe.name + " (copy)", stages: pipe.stages.map((x) => ({ ...x, id: x.id + Date.now() })) }; setPipelines([...pipelines, c]); setPid(c.id); setPmenu(false); flash("Pipeline duplicated"); }}
+                <button onClick={() => { const c = { ...pipe, id: "p" + Date.now(), name: (pipe?.name || "Pipeline") + " (copy)", stages: (pipe?.stages || []).map((x) => ({ ...x, id: x.id + Date.now() })) }; setPipelines([...safePipelines, c]); setPid(c.id); setPmenu(false); flash("Pipeline duplicated"); }}
                   className={`w-full text-left px-3 py-2 text-xs ${T.hover}`}>Duplicate this pipeline</button>
-                {pipelines.length > 1 && <button onClick={() => { setPmenu(false); setConfirm({ text: `Delete "${pipe.name}"?`, detail: "Deals in it move to your first pipeline.", onYes: () => { const first = pipelines.find((p) => p.id !== pipe.id); setPipelines((ps) => ps.filter((p) => p.id !== pipe.id)); setPid(first.id); flash("Pipeline deleted"); } }); }}
+                {safePipelines.length > 1 && <button onClick={() => { setPmenu(false); setConfirm({ text: `Delete "${pipe?.name}"?`, detail: "Deals in it move to your first pipeline.", onYes: () => { const first = safePipelines.find((p) => p.id !== pipe?.id); setPipelines((ps) => ps.filter((p) => p.id !== pipe?.id)); setPid(first.id); flash("Pipeline deleted"); } }); }}
                   className={`w-full text-left px-3 py-2 text-xs text-red-500 ${T.hover}`}>Delete pipeline</button>}
               </div>
             </div></>)}
@@ -13119,12 +13265,12 @@ function PipelineView() {
           ))}
         </div>
         <button onClick={() => setEditStages(true)} className={`h-9 px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 ${T.chip} ${T.hover}`}><Settings size={13} /> Stages</button>
-        <button onClick={() => setForm({ stage: pipe.stages[0].name })} className="h-9 px-3.5 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-1.5" style={{ background: BRAND }}><Plus size={13} /> New deal</button>
+        <button onClick={() => setForm({ stage: pipe?.stages?.[0]?.name || "Lead" })} className="h-9 px-3.5 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-1.5" style={{ background: BRAND }}><Plus size={13} /> New deal</button>
       </div>
 
       {view === "Kanban" && (
         <div className="flex-1 min-h-0 flex gap-3 overflow-x-auto bz-scroll p-4">
-          {pipe.stages.map((st) => {
+          {(pipe?.stages || []).map((st) => {
             const cards = mine.filter((d) => d.stage === st.name);
             const sum = cards.reduce((s2, d) => s2 + d.value, 0);
             return (
@@ -13558,7 +13704,7 @@ function Customer360({ id }) {
   const myCalls = calls.filter((k) => k.contactId === id);
 
   const timeline = [
-    ...myConvs.flatMap((v) => v.msgs.map((m) => ({ time: m.time, icon: m.from === "system" ? "zap" : "msg", ch: m.channel || v.channel, text: m.from === "system" ? m.text : `${m.from === "customer" ? c.name : m.from === "ai" ? m.agent + " (AI)" : m.who}: ${(m.text || "").slice(0, 90)}${m.text && m.text.length > 90 ? "…" : ""}` }))),
+    ...myConvs.flatMap((v) => (v.msgs || []).map((m) => ({ time: m.time, icon: m.from === "system" ? "zap" : "msg", ch: m.channel || v.channel, text: m.from === "system" ? m.text : `${m.from === "customer" ? c.name : m.from === "ai" ? m.agent + " (AI)" : m.who}: ${(m.text || "").slice(0, 90)}${m.text && m.text.length > 90 ? "…" : ""}` }))),
     ...myDeals.map((d) => ({ time: t(2400), icon: "deal", text: `Deal: ${d.name} · $${(d.value / 1000).toFixed(1)}k · ${d.stage}` })),
     ...myCalls.map((k) => ({ time: k.at, icon: "call", ch: "voice", callId: k.id, text: `Call · ${k.dir} · ${fmtDur(k.durSec)} · ${k.outcome || STATUS_LABEL[k.status]}${k.summary ? " · " + k.summary.slice(0, 70) + "…" : ""}` })),
     ...(c.notes || []).map((n) => ({ time: t(600), icon: "note", text: `Note by ${n.who}: ${n.text}` })),
@@ -17700,13 +17846,14 @@ const engRate = (p) => p.stats && p.stats.reach ? ((engagement(p) / p.stats.reac
 
 /* ---------- composer / editor ---------- */
 function PostEditor({ initial, prefillDate, onClose }) {
-  const { T, dk, brand, pillars, accounts, socialCamps, savePost, flash, ind, mktAutonomy, assets, agents, agentAct } = useApp();
-  const live = accounts.filter((a) => a.on);
-  const [p, setP] = useState(initial || {
-    id: "sp" + Date.now(), text: "", channels: [live[0] ? live[0].platform : "instagram"], kind: "Image", pillar: pillars[0].name,
+  const { T, dk, brand, pillars = [], accounts = [], socialCamps, savePost, flash, ind, mktAutonomy, assets, agents, agentAct } = useApp();
+  const live = (accounts || []).filter((a) => a && a.on);
+  const safePillars = Array.isArray(pillars) && pillars.length > 0 ? pillars : [{ name: "General" }];
+  const [p, setP] = useState(() => (initial || {
+    id: "sp" + Date.now(), text: "", channels: [live[0] ? live[0].platform : "instagram"], kind: "Image", pillar: safePillars[0]?.name || "General",
     status: "Draft", start: (prefillDate ? new Date(prefillDate) : addMin(new Date(), 1440)).toISOString(), by: "You",
     vis: "from-zinc-700 to-zinc-500", visLabel: "Image", campaign: "", stats: null, versions: [], reviewer: "", tags: [],
-  });
+  }));
   const [tab, setTab] = useState("Write");
   const [variants, setVariants] = useState(null);
   const set = (k, v) => setP((x) => ({ ...x, [k]: v }));
@@ -17715,7 +17862,7 @@ function PostEditor({ initial, prefillDate, onClose }) {
   const dt = new Date(p.start);
   const dateStr = dt.toISOString().slice(0, 10), timeStr = dt.toTimeString().slice(0, 5);
   const setWhen = (d, t2) => { const n = new Date(d + "T" + t2); set("start", n.toISOString()); };
-  const gen = () => { const g = genPost({ pillar: p.pillar, platform: p.channels[0] || "instagram", brand, ind, kind: p.kind }); setP((x) => ({ ...x, text: g.text, tags: g.tags })); flash("Draft written from your brand voice and content pillar. Edit freely."); };
+  const gen = () => { const g = genPost({ pillar: p.pillar || safePillars[0]?.name || "General", platform: p.channels[0] || "instagram", brand, ind, kind: p.kind }); setP((x) => ({ ...x, text: g.text, tags: g.tags })); flash("Draft written from your brand voice and content pillar. Edit freely."); };
   const rewrite = (mode) => {
     if (!p.text.trim()) { flash("Write or generate something first", "err"); return; }
     let t2 = p.text;
@@ -17723,7 +17870,7 @@ function PostEditor({ initial, prefillDate, onClose }) {
     if (mode === "longer") t2 = p.text + "\n\nOne more thing: the teams that win here are not the ones with the biggest budget, they are the ones who answer first.";
     if (mode === "punchier") t2 = p.text.replace(/^/, "Stop guessing. ").replace(/\.\s/, ". ");
     if (mode === "friendly") t2 = "Quick one 👋 " + p.text;
-    if (mode === "cta") t2 = p.text.replace(/\s*$/, " ") + brand.cta + " → link in bio.";
+    if (mode === "cta") t2 = p.text.replace(/\s*$/, " ") + (brand?.cta || "Learn more") + " → link in bio.";
     set("text", t2); flash("Rewritten. The previous version is kept in history.");
   };
   const save = (status) => {
@@ -18768,34 +18915,39 @@ function SocialView() {
 }
 
 function BookModal({ initial, prefillDate, onClose }) {
-  const { T, dk, services, staff, locations, appts, rules, createAppt, updateAppt, rescheduleAppt, flash, waitlist, setWaitlist } = useApp();
-  const [f, setF] = useState(initial
-    ? { contactId: initial.contactId, serviceId: initial.serviceId, staffId: initial.staffId, locationId: initial.locationId, room: initial.room || "", source: initial.source, note: "" }
-    : { contactId: CONTACTS[0].id, serviceId: services[0].id, staffId: "", locationId: "", room: "", source: "Manual", note: "" });
+  const { T, dk, services = [], staff = [], locations = [], appts = [], rules = {}, createAppt, updateAppt, rescheduleAppt, flash, waitlist, setWaitlist } = useApp();
+  const safeServices = Array.isArray(services) && services.length > 0 ? services : [{ id: "sv1", name: "Consultation", dur: 30, locations: ["L1"] }];
+  const safeStaff = Array.isArray(staff) ? staff : [];
+  const safeLocations = Array.isArray(locations) && locations.length > 0 ? locations : [{ id: "L1", name: "Main Office" }];
+  const safeContacts = Array.isArray(CONTACTS) && CONTACTS.length > 0 ? CONTACTS : [{ id: "c1", name: "Default Customer" }];
+
+  const [f, setF] = useState(() => (initial
+    ? { contactId: initial.contactId || safeContacts[0]?.id || "", serviceId: initial.serviceId || safeServices[0]?.id || "", staffId: initial.staffId || "", locationId: initial.locationId || "", room: initial.room || "", source: initial.source || "Manual", note: "" }
+    : { contactId: safeContacts[0]?.id || "", serviceId: safeServices[0]?.id || "", staffId: "", locationId: "", room: "", source: "Manual", note: "" }));
   const [date, setDate] = useState(() => { const d = prefillDate ? new Date(prefillDate) : (initial ? new Date(initial.start) : new Date()); if (!prefillDate && !initial) d.setDate(d.getDate() + 1); d.setHours(0, 0, 0, 0); return d; });
-  const [slot, setSlot] = useState(initial ? new Date(initial.start) : null);
-  const svc = services.find((x) => x.id === f.serviceId) || services[0];
-  const loc = locations.find((l) => l.id === (f.locationId || svc.locations[0]));
-  const person = staff.find((p) => p.id === f.staffId) || null;
-  const { slots, blocked } = availability({ date, service: svc, staff: person, location: loc, appts: appts.filter((a) => !initial || a.id !== initial.id), rules, staffList: staff });
-  const contact = CONTACTS.find((c) => c.id === f.contactId);
-  const eligibleStaff = staff.filter((p) => p.services.includes(svc.id));
+  const [slot, setSlot] = useState(() => (initial ? new Date(initial.start) : null));
+  const svc = safeServices.find((x) => x.id === f.serviceId) || safeServices[0] || { id: "sv1", name: "Service", dur: 30, locations: ["L1"] };
+  const loc = safeLocations.find((l) => l.id === (f.locationId || svc?.locations?.[0])) || safeLocations[0] || { id: "L1", name: "Location" };
+  const person = safeStaff.find((p) => p.id === f.staffId) || null;
+  const { slots, blocked } = availability({ date, service: svc, staff: person, location: loc, appts: (appts || []).filter((a) => !initial || a.id !== initial.id), rules: rules || {}, staffList: safeStaff });
+  const contact = safeContacts.find((c) => c.id === f.contactId) || safeContacts[0] || { id: "", name: "Customer" };
+  const eligibleStaff = safeStaff.filter((p) => Array.isArray(p?.services) && p.services.includes(svc?.id));
 
   const save = () => {
     if (!slot) { flash("Pick an available time first", "err"); return; }
-    const mine = appts.filter((a) => a.contactId === f.contactId && !["Cancelled", "Completed", "No show"].includes(a.status));
-    if (!initial && mine.length >= rules.maxPerCustomer) { flash(`${contact.name} already has ${mine.length} open appointments; the limit is ${rules.maxPerCustomer}.`, "err"); return; }
+    const mine = (appts || []).filter((a) => a.contactId === f.contactId && !["Cancelled", "Completed", "No show"].includes(a.status));
+    if (!initial && mine.length >= (rules.maxPerCustomer || 99)) { flash(`${contact.name || "Customer"} already has ${mine.length} open appointments; the limit is ${rules.maxPerCustomer || 99}.`, "err"); return; }
     const assigned = person || eligibleStaff.find((p) => {
-      const av = availability({ date, service: svc, staff: p, location: loc, appts, rules, staffList: staff });
+      const av = availability({ date, service: svc, staff: p, location: loc, appts: appts || [], rules: rules || {}, staffList: safeStaff });
       return av.slots.some((x) => x.getTime() === slot.getTime());
-    }) || eligibleStaff[0];
+    }) || eligibleStaff[0] || safeStaff[0] || { id: "st1", name: "Staff" };
     if (initial) {
       if (new Date(initial.start).getTime() !== slot.getTime()) rescheduleAppt(initial.id, slot.toISOString());
       ["serviceId", "staffId", "locationId", "room"].forEach((k) => { const v = k === "staffId" ? assigned.id : k === "locationId" ? loc.id : f[k]; if (v !== initial[k]) updateAppt(initial.id, { [k]: v }, "Appointment " + k + " changed"); });
-      updateAppt(initial.id, { durMin: svc.dur, title: svc.name }, "Service changed");
+      updateAppt(initial.id, { durMin: svc.dur || 30, title: svc.name || "Appointment" }, "Service changed");
       flash("Appointment updated");
     } else {
-      const a = createAppt({ contactId: f.contactId, serviceId: svc.id, staffId: assigned.id, locationId: loc.id, room: f.room, durMin: svc.dur, title: svc.name, source: f.source, start: slot.toISOString(), confirmChannel: (contact.channels || ["whatsapp"])[0], notes: f.note ? [{ id: 1, who: "Jordan Lee", text: f.note, at: "just now" }] : [] });
+      const a = createAppt({ contactId: f.contactId, serviceId: svc.id, staffId: assigned.id, locationId: loc.id, room: f.room, durMin: svc.dur || 30, title: svc.name || "Appointment", source: f.source, start: slot.toISOString(), confirmChannel: (contact?.channels || ["whatsapp"])[0], notes: f.note ? [{ id: 1, who: "Jordan Lee", text: f.note, at: "just now" }] : [] });
       flash(svc.approval ? "Requested. It sits in Pending until a manager approves." : "Booked and confirmed. Reminders scheduled from your rules.");
     }
     onClose();
@@ -18806,12 +18958,12 @@ function BookModal({ initial, prefillDate, onClose }) {
       <div className="grid grid-cols-2 gap-3">
         <Field label="Customer">
           <select value={f.contactId} onChange={(e) => setF({ ...f, contactId: e.target.value })} className={inputCls(T)}>
-            {CONTACTS.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {safeContacts.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="Service" hint={svc.dur + " min · " + (svc.price ? "$" + svc.price : "free") + (svc.approval ? " · needs approval" : "")}>
+        <Field label="Service" hint={(svc.dur || 30) + " min · " + (svc.price ? "$" + svc.price : "free") + (svc.approval ? " · needs approval" : "")}>
           <select value={f.serviceId} onChange={(e) => { setF({ ...f, serviceId: e.target.value, staffId: "", locationId: "" }); setSlot(null); }} className={inputCls(T)}>
-            {services.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            {safeServices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
         </Field>
         <Field label="Staff" hint="Leave on any and the engine picks whoever is free.">
@@ -18821,11 +18973,11 @@ function BookModal({ initial, prefillDate, onClose }) {
           </select>
         </Field>
         <Field label="Location">
-          <select value={f.locationId || svc.locations[0]} onChange={(e) => { setF({ ...f, locationId: e.target.value, room: "" }); setSlot(null); }} className={inputCls(T)}>
-            {locations.filter((l) => svc.locations.includes(l.id) || svc.kind === "Video").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          <select value={f.locationId || svc?.locations?.[0] || ""} onChange={(e) => { setF({ ...f, locationId: e.target.value, room: "" }); setSlot(null); }} className={inputCls(T)}>
+            {safeLocations.filter((l) => (svc?.locations || []).includes(l.id) || svc?.kind === "Video").map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </Field>
-        {loc && loc.rooms.length > 0 && (
+        {loc && Array.isArray(loc.rooms) && loc.rooms.length > 0 && (
           <Field label="Room"><select value={f.room} onChange={(e) => setF({ ...f, room: e.target.value })} className={inputCls(T)}><option value="">Auto assign</option>{loc.rooms.map((r) => <option key={r}>{r}</option>)}</select></Field>
         )}
         <Field label="Booking source"><select value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} className={inputCls(T)}>{APPT_SOURCES.map((x) => <option key={x}>{x}</option>)}</select></Field>
@@ -20683,7 +20835,7 @@ function ApprovalsView() {
                     {conv && (
                       <div className="mt-2">
                         <div className={`text-[10px] font-medium uppercase tracking-widest mb-1 ${T.faint}`}>Recent conversation</div>
-                        {conv.msgs.slice(-3).map((m2, i) => (
+                        {(conv.msgs || []).slice(-3).map((m2, i) => (
                           <div key={i} className={`text-[11px] mb-1 ${m2.from === "customer" ? "" : T.faint}`}><span className="font-semibold">{m2.from === "customer" ? contact.name.split(" ")[0] : "AI"}:</span> {(m2.text || "").slice(0, 110)}</div>
                         ))}
                         <button onClick={() => openConv(conv.id)} className="text-[11px] font-semibold" style={{ color: BRAND }}>Open the thread</button>

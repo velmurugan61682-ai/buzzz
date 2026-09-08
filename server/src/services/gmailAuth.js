@@ -1,4 +1,13 @@
-import { saveGoogleAccount, getGoogleAccount } from "../data/db.js";
+import {
+  saveGoogleAccount,
+  getGoogleAccount,
+  upsertContact,
+  fetchContacts,
+  resolveOrCreateContact,
+  upsertConversation,
+  saveMessage,
+  saveUnifiedMessage,
+} from "../data/db.js";
 
 /**
  * Redacts tokens, passwords, and client secrets from logs or error messages
@@ -164,6 +173,207 @@ export async function verifyGmailConnection(workspaceId = "ws_default") {
       error: sanitizeMessage(err.message),
     };
   }
+}
+
+/**
+ * Helper to parse name and email from RFC 822 header format like "John Doe <john@example.com>" or "john@example.com"
+ */
+function parseEmailHeader(headerVal) {
+  if (!headerVal) return { name: "", email: "" };
+  const match = headerVal.match(/(.*?)\s*<([^>]+)>/);
+  if (match) {
+    const name = match[1].replace(/^["']|["']$/g, "").trim();
+    const email = match[2].trim().toLowerCase();
+    return { name: name || email.split("@")[0], email };
+  }
+  const email = headerVal.trim().toLowerCase();
+  return { name: email.split("@")[0], email };
+}
+
+/**
+ * Syncs/fetches recent emails from Gmail API and ingests them into MongoDB & Unified Inbox.
+ */
+export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn = null) {
+  const validAccount = await getValidGoogleAccount(workspaceId);
+  if (!validAccount || !validAccount.accessToken) {
+    return {
+      connected: false,
+      reason: "No active Google account connected for workspace",
+    };
+  }
+
+  if (validAccount.isExpired) {
+    return {
+      connected: false,
+      expired: true,
+      reason: "Google access token expired and auto-refresh failed",
+    };
+  }
+
+  try {
+    const listRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15", {
+      headers: { Authorization: `Bearer ${validAccount.accessToken}` },
+    });
+
+    const listData = await listRes.json().catch(() => ({}));
+
+    if (!listRes.ok) {
+      const errMsg = listData.error?.message || `HTTP ${listRes.status}`;
+      console.warn(`⚠️ Gmail API fetch messages failed: ${sanitizeMessage(errMsg)}`);
+      return { connected: true, error: sanitizeMessage(errMsg) };
+    }
+
+    const messages = listData.messages || [];
+    if (messages.length === 0) {
+      return { connected: true, count: 0, syncedAt: new Date().toISOString() };
+    }
+
+    let newCount = 0;
+    const syncedAt = new Date().toISOString();
+
+    for (const m of messages) {
+      try {
+        const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, {
+          headers: { Authorization: `Bearer ${validAccount.accessToken}` },
+        });
+
+        const detail = await detailRes.json().catch(() => ({}));
+        if (!detailRes.ok || !detail.id) continue;
+
+        const headers = detail.payload?.headers || [];
+        const getHeader = (name) => headers.find((h) => h.name && h.name.toLowerCase() === name.toLowerCase())?.value || "";
+
+        const fromVal = getHeader("From");
+        const toVal = getHeader("To");
+        const subject = getHeader("Subject") || "No Subject";
+        const snippet = detail.snippet || "";
+        const internalDate = detail.internalDate ? new Date(parseInt(detail.internalDate, 10)) : new Date();
+
+        const fromObj = parseEmailHeader(fromVal);
+        const toObj = parseEmailHeader(toVal);
+
+        const accountEmail = String(validAccount.email || "").toLowerCase();
+        const isOutbound = fromObj.email.toLowerCase() === accountEmail;
+
+        const customerEmail = isOutbound ? toObj.email : fromObj.email;
+        const customerName = isOutbound ? (toObj.name || toObj.email) : (fromObj.name || fromObj.email);
+
+        if (!customerEmail) continue;
+
+        // Auto-upsert Contact if inbound customer message
+        if (!isOutbound) {
+          const contacts = await fetchContacts(workspaceId);
+          const existingContact = contacts.find((c) => c.email && c.email.toLowerCase() === customerEmail);
+          if (!existingContact) {
+            await upsertContact({
+              id: `cnt_gmail_${customerEmail.replace(/[^a-zA-Z0-9]/g, "_")}`,
+              workspaceId,
+              name: customerName,
+              email: customerEmail,
+              source: "Gmail Ingestion",
+              stage: "New Lead",
+              status: "Lead",
+              channels: ["email"],
+              tags: ["Gmail", "Email"],
+            });
+          }
+        }
+
+        const convId = `conv_gmail_${detail.threadId}`;
+        const summaryText = subject ? `Subject: ${subject} — ${snippet}` : snippet;
+
+        const convDoc = {
+          id: convId,
+          workspaceId,
+          customerName,
+          channel: "Email",
+          phone: customerEmail,
+          email: customerEmail,
+          unreadCount: isOutbound ? 0 : 1,
+          lastMessage: summaryText,
+          updatedAt: internalDate.toISOString(),
+        };
+        const conv = await upsertConversation(convDoc);
+
+        const fullText = subject ? `Subject: ${subject}\n\n${snippet}` : snippet;
+
+        const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+          id: `msg_gmail_${detail.id}`,
+          workspaceId,
+          conversationId: conv.id,
+          integrationId: "gmail",
+          platform: "gmail",
+          externalMessageId: detail.id,
+          sender: {
+            name: isOutbound ? validAccount.name || "Agent" : customerName,
+            email: isOutbound ? accountEmail : customerEmail,
+            kind: isOutbound ? "agent" : "customer",
+          },
+          direction: isOutbound ? "outbound" : "inbound",
+          text: fullText,
+          status: "received",
+          receivedAt: internalDate,
+        });
+
+        if (isNew) {
+          newCount++;
+          try {
+            await saveMessage({
+              id: msgDoc.id,
+              conversationId: conv.id,
+              sender: isOutbound ? "agent" : "customer",
+              text: fullText,
+              timestamp: internalDate.toISOString(),
+              status: "received",
+            });
+          } catch (e) {
+            // Legacy db non-fatal catch
+          }
+
+          if (broadcastFn && typeof broadcastFn === "function") {
+            broadcastFn("new_message", {
+              message: msgDoc,
+              conversation: conv,
+              platform: "gmail",
+            });
+            broadcastFn("message:new", { conversation: conv, message: msgDoc });
+          }
+        }
+      } catch (itemErr) {
+        console.warn(`⚠️ Error processing Gmail message detail item: ${sanitizeMessage(itemErr.message)}`);
+      }
+    }
+
+    if (newCount > 0) {
+      console.log(`📩 [GMAIL INGESTION SUCCESS] Synced ${messages.length} emails from ${validAccount.email}. Ingested ${newCount} new message(s) to MongoDB.`);
+    }
+
+    return {
+      success: true,
+      connected: true,
+      count: newCount,
+      totalChecked: messages.length,
+      syncedAt,
+    };
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    console.error("❌ Gmail Message Sync Error:", safeMsg);
+    return { connected: false, error: safeMsg };
+  }
+}
+
+/**
+ * Background scheduler to poll Gmail messages every N milliseconds (default 30 seconds)
+ */
+export function startGmailMessagesAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
+  console.log(`⏰ Initializing Gmail background email sync scheduler (polling every ${intervalMs / 1000}s)...`);
+  setInterval(async () => {
+    try {
+      await syncGmailMessages("ws_default", broadcastFn);
+    } catch (e) {
+      console.warn("⚠️ Background Gmail auto-sync error:", sanitizeMessage(e.message));
+    }
+  }, intervalMs);
 }
 
 /**
@@ -347,3 +557,4 @@ export function startGoogleContactsAutoSyncScheduler(intervalMs = 86400000) {
     }
   }, intervalMs);
 }
+

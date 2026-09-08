@@ -60,6 +60,26 @@ export async function apiRequest(endpoint, { method = "GET", body, headers = {},
     );
   }
 
+  return normalizeResponse(data);
+}
+
+export function normalizeEntity(item) {
+  if (!item || typeof item !== "object") return item;
+  const id = item.id || (item._id ? String(item._id) : undefined);
+  return {
+    ...item,
+    ...(id ? { id } : {}),
+    tags: Array.isArray(item.tags) ? item.tags : [],
+  };
+}
+
+export function normalizeResponse(data) {
+  if (Array.isArray(data)) {
+    return data.map(normalizeEntity);
+  }
+  if (data && typeof data === "object") {
+    return normalizeEntity(data);
+  }
   return data;
 }
 

@@ -19,3 +19,15 @@ build/
 Thumbs.db
 .vscode/
 .idea/
+
+# Android & Gradle
+.gradle/
+**/.gradle/
+**/build/
+local.properties
+**/local.properties
+*.apk
+*.aar
+*.keystore
+*.zip
+

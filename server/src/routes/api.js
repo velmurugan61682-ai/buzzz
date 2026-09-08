@@ -11,11 +11,15 @@ import {
   updateMessageStatus,
   saveLinkedInAccount,
   getLinkedInAccount,
+  deleteLinkedInAccount,
   saveGoogleAccount,
   getGoogleAccount,
   fetchContacts,
   fetchContactById,
   upsertContact,
+  resolveOrCreateContact,
+  saveMissedCall,
+  fetchMissedCalls,
   deleteContactById,
   saveInstaxBotConfig,
   getInstaxBotConfig,
@@ -26,8 +30,9 @@ import {
   UnifiedMessageModel,
   findOrCreateGoogleUser,
 } from "../data/db.js";
+
 import { getGoWhatsConfigStatus, sendWhatsAppMessage } from "../services/gowhats.js";
-import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts } from "../services/gmailAuth.js";
+import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 export const apiRouter = Router();
@@ -35,16 +40,21 @@ export const apiRouter = Router();
 // Helper to extract workspace context
 const getWorkspaceId = (req) =>
   req.headers["x-workspace-id"] ||
+  req.headers["x-ws-id"] ||
   req.query?.workspaceId ||
   req.query?.workspace_id ||
+  req.query?.wsId ||
+  req.query?.ws_id ||
   req.body?.workspaceId ||
   req.body?.workspace_id ||
+  req.body?.wsId ||
+  req.body?.ws_id ||
   "ws_default";
 
 // Server-Sent Events (SSE) clients set for real-time push updates
 const sseClients = new Set();
 
-const broadcastSseEvent = (type, payload) => {
+export const broadcastSseEvent = (type, payload) => {
   const data = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
   for (const client of sseClients) {
     client.write(`data: ${data}\n\n`);
@@ -267,12 +277,159 @@ apiRouter.post("/auth/logout", (req, res) => {
   res.json({ ok: true, message: "Logged out successfully" });
 });
 
+// Middleware to authenticate requests via JWT/session token
+const requireAuth = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  const token =
+    (authHeader && authHeader.startsWith("Bearer ") ? authHeader.split(" ")[1] : null) ||
+    req.headers["x-session-token"] ||
+    req.cookies?.buzzz_session;
+
+  if (token && activeAuthSessions.has(token)) {
+    const session = activeAuthSessions.get(token);
+    req.user = session.user;
+    req.session = session;
+    return next();
+  }
+
+  // Fallback dev demo user if no header is present
+  if (!token) {
+    req.user = { id: "usr_default", email: "user@buzzzplatform.com", name: "BUZZZ User" };
+    return next();
+  }
+
+  return res.status(401).json({
+    ok: false,
+    code: "unauthorized",
+    message: "Invalid or expired authentication token. Please sign in again.",
+  });
+};
+
+// ==============================================================================
+// MISSED CALL COMPANION API ENDPOINTS
+// ==============================================================================
+
+// POST /api/calls/missed - Sync missed call from Android companion app
+apiRouter.post("/calls/missed", requireAuth, async (req, res) => {
+  try {
+    const { phoneNumber, contactName, email, callType, calledAt, deviceId, externalCallId } = req.body || {};
+    const userId = req.user?.id || "usr_default";
+    const wsId = getWorkspaceId(req);
+
+    if (!phoneNumber || !calledAt || !deviceId) {
+      return res.status(400).json({
+        success: false,
+        code: "bad_request",
+        message: "Missing required fields: phoneNumber, calledAt, deviceId are mandatory.",
+      });
+    }
+
+    const cleanPhone = String(phoneNumber).replace(/\D/g, "");
+    const extId = externalCallId || `call_${deviceId}_${new Date(calledAt).getTime()}_${cleanPhone}`;
+
+    // 1. Cross-channel Contact Resolution Engine: resolve or create Contact across all channels
+    const resolvedContact = await resolveOrCreateContact({
+      workspaceId: wsId,
+      name: contactName || "Unknown Caller",
+      phone: cleanPhone || phoneNumber,
+      email: email || "",
+      source: "Android Missed Call Sync",
+      channel: "voice",
+    });
+
+    // 2. Save Missed Call Document in Mongoose (with database deduplication gate)
+    const { doc: callDoc, isNew } = await saveMissedCall({
+      id: `mc_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      userId,
+      deviceId,
+      phoneNumber,
+      contactName: resolvedContact.name,
+      email: resolvedContact.email || email || "",
+      type: callType || "MISSED",
+      calledAt,
+      syncSource: "android_companion",
+      externalCallId: extId,
+      contactId: resolvedContact.id,
+    });
+
+    if (!isNew) {
+      console.log(`ℹ️ [MISSED CALL API] Duplicate event received for externalCallId [${extId}]. Responding safe duplicate.`);
+      return res.json({ success: true, duplicate: true, message: "Missed call already synced" });
+    }
+
+    // 3. Upsert Conversation for Inbox display under "Missed Call" channel
+    const convId = `conv_missed_${cleanPhone}`;
+    const isoCalledAt = new Date(calledAt).toISOString();
+    const convDoc = {
+      id: convId,
+      workspaceId: wsId,
+      customerName: resolvedContact.name,
+      channel: "Missed Call",
+      phone: cleanPhone || phoneNumber,
+      unreadCount: 1,
+      lastMessage: `Missed call from ${resolvedContact.name} (${phoneNumber})`,
+      updatedAt: isoCalledAt,
+    };
+    const conv = await upsertConversation(convDoc);
+
+    // 4. Save Unified Inbox Message with platform: "missed_call"
+    const { doc: msgDoc, isNew: isNewMsg } = await saveUnifiedMessage({
+      id: `msg_missed_${Date.now()}`,
+      workspaceId: wsId,
+      conversationId: conv.id,
+      integrationId: "missed_call",
+      platform: "missed_call",
+      externalMessageId: extId,
+      sender: {
+        name: resolvedContact.name,
+        phone: phoneNumber,
+        email: resolvedContact.email || "",
+        kind: "customer",
+      },
+      direction: "inbound",
+      text: `Missed call received at ${new Date(calledAt).toLocaleString()}`,
+      status: "received",
+      receivedAt: new Date(calledAt),
+    });
+
+    // 5. Broadcast real-time SSE event to update React Inbox dashboard
+    if (isNewMsg) {
+      broadcastSseEvent("message:new", {
+        conversation: conv,
+        message: msgDoc,
+      });
+    }
+
+    res.json({ success: true, message: "Missed call synced", id: callDoc.id });
+  } catch (err) {
+    console.error("❌ Error syncing missed call:", sanitizeMessage(err.message));
+    res.status(500).json({ success: false, code: "server_error", message: "Failed to sync missed call" });
+  }
+});
+
+// GET /api/calls/missed - Fetch paginated missed calls
+apiRouter.get("/calls/missed", requireAuth, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const limit = parseInt(req.query.limit || "20", 10);
+    const page = parseInt(req.query.page || "1", 10);
+
+    const result = await fetchMissedCalls(userId, limit, page);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("❌ Error fetching missed calls:", sanitizeMessage(err.message));
+    res.status(500).json({ success: false, code: "server_error", message: "Failed to fetch missed calls" });
+  }
+});
+
+
 
 // Real-Time Events Streaming Endpoint (SSE)
 apiRouter.get("/events", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
   sseClients.add(res);
@@ -831,9 +988,10 @@ apiRouter.get("/auth/linkedin/callback", handleLinkedInCallback);
 apiRouter.get("/linkedin/callback", handleLinkedInCallback);
 
 // GET /api/v1/linkedin/status - Returns connection status and profile details without access token
-apiRouter.get("/linkedin/status", async (req, res) => {
+const handleLinkedInStatus = async (req, res) => {
   try {
-    const account = await getLinkedInAccount("ws_default");
+    const wsId = getWorkspaceId(req);
+    const account = await getLinkedInAccount(wsId);
     if (!account) {
       return res.json({ connected: false });
     }
@@ -847,21 +1005,44 @@ apiRouter.get("/linkedin/status", async (req, res) => {
       email: account.email,
       picture: account.picture,
       expiresAt: account.expiresAt,
+      scopes: account.scopes || ["openid", "profile", "email", "w_member_social"],
+      connectedAt: account.connectedAt,
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch LinkedIn status" });
   }
-});
+};
 
-// STEP 4: POST /api/v1/linkedin/share - Share text post to user's LinkedIn feed
-apiRouter.post("/linkedin/share", async (req, res) => {
+apiRouter.get("/linkedin/status", handleLinkedInStatus);
+apiRouter.get("/integrations/linkedin/status", handleLinkedInStatus);
+
+// POST /api/linkedin/disconnect & /api/integrations/linkedin/disconnect
+const handleLinkedInDisconnect = async (req, res) => {
   try {
-    const { text } = req.body || {};
-    if (!text || !text.trim()) {
+    const wsId = getWorkspaceId(req);
+    await deleteLinkedInAccount(wsId);
+    console.log(`✅ LinkedIn disconnected for workspace ${wsId}`);
+    res.json({ success: true, connected: false });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.post("/linkedin/disconnect", handleLinkedInDisconnect);
+apiRouter.post("/integrations/linkedin/disconnect", handleLinkedInDisconnect);
+
+// POST /api/linkedin/post & /api/linkedin/share - Share text post to user's LinkedIn feed
+const handleLinkedInPost = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const { text, content, message } = req.body || {};
+    const postText = String(text || content || message || "").trim();
+
+    if (!postText) {
       return res.status(400).json({ code: "bad_request", message: "Share text content is required" });
     }
 
-    const account = await getLinkedInAccount("ws_default");
+    const account = await getLinkedInAccount(wsId);
     if (!account || !account.accessToken) {
       return res.status(401).json({
         code: "unauthorized",
@@ -877,7 +1058,7 @@ apiRouter.post("/linkedin/share", async (req, res) => {
       });
     }
 
-    // Call POST https://api.linkedin.com/v2/ugcPosts
+    // Call POST https://api.linkedin.com/v2/ugcPosts (LinkedIn UGC Posts API)
     const shareUrl = "https://api.linkedin.com/v2/ugcPosts";
     const payload = {
       author: `urn:li:person:${account.linkedinId}`,
@@ -885,7 +1066,7 @@ apiRouter.post("/linkedin/share", async (req, res) => {
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
           shareCommentary: {
-            text: text.trim(),
+            text: postText,
           },
           shareMediaCategory: "NONE",
         },
@@ -898,7 +1079,7 @@ apiRouter.post("/linkedin/share", async (req, res) => {
     const response = await fetch(shareUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${account.accessToken}`,
+        Authorization: `Bearer ${account.accessToken}`,
         "X-Restli-Protocol-Version": "2.0.0",
         "Content-Type": "application/json",
       },
@@ -908,10 +1089,24 @@ apiRouter.post("/linkedin/share", async (req, res) => {
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      const errorMsg = data.message || data.error || `LinkedIn API HTTP ${response.status}`;
-      // Security: ensure access token is never leaked in response or logs
+      const status = response.status;
+      const errorMsg = data.message || data.error || `LinkedIn API HTTP ${status}`;
       const safeMsg = String(errorMsg).replace(account.accessToken, "[REDACTED_TOKEN]");
-      console.error("❌ LinkedIn Feed Share Failed:", safeMsg);
+      console.error(`❌ LinkedIn Feed Post Failed (${status}):`, safeMsg);
+
+      if (status === 401 || status === 403) {
+        if (safeMsg.toLowerCase().includes("scope") || safeMsg.toLowerCase().includes("permission")) {
+          return res.status(403).json({
+            code: "insufficient_scope",
+            message: "w_member_social scope is required to publish to your LinkedIn feed. Please re-connect LinkedIn.",
+          });
+        }
+        return res.status(401).json({
+          code: "token_expired",
+          message: "LinkedIn session expired or unauthorized. Please re-authenticate.",
+        });
+      }
+
       return res.status(502).json({
         code: "linkedin_api_error",
         message: `LinkedIn Post Failed: ${safeMsg}`,
@@ -925,13 +1120,17 @@ apiRouter.post("/linkedin/share", async (req, res) => {
       success: true,
       id: postId,
       author: account.name,
-      message: "Successfully published share to LinkedIn feed!",
+      message: "Successfully published post to LinkedIn feed!",
     });
   } catch (err) {
     const safeError = String(err.message).replace(/[a-zA-Z0-9_-]{30,}/g, "[REDACTED_TOKEN]");
     res.status(500).json({ code: "internal_error", message: safeError });
   }
-});
+};
+
+apiRouter.post("/linkedin/post", handleLinkedInPost);
+apiRouter.post("/linkedin/share", handleLinkedInPost);
+apiRouter.post("/integrations/linkedin/post", handleLinkedInPost);
 
 // ==============================================================================
 // GOOGLE OAUTH 2.0 / OPENID CONNECT & GMAIL ROUTES
@@ -1117,6 +1316,119 @@ const handleGoogleStatus = async (req, res) => {
 
 apiRouter.get("/google/status", handleGoogleStatus);
 apiRouter.get("/gmail/status", handleGoogleStatus);
+
+// POST /api/google/messages/sync & /api/gmail/messages/sync - Triggers Gmail message sync
+const handleGmailSync = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const result = await syncGmailMessages(wsId, broadcastSseEvent);
+    res.json(result);
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    res.status(500).json({ success: false, error: safeMsg });
+  }
+};
+
+apiRouter.post("/google/messages/sync", handleGmailSync);
+apiRouter.post("/gmail/messages/sync", handleGmailSync);
+
+// POST /api/gmail/simulate-incoming & /api/google/simulate-incoming - Simulates an incoming email for testing
+const handleGmailSimulate = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const wsId = getWorkspaceId(req);
+
+    // 1. Connection Gate Verification for Gmail Simulator
+    const gate = await verifyIntegrationConnectionGate(wsId, "gmail");
+    if (!gate.connected) {
+      return res.status(403).json({ code: "forbidden", error: gate.reason });
+    }
+
+    const senderEmail = String(payload.sender_email || payload.email || payload.from || "client.inquiry@example.com").toLowerCase().trim();
+    const senderName = payload.sender_name || payload.name || "Enterprise Prospect";
+    const subject = payload.subject || "Inquiry regarding BUZZZ Platform Integration";
+    const snippet = payload.body || payload.text || payload.message || "Hello team, we are testing the live Gmail inbox pipeline integration with MongoDB.";
+    const externalMsgId = payload.id || payload.externalMessageId || `gmail_sim_${Date.now()}`;
+    const threadId = payload.threadId || `thread_sim_${Date.now()}`;
+
+    // Auto-resolve/upsert unified Contact across all channels
+    const contact = await resolveOrCreateContact({
+      workspaceId: wsId,
+      name: senderName,
+      email: senderEmail,
+      phone: payload.phone || "",
+      source: "Gmail Ingestion",
+      channel: "email",
+    });
+
+    const convId = `conv_gmail_${threadId}`;
+    const convDoc = {
+      id: convId,
+      workspaceId: wsId,
+      customerName: contact.name || senderName,
+      channel: "Email",
+      phone: senderEmail,
+      email: senderEmail,
+      unreadCount: 1,
+
+      lastMessage: `Subject: ${subject} — ${snippet}`,
+      updatedAt: new Date().toISOString(),
+    };
+    const conv = await upsertConversation(convDoc);
+
+    const fullText = `Subject: ${subject}\n\n${snippet}`;
+    const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+      id: `msg_${externalMsgId}`,
+      workspaceId: wsId,
+      conversationId: conv.id,
+      integrationId: "gmail",
+      platform: "gmail",
+      externalMessageId: externalMsgId,
+      sender: { name: senderName, email: senderEmail, kind: "customer" },
+      direction: "inbound",
+      text: fullText,
+      status: "received",
+      receivedAt: new Date().toISOString(),
+    });
+
+    try {
+      await saveMessage({
+        id: msgDoc.id,
+        conversationId: conv.id,
+        sender: "customer",
+        text: fullText,
+        timestamp: new Date().toISOString(),
+        status: "received",
+      });
+    } catch (e) {
+      // Legacy DB warning ignore
+    }
+
+    if (isNew) {
+      broadcastSseEvent("new_message", {
+        message: msgDoc,
+        conversation: conv,
+        platform: "gmail",
+        platformMeta: PLATFORM_META.gmail,
+      });
+      broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+      console.log(`📩 [GMAIL SIMULATOR] Simulated email from ${senderName} (${senderEmail}) saved to MongoDB & pushed over SSE`);
+    }
+
+    res.json({
+      success: true,
+      isNew,
+      conversation: conv,
+      message: msgDoc,
+    });
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    res.status(500).json({ success: false, error: safeMsg });
+  }
+};
+
+apiRouter.post("/gmail/simulate-incoming", handleGmailSimulate);
+apiRouter.post("/google/simulate-incoming", handleGmailSimulate);
 
 // ==============================================================================
 // GOOGLE CONTACTS API ROUTES
@@ -1331,31 +1643,46 @@ apiRouter.get("/inbox", async (req, res) => {
 const handleInstaxBotWebhook = async (req, res) => {
   const wsId = getWorkspaceId(req);
 
-  // 1. WEBHOOK SIGNATURE VERIFICATION
+  // 1. WEBHOOK SIGNATURE / SECRET VERIFICATION
   const expectedSecret = process.env.INSTAXBOT_WEBHOOK_VERIFY_SECRET;
   if (expectedSecret) {
     const providedSecret =
       req.headers["x-instaxbot-secret"] ||
       req.headers["x-webhook-secret"] ||
+      req.headers["x-instaxbot-signature"] ||
+      req.headers["x-hub-signature-256"] ||
+      req.headers["x-hub-signature"] ||
       req.headers["x-api-key"] ||
       req.headers["authorization"]?.replace(/^Bearer\s+/i, "") ||
       req.query?.secret ||
       req.query?.verify_token ||
       req.query?.api_key ||
+      req.query?.token ||
+      req.query?.secret_token ||
+      req.query?.signature ||
       req.body?.secret ||
       req.body?.verify_token ||
-      req.body?.api_key;
+      req.body?.api_key ||
+      req.body?.token ||
+      req.body?.secret_token ||
+      req.body?.signature;
 
     if (providedSecret !== expectedSecret) {
-      console.warn(`⚠️ [SECURITY 401] Rejecting InstaxBot webhook: signature/secret mismatch (provided: ${providedSecret || "none"})`);
-      return res.status(401).json({ code: "unauthorized", error: "Signature/secret mismatch" });
+      const redactedProvided = providedSecret ? `${providedSecret.slice(0, 4)}...` : "none";
+      const redactedExpected = expectedSecret ? `${expectedSecret.slice(0, 4)}...` : "none";
+      console.warn(`⚠️ [SECURITY 401] Rejecting InstaxBot webhook: signature/secret mismatch (expected: ${redactedExpected}, received: ${redactedProvided})`);
+      return res.status(401).json({
+        code: "unauthorized",
+        error: "Signature/secret mismatch",
+        details: { expected: redactedExpected, received: redactedProvided },
+      });
     }
   }
 
   // 2. CONNECTION VERIFICATION GATE
   const gate = await verifyIntegrationConnectionGate(wsId, "instagram");
   if (!gate.connected) {
-    console.warn(`⚠️ [GATE 403] Rejecting InstaxBot webhook: integration disconnected (${gate.reason})`);
+    console.warn(`⚠️ [GATE 403] Rejecting InstaxBot webhook for workspace '${wsId}': integration disconnected (${gate.reason})`);
     return res.status(403).json({ code: "forbidden", error: gate.reason });
   }
 
@@ -1366,24 +1693,27 @@ const handleInstaxBotWebhook = async (req, res) => {
     let payload = req.body || {};
     console.log(`📩 [INSTAXBOT WEBHOOK] Processing incoming webhook (ws: ${wsId}):`, JSON.stringify(payload));
 
-    // Handle Meta / Instagram Graph API nested payload format if present
-    if (payload.entry?.[0]?.messaging?.[0]) {
-      const msgItem = payload.entry[0].messaging[0];
-      payload = {
-        id: msgItem.message?.mid || msgItem.message?.id || payload.id,
-        sender_handle: msgItem.sender?.id || msgItem.sender?.username || payload.sender_handle,
-        sender_name: msgItem.sender?.name || msgItem.sender?.username || payload.sender_name,
-        message_text: msgItem.message?.text || msgItem.message?.caption || payload.message_text,
-        conversation_id: msgItem.sender?.id ? `conv_ig_${msgItem.sender.id}` : payload.conversation_id,
-        ...payload,
-      };
-    }
+    // Support nested Meta / Instagram Graph API payload structures
+    const messagingItem = payload.entry?.[0]?.messaging?.[0];
+    const changesValue = payload.entry?.[0]?.changes?.[0]?.value;
+    const changeMessageItem = changesValue?.messages?.[0];
+    const dataItem = payload.data;
 
     const externalMessageId =
       payload.id ||
       payload.message_id ||
+      payload.messageId ||
+      payload.msg_id ||
       payload.mid ||
       payload.externalMessageId ||
+      payload.event_id ||
+      messagingItem?.message?.mid ||
+      messagingItem?.message?.id ||
+      changeMessageItem?.id ||
+      changesValue?.message_id ||
+      dataItem?.id ||
+      dataItem?.message_id ||
+      dataItem?.msg_id ||
       `ig_msg_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
     const senderName =
@@ -1392,6 +1722,15 @@ const handleInstaxBotWebhook = async (req, res) => {
       payload.sender?.name ||
       payload.username ||
       payload.from_name ||
+      messagingItem?.sender?.name ||
+      messagingItem?.sender?.username ||
+      changesValue?.contacts?.[0]?.profile?.name ||
+      changesValue?.sender_name ||
+      changesValue?.name ||
+      dataItem?.sender_name ||
+      dataItem?.name ||
+      dataItem?.sender?.name ||
+      dataItem?.username ||
       "Instagram User";
 
     const senderHandle =
@@ -1400,6 +1739,19 @@ const handleInstaxBotWebhook = async (req, res) => {
       payload.username ||
       payload.from ||
       payload.sender_id ||
+      payload.user_id ||
+      messagingItem?.sender?.id ||
+      messagingItem?.sender?.username ||
+      changeMessageItem?.from ||
+      changesValue?.sender_handle ||
+      changesValue?.sender_id ||
+      changesValue?.user_id ||
+      changesValue?.username ||
+      dataItem?.sender_handle ||
+      dataItem?.handle ||
+      dataItem?.username ||
+      dataItem?.sender_id ||
+      dataItem?.user_id ||
       "instagram_user";
 
     const textBody =
@@ -1407,19 +1759,48 @@ const handleInstaxBotWebhook = async (req, res) => {
       payload.message ||
       payload.text ||
       payload.body ||
+      payload.caption ||
+      messagingItem?.message?.text ||
+      messagingItem?.message?.caption ||
+      changeMessageItem?.text?.body ||
+      changeMessageItem?.text ||
+      changesValue?.message_text ||
+      changesValue?.text ||
+      changesValue?.body ||
+      dataItem?.message_text ||
+      dataItem?.message ||
+      dataItem?.text ||
+      dataItem?.body ||
       "New Instagram DM received via InstaxBot";
 
     const convId =
       payload.conversation_id ||
-      payload.instagram_id ||
       payload.conv_id ||
-      `conv_ig_${senderHandle.replace(/\W/g, "_")}`;
+      payload.instagram_id ||
+      payload.thread_id ||
+      (messagingItem?.sender?.id ? `conv_ig_${messagingItem.sender.id}` : null) ||
+      (changesValue?.sender_id ? `conv_ig_${changesValue.sender_id}` : null) ||
+      (dataItem?.conversation_id ? dataItem.conversation_id : null) ||
+      (dataItem?.thread_id ? dataItem.thread_id : null) ||
+      `conv_ig_${String(senderHandle).replace(/\W/g, "_")}`;
+
+    // Resolve or create unified contact for Instagram DM sender
+    const contact = await resolveOrCreateContact({
+      workspaceId: wsId,
+      name: senderName,
+      identities: [
+        { type: "instagram", value: senderHandle },
+        { type: "custom", value: senderHandle },
+      ],
+      source: "InstaxBot Instagram DM",
+      channel: "instagram",
+    });
 
     // Upsert Conversation
     const convDoc = {
       id: convId,
       workspaceId: wsId,
-      customerName: senderName,
+      customerName: contact?.name || senderName,
       channel: "Instagram",
       phone: senderHandle,
       unreadCount: 1,
@@ -1436,23 +1817,32 @@ const handleInstaxBotWebhook = async (req, res) => {
       integrationId: "instaxbot",
       platform: "instagram",
       externalMessageId,
-      sender: { name: senderName, handle: senderHandle, kind: "customer" },
+      sender: {
+        name: contact?.name || senderName,
+        handle: senderHandle,
+        contactId: contact?.id || null,
+        kind: "customer"
+      },
       direction: "inbound",
       text: textBody,
       status: "received",
       receivedAt: new Date().toISOString(),
     });
 
-    // Save legacy message doc for backwards compatibility
-    await saveMessage({
-      id: msgDoc.id,
-      conversationId: conv.id,
-      sender: "customer",
-      text: textBody,
-      timestamp: new Date().toISOString(),
-      gowhatsMessageId: externalMessageId,
-      status: "received",
-    });
+    // Save legacy message doc in isolated try/catch so legacy DB issues don't suppress SSE broadcast
+    try {
+      await saveMessage({
+        id: msgDoc.id,
+        conversationId: conv.id,
+        sender: "customer",
+        text: textBody,
+        timestamp: new Date().toISOString(),
+        gowhatsMessageId: externalMessageId,
+        status: "received",
+      });
+    } catch (legacyErr) {
+      console.warn("⚠️ [LEGACY DB NOTICE] Non-fatal saveMessage warning:", legacyErr.message);
+    }
 
     if (isNew) {
       // 4. REAL-TIME PUSH TO FRONTEND ONLY ON NEW MESSAGE
@@ -1463,7 +1853,7 @@ const handleInstaxBotWebhook = async (req, res) => {
         platformMeta: PLATFORM_META.instagram,
       });
       broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
-      console.log(`📩 [UNIFIED INBOX] New Instagram DM processed from @${senderHandle} (${senderName}): "${textBody}"`);
+      console.log(`📩 [UNIFIED INBOX] New Instagram DM processed from @${senderHandle} (${contact?.name || senderName}): "${textBody}"`);
     } else {
       console.log(`ℹ️ [UNIFIED INBOX] Duplicate Instagram DM [${externalMessageId}] ignored. Socket push skipped.`);
     }
@@ -1492,14 +1882,25 @@ const handleInstaxBotSimulate = async (req, res) => {
       sender_name: payload.sender_name || payload.name || "Aswin Kumar",
       sender_handle: payload.sender_handle || payload.handle || "aswin_ig",
       message_text: payload.message_text || payload.text || "Hi! I saw your Instagram post and would love to connect!",
-      conversation_id: payload.conversation_id || `conv_ig_${Date.now()}`,
+      conversation_id: payload.conversation_id || `conv_ig_${String(payload.sender_handle || payload.handle || "aswin_ig").replace(/\W/g, "_")}`,
       id: payload.id || payload.externalMessageId || `ig_sim_${Date.now()}`,
     };
+
+    const contact = await resolveOrCreateContact({
+      workspaceId: wsId,
+      name: defaultPayload.sender_name,
+      identities: [
+        { type: "instagram", value: defaultPayload.sender_handle },
+        { type: "custom", value: defaultPayload.sender_handle },
+      ],
+      source: "InstaxBot Instagram DM",
+      channel: "instagram",
+    });
 
     const convDoc = {
       id: defaultPayload.conversation_id,
       workspaceId: wsId,
-      customerName: defaultPayload.sender_name,
+      customerName: contact?.name || defaultPayload.sender_name,
       channel: "Instagram",
       phone: defaultPayload.sender_handle,
       unreadCount: 1,
@@ -1515,7 +1916,12 @@ const handleInstaxBotSimulate = async (req, res) => {
       integrationId: "instaxbot",
       platform: "instagram",
       externalMessageId: defaultPayload.id,
-      sender: { name: defaultPayload.sender_name, handle: defaultPayload.sender_handle, kind: "customer" },
+      sender: {
+        name: contact?.name || defaultPayload.sender_name,
+        handle: defaultPayload.sender_handle,
+        contactId: contact?.id || null,
+        kind: "customer"
+      },
       direction: "inbound",
       text: defaultPayload.message_text,
       status: "received",
@@ -1540,6 +1946,7 @@ const handleInstaxBotSimulate = async (req, res) => {
         : "Duplicate webhook payload detected and deduplicated (no-op)",
       conversation: conv,
       messageDoc: msgDoc,
+      contact,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

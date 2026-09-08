@@ -85,7 +85,7 @@ const UnifiedMessageSchema = new mongoose.Schema(
     platform: {
       type: String,
       required: true,
-      enum: ["gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook"],
+      enum: ["gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook", "missed_call"],
       index: true,
     },
     externalMessageId: { type: String, required: true, index: true },
@@ -94,6 +94,7 @@ const UnifiedMessageSchema = new mongoose.Schema(
         name: { type: String, default: "Customer" },
         handle: { type: String, default: "" },
         email: { type: String, default: "" },
+        phone: { type: String, default: "" },
         avatar: { type: String, default: "" },
         kind: { type: String, enum: ["customer", "agent", "system"], default: "customer" },
       },
@@ -121,6 +122,8 @@ const LinkedInAccountSchema = new mongoose.Schema(
     picture: { type: String },
     accessToken: { type: String, required: true },
     expiresAt: { type: Date, required: true },
+    scopes: { type: [String], default: ["openid", "profile", "email", "w_member_social"] },
+    connectedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }
 );
@@ -157,6 +160,15 @@ const ContactSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String, default: "" },
     phone: { type: String, default: "" },
+    identities: {
+      type: [
+        {
+          type: { type: String, required: true },
+          value: { type: String, required: true, index: true },
+        },
+      ],
+      default: [],
+    },
     company: { type: String, default: "—" },
     title: { type: String, default: "" },
     location: { type: String, default: "" },
@@ -184,6 +196,24 @@ const ContactSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const MissedCallSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, index: true },
+    deviceId: { type: String, required: true, index: true },
+    phoneNumber: { type: String, required: true, index: true },
+    contactName: { type: String, default: "Unknown Caller" },
+    email: { type: String, default: "" },
+    type: { type: String, default: "MISSED" },
+    calledAt: { type: Date, required: true, index: true },
+    createdAt: { type: Date, default: Date.now },
+    syncSource: { type: String, default: "android_companion" },
+    externalCallId: { type: String, required: true, unique: true, index: true },
+    contactId: { type: String, index: true },
+  },
+  { timestamps: true }
+);
+
 const UserSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
@@ -205,7 +235,9 @@ export const LinkedInAccountModel = mongoose.models.LinkedInAccount || mongoose.
 export const GoogleAccountModel = mongoose.models.GoogleAccount || mongoose.model("GoogleAccount", GoogleAccountSchema);
 export const InstaxBotAccountModel = mongoose.models.InstaxBotAccount || mongoose.model("InstaxBotAccount", InstaxBotAccountSchema);
 export const ContactModel = mongoose.models.Contact || mongoose.model("Contact", ContactSchema);
+export const MissedCallModel = mongoose.models.MissedCall || mongoose.model("MissedCall", MissedCallSchema);
 export const UserModel = mongoose.models.User || mongoose.model("User", UserSchema);
+
 
 export const findOrCreateGoogleUser = async ({ googleId, email, name, picture }) => {
   const cleanEmail = String(email).toLowerCase().trim();
@@ -336,22 +368,35 @@ export const getDbStatus = () => ({
   name: mongoose.connection.name || null,
 });
 
+// Helper to normalize MongoDB documents (ensures id and required defaults)
+const normalizeMongoDoc = (doc) => {
+  if (!doc) return doc;
+  const id = doc.id || (doc._id ? String(doc._id) : undefined);
+  return {
+    ...doc,
+    id,
+    tags: Array.isArray(doc.tags) ? doc.tags : [],
+  };
+};
+
 // ==============================================================================
 // 4. DATA ACCESS FUNCTIONS (MONGO DB WITH IN-MEMORY FALLBACK)
 // ==============================================================================
 export const fetchConversations = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const filter = workspaceId ? { $or: [{ workspaceId }, { workspaceId: "ws_default" }] } : {};
-    return await ConversationModel.find(filter).sort({ updatedAt: -1 }).lean();
+    const docs = await ConversationModel.find(filter).sort({ updatedAt: -1 }).lean();
+    return docs.map(normalizeMongoDoc);
   }
-  return db.conversations.filter((c) => !c.workspaceId || c.workspaceId === workspaceId || workspaceId === "ws_default");
+  return db.conversations.filter((c) => !c.workspaceId || c.workspaceId === workspaceId || workspaceId === "ws_default").map(normalizeMongoDoc);
 };
 
 export const fetchConversationById = async (id) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    return await ConversationModel.findOne({ id }).lean();
+    const doc = await ConversationModel.findOne({ $or: [{ id }, { _id: mongoose.isValidObjectId(id) ? id : null }] }).lean();
+    return normalizeMongoDoc(doc);
   }
-  return db.conversations.find((c) => c.id === id) || null;
+  return normalizeMongoDoc(db.conversations.find((c) => c.id === id) || null);
 };
 
 export const findConversationByPhone = async (phone, channel = "WhatsApp") => {
@@ -438,11 +483,13 @@ export const saveLinkedInAccount = async (data) => {
     ...data,
     workspaceId: data.workspaceId || "ws_default",
     expiresAt: data.expiresAt ? new Date(data.expiresAt) : new Date(Date.now() + 5184000000),
+    scopes: data.scopes || ["openid", "profile", "email", "w_member_social"],
+    connectedAt: data.connectedAt ? new Date(data.connectedAt) : new Date(),
   };
 
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const doc = await LinkedInAccountModel.findOneAndUpdate(
-      { workspaceId: payload.workspaceId, linkedinId: payload.linkedinId },
+      { workspaceId: payload.workspaceId },
       { $set: payload },
       { upsert: true, new: true }
     ).lean();
@@ -450,7 +497,7 @@ export const saveLinkedInAccount = async (data) => {
   }
 
   const idx = db.linkedinAccounts.findIndex(
-    (a) => a.workspaceId === payload.workspaceId && a.linkedinId === payload.linkedinId
+    (a) => a.workspaceId === payload.workspaceId
   );
   if (idx !== -1) {
     db.linkedinAccounts[idx] = { ...db.linkedinAccounts[idx], ...payload };
@@ -466,6 +513,14 @@ export const getLinkedInAccount = async (workspaceId = "ws_default") => {
     return await LinkedInAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
   }
   return db.linkedinAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId) || null;
+};
+
+export const deleteLinkedInAccount = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    return await LinkedInAccountModel.deleteMany({ workspaceId });
+  }
+  db.linkedinAccounts = db.linkedinAccounts.filter((a) => a.workspaceId !== workspaceId);
+  return { deletedCount: 1 };
 };
 
 export const saveGoogleAccount = async (data) => {
@@ -545,7 +600,9 @@ export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
       if (defaultDoc) return defaultDoc;
     }
   }
-  const mem = db.instaxbotAccounts.find((a) => a.workspaceId === workspaceId || !a.workspaceId);
+  const mem = db.instaxbotAccounts.find(
+    (a) => a.workspaceId === workspaceId || a.workspaceId === "ws_default" || !a.workspaceId
+  );
   if (mem) return mem;
 
   const envKey = process.env.ISTRA_XBOT || process.env.INSTAXBOT_API_KEY;
@@ -575,7 +632,7 @@ export const fetchContacts = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const filter = workspaceId ? { $or: [{ workspaceId }, { workspaceId: "ws_default" }] } : {};
     let contacts = await ContactModel.find(filter).sort({ createdAt: -1 }).lean();
-    const hasSeed = contacts.some((c) => c.id === "c1");
+    const hasSeed = contacts.some((c) => c.id === "c1" || String(c._id) === "c1");
     if (!hasSeed) {
       try {
         await ContactModel.findOneAndUpdate({ id: "c1" }, { $set: seedContact }, { upsert: true });
@@ -584,16 +641,17 @@ export const fetchContacts = async (workspaceId = "ws_default") => {
         console.warn("⚠️ Contact seed warning:", err.message);
       }
     }
-    return contacts;
+    return contacts.map(normalizeMongoDoc);
   }
-  return db.contacts.filter((c) => !c.workspaceId || c.workspaceId === workspaceId || workspaceId === "ws_default");
+  return db.contacts.filter((c) => !c.workspaceId || c.workspaceId === workspaceId || workspaceId === "ws_default").map(normalizeMongoDoc);
 };
 
 export const fetchContactById = async (id) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    return await ContactModel.findOne({ id }).lean();
+    const doc = await ContactModel.findOne({ $or: [{ id }, { _id: mongoose.isValidObjectId(id) ? id : null }] }).lean();
+    return normalizeMongoDoc(doc);
   }
-  return db.contacts.find((c) => c.id === id) || null;
+  return normalizeMongoDoc(db.contacts.find((c) => c.id === id) || null);
 };
 
 export const upsertContact = async (data) => {
@@ -702,16 +760,18 @@ export const saveUnifiedMessage = async (data) => {
 
   if (isDbConnected && mongoose.connection.readyState === 1) {
     try {
-      const result = await UnifiedMessageModel.findOneAndUpdate(
-        { platform: payload.platform, externalMessageId: payload.externalMessageId },
-        { $setOnInsert: payload },
-        { upsert: true, new: true, rawResult: true }
-      );
+      const existing = await UnifiedMessageModel.findOne({
+        platform: payload.platform,
+        externalMessageId: payload.externalMessageId,
+      }).lean();
 
-      const isNew = !result.lastErrorObject?.updatedExisting;
-      const rawDoc = result.value || result;
-      const doc = rawDoc ? (typeof rawDoc.toObject === "function" ? rawDoc.toObject() : rawDoc) : payload;
-      return { doc, isNew };
+      if (existing) {
+        console.log(`ℹ️ [DEDUPLICATION GATE] Found existing duplicate message [${payload.platform}:${payload.externalMessageId}]. Skipping creation.`);
+        return { doc: existing, isNew: false };
+      }
+
+      const doc = await UnifiedMessageModel.create(payload);
+      return { doc: doc.toObject(), isNew: true };
     } catch (err) {
       if (err.code === 11000) {
         console.log(`ℹ️ [DEDUPLICATION GATE] Caught duplicate message [${payload.platform}:${payload.externalMessageId}]. Safe no-op.`);
@@ -753,3 +813,200 @@ export const fetchUnifiedInbox = async (workspaceId = "ws_default", limit = 50) 
     .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt))
     .slice(0, limit);
 };
+
+// ==============================================================================
+// CENTRAL UNIFIED CONTACT RESOLUTION ENGINE & MISSED CALL DATA ACCESS
+// ==============================================================================
+
+/**
+ * Shared Central Contact Resolution Engine across ALL channels:
+ * Cross-matches incoming phone number, email, or linked identities against existing Contact records.
+ * If a match is found on ANY identity (phone OR email OR linked identities), links to that SAME Contact,
+ * merges new identities, updates name/channels, and returns the unified Contact object.
+ * If no match is found, creates a new unified Contact record.
+ */
+export const resolveOrCreateContact = async ({
+  workspaceId = "ws_default",
+  name = "",
+  phone = "",
+  email = "",
+  identities = [],
+  source = "Manual entry",
+  channel = null,
+}) => {
+  const cleanPhone = phone ? String(phone).replace(/\D/g, "") : "";
+  const cleanEmail = email ? String(email).trim().toLowerCase() : "";
+  const cleanName = name && !name.toLowerCase().includes("unknown") ? name.trim() : "";
+
+  const searchConditions = [];
+  if (cleanPhone) {
+    searchConditions.push({ phone: cleanPhone });
+    searchConditions.push({ "identities.value": cleanPhone });
+  }
+  if (cleanEmail) {
+    searchConditions.push({ email: cleanEmail });
+    searchConditions.push({ "identities.value": cleanEmail });
+  }
+  if (Array.isArray(identities) && identities.length > 0) {
+    for (const idObj of identities) {
+      if (idObj && idObj.value) {
+        const val = String(idObj.value).trim().toLowerCase();
+        searchConditions.push({ "identities.value": val });
+      }
+    }
+  }
+
+  let existingContact = null;
+
+  if (isDbConnected && mongoose.connection.readyState === 1 && searchConditions.length > 0) {
+    existingContact = await ContactModel.findOne({
+      workspaceId: workspaceId || "ws_default",
+      $or: searchConditions,
+    });
+  } else if (!isDbConnected && db.contacts && searchConditions.length > 0) {
+    existingContact = db.contacts.find((c) => {
+      const cPhone = c.phone ? String(c.phone).replace(/\D/g, "") : "";
+      const cEmail = c.email ? String(c.email).trim().toLowerCase() : "";
+      const hasPhoneMatch = cleanPhone && (cPhone === cleanPhone || (c.identities || []).some((i) => i.value === cleanPhone));
+      const hasEmailMatch = cleanEmail && (cEmail === cleanEmail || (c.identities || []).some((i) => i.value === cleanEmail));
+      return hasPhoneMatch || hasEmailMatch;
+    });
+  }
+
+  if (existingContact) {
+    let updated = false;
+    if (cleanName && (!existingContact.name || existingContact.name.toLowerCase().includes("unknown") || existingContact.name === existingContact.phone || existingContact.name === existingContact.email)) {
+      existingContact.name = cleanName;
+      updated = true;
+    }
+    if (cleanPhone && !existingContact.phone) {
+      existingContact.phone = cleanPhone;
+      updated = true;
+    }
+    if (cleanEmail && !existingContact.email) {
+      existingContact.email = cleanEmail;
+      updated = true;
+    }
+
+    if (!existingContact.identities) existingContact.identities = [];
+    const currentValues = new Set(existingContact.identities.map((i) => i.value));
+
+    if (cleanPhone && !currentValues.has(cleanPhone)) {
+      existingContact.identities.push({ type: "phone", value: cleanPhone });
+      updated = true;
+    }
+    if (cleanEmail && !currentValues.has(cleanEmail)) {
+      existingContact.identities.push({ type: "email", value: cleanEmail });
+      updated = true;
+    }
+    if (Array.isArray(identities)) {
+      for (const idObj of identities) {
+        if (idObj && idObj.value && !currentValues.has(idObj.value)) {
+          existingContact.identities.push({ type: idObj.type || "custom", value: idObj.value });
+          updated = true;
+        }
+      }
+    }
+
+    if (channel && Array.isArray(existingContact.channels) && !existingContact.channels.includes(channel)) {
+      existingContact.channels.push(channel);
+      updated = true;
+    }
+
+    if (updated) {
+      if (isDbConnected && mongoose.connection.readyState === 1 && typeof existingContact.save === "function") {
+        await existingContact.save();
+        return existingContact.toObject();
+      }
+    }
+    return typeof existingContact.toObject === "function" ? existingContact.toObject() : existingContact;
+  }
+
+  // Create new contact if no existing record matched
+  const newId = `cnt_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const initialIdentities = [];
+  if (cleanPhone) initialIdentities.push({ type: "phone", value: cleanPhone });
+  if (cleanEmail) initialIdentities.push({ type: "email", value: cleanEmail });
+  if (Array.isArray(identities)) {
+    for (const idObj of identities) {
+      if (idObj && idObj.value && !initialIdentities.some((i) => i.value === idObj.value)) {
+        initialIdentities.push({ type: idObj.type || "custom", value: idObj.value });
+      }
+    }
+  }
+
+  const payload = {
+    id: newId,
+    workspaceId: workspaceId || "ws_default",
+    name: cleanName || cleanPhone || cleanEmail || "Unknown Contact",
+    phone: cleanPhone,
+    email: cleanEmail,
+    identities: initialIdentities,
+    source,
+    channels: channel ? [channel] : ["email", "whatsapp"],
+    stage: "New Lead",
+    status: "Lead",
+  };
+
+  return await upsertContact(payload);
+};
+
+export const saveMissedCall = async (data) => {
+  const payload = {
+    id: data.id || `mc_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+    userId: data.userId || "usr_default",
+    deviceId: data.deviceId || "dev_default",
+    phoneNumber: data.phoneNumber,
+    contactName: data.contactName || "Unknown Caller",
+    email: data.email || "",
+    type: data.type || "MISSED",
+    calledAt: data.calledAt ? new Date(data.calledAt) : new Date(),
+    createdAt: new Date(),
+    syncSource: data.syncSource || "android_companion",
+    externalCallId: data.externalCallId,
+    contactId: data.contactId || "",
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    try {
+      const existing = await MissedCallModel.findOne({ externalCallId: payload.externalCallId }).lean();
+      if (existing) {
+        console.log(`ℹ️ [MISSED CALL DEDUPE] Found existing duplicate missed call [${payload.externalCallId}]. Skipping creation.`);
+        return { doc: existing, isNew: false };
+      }
+      const doc = await MissedCallModel.create(payload);
+      return { doc: doc.toObject(), isNew: true };
+    } catch (err) {
+      if (err.code === 11000) {
+        console.log(`ℹ️ [MISSED CALL DEDUPE] Caught duplicate missed call [${payload.externalCallId}]. Safe no-op.`);
+        const existing = await MissedCallModel.findOne({ externalCallId: payload.externalCallId }).lean();
+        return { doc: existing || payload, isNew: false };
+      }
+      throw err;
+    }
+  }
+
+  if (!db.missedCalls) db.missedCalls = [];
+  const existingIdx = db.missedCalls.findIndex((m) => m.externalCallId === payload.externalCallId);
+  if (existingIdx !== -1) {
+    return { doc: db.missedCalls[existingIdx], isNew: false };
+  } else {
+    db.missedCalls.unshift(payload);
+    return { doc: payload, isNew: true };
+  }
+};
+
+export const fetchMissedCalls = async (userId = null, limit = 20, page = 1) => {
+  const skip = (page - 1) * limit;
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const filter = userId ? { userId } : {};
+    const docs = await MissedCallModel.find(filter).sort({ calledAt: -1 }).skip(skip).limit(limit).lean();
+    const total = await MissedCallModel.countDocuments(filter);
+    return { docs, total, page, limit };
+  }
+  if (!db.missedCalls) db.missedCalls = [];
+  const filtered = userId ? db.missedCalls.filter((m) => m.userId === userId) : db.missedCalls;
+  const docs = filtered.slice(skip, skip + limit);
+  return { docs, total: filtered.length, page, limit };
+};
+
