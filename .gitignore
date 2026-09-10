@@ -31,3 +31,6 @@ local.properties
 *.keystore
 *.zip
 
+# Scratch / Temporary files
+scratch/
+**/scratch/

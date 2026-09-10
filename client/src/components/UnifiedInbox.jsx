@@ -38,6 +38,13 @@ const PlatformIcon = ({ platform, className = "w-5 h-5" }) => {
           <path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.562 8.161c-.18.717-.962 4.084-1.362 5.762-.169.71-.431.948-.684.971-.55.05-1.047-.364-1.58-.713-.834-.546-1.304-.886-2.114-1.419-.936-.618-.329-.958.204-1.512.14-.145 2.569-2.355 2.616-2.556.006-.025.011-.121-.046-.171s-.144-.033-.206-.019c-.088.02-1.488.946-4.201 2.778-.397.272-.757.406-1.079.399-.356-.008-1.041-.202-1.55-.368-.625-.203-1.121-.311-1.078-.656.022-.18.271-.365.747-.555 2.923-1.272 4.873-2.112 5.85-2.52 2.788-1.16 3.367-1.362 3.746-1.369.083-.001.27.02.39.119.102.083.131.196.143.275.013.088.029.288.016.447z" />
         </svg>
       );
+    case "youtube":
+    case "channelbot":
+      return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+          <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+        </svg>
+      );
     case "facebook":
       return (
         <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -184,7 +191,7 @@ export function UnifiedInbox() {
 
         {/* Platform Filters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {["all", "gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook"].map((pKey) => {
+          {["all", "gmail", "instagram", "whatsapp", "youtube", "linkedin", "telegram", "facebook", "custom_webhook"].map((pKey) => {
             const meta = pKey === "all" ? { name: "All Platforms", color: "#6366F1" } : getPlatformMeta(pKey);
             const count = pKey === "all" ? messages.length : messages.filter((m) => m.platform === pKey).length;
             const isActive = activePlatform === pKey;

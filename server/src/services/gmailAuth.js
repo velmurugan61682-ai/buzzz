@@ -345,7 +345,7 @@ export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn 
     }
 
     if (newCount > 0) {
-      console.log(`📩 [GMAIL INGESTION SUCCESS] Synced ${messages.length} emails from ${validAccount.email}. Ingested ${newCount} new message(s) to MongoDB.`);
+      console.log(`📩 [GMAIL AUTO-SYNC] Synced ${messages.length} email(s) from ${validAccount.email} (${newCount} new, ${messages.length - newCount} duplicate(s) skipped).`);
     }
 
     return {

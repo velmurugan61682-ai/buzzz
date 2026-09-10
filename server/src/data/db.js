@@ -85,7 +85,7 @@ const UnifiedMessageSchema = new mongoose.Schema(
     platform: {
       type: String,
       required: true,
-      enum: ["gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook", "missed_call"],
+      enum: ["gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook", "missed_call", "youtube", "channelbot"],
       index: true,
     },
     externalMessageId: { type: String, required: true, index: true },
@@ -194,6 +194,16 @@ const ContactSchema = new mongoose.Schema(
     lastContact: { type: Number, default: 0 },
   },
   { timestamps: true }
+);
+
+// Database-level Unique Indexes: Prevent duplicate phone numbers & identities per workspace
+ContactSchema.index(
+  { workspaceId: 1, phone: 1 },
+  { unique: true, partialFilterExpression: { phone: { $type: "string", $gt: "" } }, name: "uniq_workspace_phone" }
+);
+ContactSchema.index(
+  { workspaceId: 1, "identities.type": 1, "identities.value": 1 },
+  { unique: true, partialFilterExpression: { "identities.value": { $type: "string", $gt: "" } }, name: "uniq_workspace_identity" }
 );
 
 const MissedCallSchema = new mongoose.Schema(
@@ -605,11 +615,15 @@ export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
   );
   if (mem) return mem;
 
-  const envKey = process.env.ISTRA_XBOT || process.env.INSTAXBOT_API_KEY;
+  const envKey = process.env.INSTAXBOT_API_KEY;
   if (envKey) {
+    const clean = String(envKey).trim();
+    const maskedKey = "••••" + clean.slice(-4);
     return {
       workspaceId,
-      apiKey: envKey,
+      apiKey: clean,
+      maskedKey,
+      accountName: `InstaxBot Account (${maskedKey})`,
       status: "connected",
       verifiedAt: new Date().toISOString(),
     };
@@ -647,11 +661,36 @@ export const fetchContacts = async (workspaceId = "ws_default") => {
 };
 
 export const fetchContactById = async (id) => {
+  if (!id) return null;
+  const cleanStr = String(id).trim();
+  const cleanPhone = cleanStr.replace(/\D/g, "");
+  const cleanEmail = cleanStr.toLowerCase();
+
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    const doc = await ContactModel.findOne({ $or: [{ id }, { _id: mongoose.isValidObjectId(id) ? id : null }] }).lean();
+    const orConditions = [
+      { id: cleanStr },
+      ...(mongoose.isValidObjectId(cleanStr) ? [{ _id: cleanStr }] : []),
+      { email: cleanEmail },
+      { "identities.value": cleanStr },
+    ];
+    if (cleanPhone && cleanPhone.length >= 7) {
+      orConditions.push({ phone: cleanPhone });
+      orConditions.push({ "identities.value": cleanPhone });
+    }
+
+    const doc = await ContactModel.findOne({ $or: orConditions }).lean();
     return normalizeMongoDoc(doc);
   }
-  return normalizeMongoDoc(db.contacts.find((c) => c.id === id) || null);
+
+  const found = db.contacts.find(
+    (c) =>
+      c.id === cleanStr ||
+      (c._id && String(c._id) === cleanStr) ||
+      (cleanPhone && cleanPhone.length >= 7 && c.phone && String(c.phone).replace(/\D/g, "") === cleanPhone) ||
+      (c.email && c.email.toLowerCase() === cleanEmail) ||
+      (Array.isArray(c.identities) && c.identities.some((i) => i && i.value === cleanStr))
+  );
+  return normalizeMongoDoc(found || null);
 };
 
 export const upsertContact = async (data) => {
@@ -766,7 +805,6 @@ export const saveUnifiedMessage = async (data) => {
       }).lean();
 
       if (existing) {
-        console.log(`ℹ️ [DEDUPLICATION GATE] Found existing duplicate message [${payload.platform}:${payload.externalMessageId}]. Skipping creation.`);
         return { doc: existing, isNew: false };
       }
 
@@ -774,7 +812,6 @@ export const saveUnifiedMessage = async (data) => {
       return { doc: doc.toObject(), isNew: true };
     } catch (err) {
       if (err.code === 11000) {
-        console.log(`ℹ️ [DEDUPLICATION GATE] Caught duplicate message [${payload.platform}:${payload.externalMessageId}]. Safe no-op.`);
         const existing = await UnifiedMessageModel.findOne({
           platform: payload.platform,
           externalMessageId: payload.externalMessageId,
@@ -790,7 +827,9 @@ export const saveUnifiedMessage = async (data) => {
     (m) => m.platform === payload.platform && m.externalMessageId === payload.externalMessageId
   );
   if (existingIdx !== -1) {
-    console.log(`ℹ️ [MEMORY DEDUPLICATION] Caught duplicate message [${payload.platform}:${payload.externalMessageId}]. Safe no-op.`);
+    if (process.env.DEBUG) {
+      console.log(`ℹ️ [MEMORY DEDUPLICATION] Caught duplicate message [${payload.platform}:${payload.externalMessageId}]. Safe no-op.`);
+    }
     return { doc: db.unifiedMessages[existingIdx], isNew: false };
   } else {
     db.unifiedMessages.unshift(payload);
@@ -850,8 +889,10 @@ export const resolveOrCreateContact = async ({
   if (Array.isArray(identities) && identities.length > 0) {
     for (const idObj of identities) {
       if (idObj && idObj.value) {
-        const val = String(idObj.value).trim().toLowerCase();
-        searchConditions.push({ "identities.value": val });
+        const rawVal = String(idObj.value).trim();
+        const esc = rawVal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        searchConditions.push({ "identities.value": rawVal });
+        searchConditions.push({ "identities.value": new RegExp(`^${esc}$`, "i") });
       }
     }
   }
@@ -971,14 +1012,14 @@ export const saveMissedCall = async (data) => {
     try {
       const existing = await MissedCallModel.findOne({ externalCallId: payload.externalCallId }).lean();
       if (existing) {
-        console.log(`ℹ️ [MISSED CALL DEDUPE] Found existing duplicate missed call [${payload.externalCallId}]. Skipping creation.`);
+        if (process.env.DEBUG) console.log(`ℹ️ [MISSED CALL DEDUPE] Found existing duplicate missed call [${payload.externalCallId}]. Skipping creation.`);
         return { doc: existing, isNew: false };
       }
       const doc = await MissedCallModel.create(payload);
       return { doc: doc.toObject(), isNew: true };
     } catch (err) {
       if (err.code === 11000) {
-        console.log(`ℹ️ [MISSED CALL DEDUPE] Caught duplicate missed call [${payload.externalCallId}]. Safe no-op.`);
+        if (process.env.DEBUG) console.log(`ℹ️ [MISSED CALL DEDUPE] Caught duplicate missed call [${payload.externalCallId}]. Safe no-op.`);
         const existing = await MissedCallModel.findOne({ externalCallId: payload.externalCallId }).lean();
         return { doc: existing || payload, isNew: false };
       }

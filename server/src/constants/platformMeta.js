@@ -5,5 +5,6 @@ export const PLATFORM_META = {
   whatsapp: { name: "WhatsApp", icon: "gowhats", color: "#25D366", channel: "WhatsApp" },
   telegram: { name: "Telegram", icon: "telegram", color: "#229ED9", channel: "Telegram" },
   facebook: { name: "Facebook", icon: "facebook", color: "#1877F2", channel: "Facebook" },
+  youtube: { name: "YouTube", icon: "youtube", color: "#FF0000", channel: "YouTube" },
   custom_webhook: { name: "Custom Webhook", icon: "webhook", color: "#6366F1", channel: "Webhook" },
 };

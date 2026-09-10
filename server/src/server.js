@@ -4,6 +4,9 @@ import dotenv from "dotenv";
 import { apiRouter, broadcastSseEvent } from "./routes/api.js";
 import { connectDB } from "./data/db.js";
 import { startGmailMessagesAutoSyncScheduler } from "./services/gmailAuth.js";
+import { startGoWhatsAutoSyncScheduler } from "./services/gowhats.js";
+import { startInstaxBotAutoSyncScheduler } from "./services/instaxbot.js";
+import { startChannelBotAutoSyncScheduler } from "./services/channelbot.js";
 
 dotenv.config();
 
@@ -93,8 +96,11 @@ app.use((err, req, res, _next) => {
 const startServer = async () => {
   await connectDB();
 
-  // Start background auto-sync scheduler for Gmail messages (polling every 30 seconds)
+  // Start background auto-sync schedulers for all connected channels (polling every 30-60 seconds)
   startGmailMessagesAutoSyncScheduler(broadcastSseEvent, 30000);
+  startGoWhatsAutoSyncScheduler(broadcastSseEvent, 45000);
+  startInstaxBotAutoSyncScheduler(broadcastSseEvent, 45000);
+  startChannelBotAutoSyncScheduler(broadcastSseEvent, 60000);
 
   const server = app.listen(PORT, () => {
     console.log(`=======================================================`);

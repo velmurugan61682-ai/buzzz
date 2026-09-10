@@ -12484,100 +12484,210 @@ function PanelSection({ title, defaultOpen, children }) {
 
 function ContextPanel({ conv, close }) {
   const { T, dk, deals, appts, convs, openContact, updateContact, addTask, bookAppointment, flash, log } = useApp();
+  const [fetchedContact, setFetchedContact] = useState(null);
+  const [loadingContact, setLoadingContact] = useState(false);
+  const [tagIn, setTagIn] = useState("");
+
   if (!conv) return null;
-  const c = CONTACTS.find((x) => (x?.id || (x?._id ? String(x._id) : null)) === conv.contactId) || null;
+
+  // 1. Contact lookup strategy: check local CONTACTS array first, then fetch from backend
+  const localMatch = CONTACTS.find((x) =>
+    (x?.id && x.id === conv.contactId) ||
+    (x?._id && String(x._id) === conv.contactId) ||
+    (conv.phone && x.phone && String(x.phone).replace(/\D/g, "") === String(conv.phone).replace(/\D/g, "")) ||
+    (conv.email && x.email && x.email.toLowerCase() === String(conv.email).toLowerCase())
+  );
+
+  useEffect(() => {
+    if (!conv) return;
+    const lookupKey = conv.contactId || conv.phone || conv.email || conv.id;
+    if (!lookupKey) return;
+
+    let isMounted = true;
+    setLoadingContact(true);
+
+    fetch(`/api/contacts/${encodeURIComponent(lookupKey)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (isMounted && data && data.contact) {
+          setFetchedContact(data.contact);
+        }
+      })
+      .catch((err) => console.warn("⚠️ Contact fetch warning:", err.message))
+      .finally(() => { if (isMounted) setLoadingContact(false); });
+
+    return () => { isMounted = false; };
+  }, [conv.id, conv.contactId, conv.phone, conv.email]);
+
+  const c = fetchedContact || localMatch || {
+    name: conv.customerName || conv.name || "Customer",
+    phone: conv.phone,
+    email: conv.email,
+    channel: conv.channel,
+    identities: [],
+  };
+
   const targetId = c?.id || (c?._id ? String(c._id) : null);
   const deal = targetId ? (deals || []).find((d) => d && d.contactId === targetId) : null;
   const myAppts = targetId ? (appts || []).filter((a) => a && a.contactId === targetId && !["Completed", "Cancelled"].includes(a.status)) : [];
-  const myConvs = targetId ? (convs || []).filter((v) => v && v.contactId === targetId) : [];
-  const [tagIn, setTagIn] = useState("");
+  const myConvs = targetId ? (convs || []).filter((v) => v && (v.contactId === targetId || (c.phone && v.phone === c.phone))) : [];
   const agent = conv.agent || "Kai · Support Agent";
 
-  if (!c) {
-    return (
-      <div className={`fixed inset-y-0 right-0 z-40 w-[300px] shadow-2xl lg:shadow-none lg:static lg:z-auto lg:w-64 xl:w-72 2xl:w-80 shrink-0 border-l flex flex-col min-h-0 ${T.border} ${T.panel}`}>
-        <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
-          <span className="text-sm font-semibold bz-display tracking-tight">Details</span>
-          <button onClick={close} className={`lg:hidden w-8 h-8 grid place-items-center rounded-lg ${T.hover}`}><X size={14} /></button>
-        </div>
-        <div className="p-6 text-xs text-center text-zinc-400">
-          No contact associated with this conversation.
-        </div>
-      </div>
-    );
+  // Build unified list of linked identities/channels
+  const rawIdentities = [];
+
+  // Add primary phone if present
+  if (c.phone) {
+    rawIdentities.push({ type: "phone", label: "WhatsApp / Phone", value: c.phone, brandId: "whatsapp", color: "#25D366" });
+  }
+
+  // Add primary email if present
+  if (c.email) {
+    rawIdentities.push({ type: "email", label: "Gmail / Email", value: c.email, brandId: "google", color: "#EA4335" });
+  }
+
+  // Add all identities from c.identities
+  if (Array.isArray(c.identities)) {
+    c.identities.forEach((idObj) => {
+      if (!idObj || !idObj.value) return;
+      const type = (idObj.type || "").toLowerCase();
+      const val = String(idObj.value);
+      if (type === "phone" || type === "whatsapp") {
+        rawIdentities.push({ type: "phone", label: "WhatsApp", value: val, brandId: "whatsapp", color: "#25D366" });
+      } else if (type === "email" || type === "gmail") {
+        rawIdentities.push({ type: "email", label: "Gmail", value: val, brandId: "google", color: "#EA4335" });
+      } else if (type === "instagram" || type === "instaxbot") {
+        rawIdentities.push({ type: "instagram", label: "Instagram", value: val.startsWith("@") ? val : `@${val}`, brandId: "instagram", color: "#E1306C" });
+      } else if (type === "youtube" || type === "channelbot") {
+        rawIdentities.push({ type: "youtube", label: "YouTube", value: val.startsWith("@") ? val : `@${val}`, brandId: "youtube", color: "#FF0000" });
+      } else {
+        rawIdentities.push({ type: "custom", label: "Voice / Direct", value: val, brandId: "gowhats", color: "#6366F1" });
+      }
+    });
+  }
+
+  // If conversation channel is present and not yet in rawIdentities, add it
+  if (conv.channel && !rawIdentities.some((i) => i.brandId === (conv.channel === "email" ? "google" : conv.channel.toLowerCase()))) {
+    const chLower = conv.channel.toLowerCase();
+    const brandId = chLower === "email" ? "google" : chLower;
+    const label = chLower === "email" ? "Gmail" : chLower === "whatsapp" ? "WhatsApp" : chLower === "instagram" ? "Instagram" : chLower === "youtube" ? "YouTube" : conv.channel;
+    const val = conv.phone || conv.email || conv.customerName || "Connected";
+    rawIdentities.push({ type: chLower, label, value: val, brandId, color: "#6366F1" });
+  }
+
+  // Deduplicate identities by brandId + value
+  const seenKeys = new Set();
+  const linkedIdentities = [];
+  for (const item of rawIdentities) {
+    const key = `${item.brandId}_${item.value}`.toLowerCase();
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      linkedIdentities.push(item);
+    }
   }
 
   const tagsList = c.tags ?? [];
+
   return (
     <div className={`fixed inset-y-0 right-0 z-40 w-[300px] shadow-2xl lg:shadow-none lg:static lg:z-auto lg:w-64 xl:w-72 2xl:w-80 shrink-0 border-l flex flex-col min-h-0 ${T.border} ${T.panel}`}>
       <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
         <span className="text-sm font-semibold bz-display tracking-tight">Details</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => c.id && openContact(c.id)} className={`h-8 px-2 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 ${T.hover}`} style={{ color: BRAND }}>Customer 360 <ArrowRight size={11} /></button>
+          <button onClick={() => (c.id || targetId) && openContact(c.id || targetId)} className={`h-8 px-2 rounded-lg text-[11px] font-semibold inline-flex items-center gap-1 ${T.hover}`} style={{ color: BRAND }}>Customer 360 <ArrowRight size={11} /></button>
           <button onClick={close} className={`lg:hidden w-8 h-8 grid place-items-center rounded-lg ${T.hover}`}><X size={14} /></button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto bz-scroll">
-      <div className={`px-4 py-5 text-center border-b ${T.border}`}>
-        <Avatar name={c.name || "?"} i={CONTACTS.indexOf(c)} size="w-12 h-12 text-sm mx-auto" />
-        <div className="text-[13px] font-semibold mt-2.5 truncate">{c.name || "Customer"}</div>
-        <div className={`text-[11px] mt-1 truncate ${T.faint}`}>{c.title ? c.title + " · " : ""}{c.company || "—"}</div>
-      </div>
+        <div className={`px-4 py-5 text-center border-b ${T.border}`}>
+          <Avatar name={c.name || conv.customerName || "?"} i={CONTACTS.indexOf(c) >= 0 ? CONTACTS.indexOf(c) : 0} size="w-12 h-12 text-sm mx-auto" />
+          <div className="text-[13px] font-semibold mt-2.5 truncate">{c.name || conv.customerName || "Customer"}</div>
+          <div className={`text-[11px] mt-1 truncate ${T.faint}`}>{c.title ? c.title + " · " : ""}{c.company || "Unified Contact"}</div>
+        </div>
 
-      <PanelSection title="Customer" defaultOpen>
-        <div className="space-y-2 text-[11px] leading-none">
-          {[["Phone", c.phone || "+65 9··· on file"], ["Location", c.loc || "—"], ["Stage", c.stage || "—"], ["Value", c.value || "—"], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "—"]].map(([k, v]) => (
-            <div key={k} className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>{k}</span><span className="font-medium text-right truncate min-w-0">{v}</span></div>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-1 mt-3">
-          {tagsList.map((t) => <Pill key={t} c={T.chip}>{t}</Pill>)}
-        </div>
-        <div className="mt-2">
-          <input value={tagIn} onChange={(e) => setTagIn(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tagIn.trim()) { updateContact(c.id, { tags: [...tagsList, tagIn.trim()] }, "tag added"); setTagIn(""); flash("Tag added"); } }} placeholder="Add tag…" className={`w-full h-8 px-2.5 rounded-lg text-[11px] outline-none ${T.input}`} />
-        </div>
-      </PanelSection>
+        {/* LINKED CHANNELS & IDENTITIES PANEL SECTION */}
+        <PanelSection title="Linked Channels & Identities" defaultOpen>
+          {loadingContact ? (
+            <div className="text-[11px] text-zinc-400 py-2 flex items-center gap-2">
+              <span className="animate-spin">🌀</span> Fetching linked identities...
+            </div>
+          ) : linkedIdentities.length === 0 ? (
+            <div className="text-[11px] text-zinc-400 py-1">No channels linked.</div>
+          ) : (
+            <div className="space-y-2">
+              {linkedIdentities.map((item, idx) => (
+                <div key={idx} className={`flex items-center justify-between p-2 rounded-lg border ${T.border} ${T.chip}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Brand id={item.brandId} size={16} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-semibold truncate leading-tight">{item.label}</div>
+                      <div className={`text-[10px] truncate ${T.faint}`}>{item.value}</div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Linked
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </PanelSection>
 
-      <PanelSection title="CRM" defaultOpen>
-        {deal ? (
-          <div className={`rounded-xl px-3 py-2.5 ${T.softcard}`}>
-            <div className="text-[11px] font-semibold leading-tight truncate">{deal.name}</div>
-            <div className={`text-[10px] mt-1 tabular-nums ${T.faint}`}>${(deal.value / 1000).toFixed(0)}k · {deal.stage}</div>
+        <PanelSection title="Customer" defaultOpen>
+          <div className="space-y-2 text-[11px] leading-none">
+            {[["Phone", c.phone || conv.phone || "—"], ["Location", c.loc || c.location || "—"], ["Stage", c.stage || "New Lead"], ["Value", c.value || "$0"], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "Just now"]].map(([k, v]) => (
+              <div key={k} className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>{k}</span><span className="font-medium text-right truncate min-w-0">{v}</span></div>
+            ))}
           </div>
-        ) : <div className={`text-[11px] ${T.faint}`}>No open deal.</div>}
-        <div className="space-y-2 text-[11px] leading-none mt-3">
-          <div className="flex items-baseline justify-between gap-3"><span className={T.faint}>Conversations</span><span className="font-medium tabular-nums">{myConvs.length}</span></div>
-          <div className="flex items-baseline justify-between gap-3"><span className={T.faint}>Upcoming appointments</span><span className="font-medium tabular-nums">{myAppts.length}</span></div>
-        </div>
-      </PanelSection>
+          <div className="flex flex-wrap gap-1 mt-3">
+            {tagsList.map((t) => <Pill key={t} c={T.chip}>{t}</Pill>)}
+          </div>
+          {c.id && (
+            <div className="mt-2">
+              <input value={tagIn} onChange={(e) => setTagIn(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && tagIn.trim()) { updateContact(c.id, { tags: [...tagsList, tagIn.trim()] }, "tag added"); setTagIn(""); flash("Tag added"); } }} placeholder="Add tag…" className={`w-full h-8 px-2.5 rounded-lg text-[11px] outline-none ${T.input}`} />
+            </div>
+          )}
+        </PanelSection>
 
-      <PanelSection title="BUZZZ AI" defaultOpen>
-        <div className="space-y-2 text-[11px] leading-none">
-          <div className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>Handling</span><span className="font-medium text-right truncate min-w-0">{conv.ai ? agent : "Human · " + (conv.assignee || "unassigned")}</span></div>
-          <div className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>Intent</span><span className="font-medium">{conv.intent}</span></div>
-          <div className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>Sentiment</span><span className="font-medium">{conv.sentiment}</span></div>
-          <div className="flex items-baseline justify-between gap-3"><span className={T.faint}>Lead score</span><span className="font-semibold tabular-nums">{c.score}</span></div>
-          <Meter v={c.score} c={c.score >= 80 ? "bg-emerald-500" : c.score >= 60 ? "bg-amber-500" : "bg-zinc-400"} />
-        </div>
-        <div className={`rounded-xl p-3 mt-3 text-[11px] leading-relaxed ${T.softcard}`}>
-          <span className="font-semibold" style={{ color: BRAND }}>Summary · </span>{c.aiSummary}
-        </div>
-        {deal && deal.next && (
-          <div className={`mt-3 text-[11px] leading-relaxed flex items-start gap-1.5 ${T.sub}`}><Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: BRAND }} /> Next best action: {deal.next}</div>
-        )}
-      </PanelSection>
+        <PanelSection title="CRM" defaultOpen>
+          {deal ? (
+            <div className={`rounded-xl px-3 py-2.5 ${T.softcard}`}>
+              <div className="text-[11px] font-semibold leading-tight truncate">{deal.name}</div>
+              <div className={`text-[10px] mt-1 tabular-nums ${T.faint}`}>${(deal.value / 1000).toFixed(0)}k · {deal.stage}</div>
+            </div>
+          ) : <div className={`text-[11px] ${T.faint}`}>No open deal.</div>}
+          <div className="space-y-2 text-[11px] leading-none mt-3">
+            <div className="flex items-baseline justify-between gap-3"><span className={T.faint}>Conversations</span><span className="font-medium tabular-nums">{myConvs.length || 1}</span></div>
+            <div className="flex items-baseline justify-between gap-3"><span className={T.faint}>Upcoming appointments</span><span className="font-medium tabular-nums">{myAppts.length}</span></div>
+          </div>
+        </PanelSection>
 
-      <PanelSection title="Quick actions">
-        <div className="space-y-1">
-          {[
-            ["Create task", () => { addTask("Follow up with " + c.name, "Jordan Lee"); flash("Task created"); }],
-            ["Schedule appointment", () => { bookAppointment(c.id, "Meeting with " + c.name.split(" ")[0], "Booked from panel", "Tomorrow · 10:00"); flash("Appointment created for tomorrow 10:00"); }],
-            ["Trigger follow up workflow", () => { log("You", "Workflow triggered", "24 hour lead follow up · " + c.name); flash("Workflow triggered"); }],
-          ].map(([l, fn]) => (
-            <button key={l} onClick={fn} className={`w-full h-9 text-left px-3 rounded-lg text-[11px] font-medium border inline-flex items-center ${T.chip} ${T.hover}`}>{l}</button>
-          ))}
-        </div>
-      </PanelSection>
+        <PanelSection title="BUZZZ AI" defaultOpen>
+          <div className="space-y-2 text-[11px] leading-none">
+            <div className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>Handling</span><span className="font-medium text-right truncate min-w-0">{conv.ai ? agent : "Human · " + (conv.assignee || "unassigned")}</span></div>
+            <div className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>Intent</span><span className="font-medium">{conv.intent || "General Inquiry"}</span></div>
+            <div className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>Sentiment</span><span className="font-medium">{conv.sentiment || "Positive"}</span></div>
+            <div className="flex items-baseline justify-between gap-3"><span className={T.faint}>Lead score</span><span className="font-semibold tabular-nums">{c.score || 75}</span></div>
+            <Meter v={c.score || 75} c={(c.score || 75) >= 80 ? "bg-emerald-500" : (c.score || 75) >= 60 ? "bg-amber-500" : "bg-zinc-400"} />
+          </div>
+          <div className={`rounded-xl p-3 mt-3 text-[11px] leading-relaxed ${T.softcard}`}>
+            <span className="font-semibold" style={{ color: BRAND }}>Summary · </span>{c.aiSummary || `Connected across ${linkedIdentities.length} channel(s). High engagement level.`}
+          </div>
+          {deal && deal.next && (
+            <div className={`mt-3 text-[11px] leading-relaxed flex items-start gap-1.5 ${T.sub}`}><Sparkles size={11} className="shrink-0 mt-0.5" style={{ color: BRAND }} /> Next best action: {deal.next}</div>
+          )}
+        </PanelSection>
+
+        <PanelSection title="Quick actions">
+          <div className="space-y-1">
+            {[
+              ["Create task", () => { addTask("Follow up with " + (c.name || conv.customerName), "Jordan Lee"); flash("Task created"); }],
+              ["Schedule appointment", () => { bookAppointment(c.id || "temp", "Meeting with " + (c.name || conv.customerName).split(" ")[0], "Booked from panel", "Tomorrow · 10:00"); flash("Appointment created for tomorrow 10:00"); }],
+              ["Trigger follow up workflow", () => { log("You", "Workflow triggered", "24 hour lead follow up · " + (c.name || conv.customerName)); flash("Workflow triggered"); }],
+            ].map(([l, fn]) => (
+              <button key={l} onClick={fn} className={`w-full h-9 text-left px-3 rounded-lg text-[11px] font-medium border inline-flex items-center ${T.chip} ${T.hover}`}>{l}</button>
+            ))}
+          </div>
+        </PanelSection>
       </div>
     </div>
   );
