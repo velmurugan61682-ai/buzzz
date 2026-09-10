@@ -109,6 +109,22 @@ const startServer = async () => {
     console.log(`=======================================================`);
   });
 
+  const gracefulShutdown = (signal) => {
+    console.log(`\n🛑 Received ${signal}. Closing HTTP server gracefully...`);
+    server.close(() => {
+      console.log(`✅ Server port ${PORT} released.`);
+      if (signal === "SIGUSR2") {
+        process.kill(process.pid, "SIGUSR2");
+      } else {
+        process.exit(0);
+      }
+    });
+  };
+
+  process.once("SIGUSR2", () => gracefulShutdown("SIGUSR2"));
+  process.once("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
       console.error(`\n🚨 PORT COLLISION ERROR (EADDRINUSE):`);
@@ -125,3 +141,4 @@ const startServer = async () => {
 };
 
 startServer();
+
