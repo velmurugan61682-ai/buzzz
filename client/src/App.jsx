@@ -189,8 +189,8 @@ const BIcon = (id) => (p) => <Brand id={id} size={p && p.size ? p.size : 16} />;
 
 const CH = {
   channelbot: { label: "ChannelBot.in", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
-  whatsapp:  { label: "WhatsApp (GoWhats)",  Icon: BIcon("whatsapp"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
-  gowhats:   { label: "ChannelBot (GoWhats)", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
+  whatsapp:  { label: "WhatsApp (GoWhats)",  Icon: BIcon("gowhats"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
+  gowhats:   { label: "WhatsApp (GoWhats)", Icon: BIcon("gowhats"), dot: "bg-teal-500", l: "bg-teal-50 text-teal-700 border-teal-200", d: "bg-teal-950 text-teal-400 border-teal-900" },
   instagram: { label: "Instagram", Icon: BIcon("instaxbot"), dot: "bg-pink-500",   l: "bg-pink-50 text-pink-700 border-pink-200",      d: "bg-pink-950 text-pink-400 border-pink-900" },
   facebook:  { label: "Facebook",  Icon: BIcon("facebook"), dot: "bg-blue-600",   l: "bg-blue-50 text-blue-700 border-blue-200",      d: "bg-blue-950 text-blue-400 border-blue-900" },
   email:     { label: "Email",     Icon: BIcon("gmail"), dot: "bg-sky-500",    l: "bg-sky-50 text-sky-700 border-sky-200",         d: "bg-sky-950 text-sky-400 border-sky-900" },
@@ -203,6 +203,43 @@ const CH = {
   youtube:   { label: "YouTube",   Icon: BIcon("youtube"), dot: "bg-red-500",    l: "bg-red-50 text-red-700 border-red-200",         d: "bg-red-950 text-red-400 border-red-900" },
   google:    { label: "Google Business", Icon: BIcon("google"), dot: "bg-amber-500",  l: "bg-amber-50 text-amber-700 border-amber-200",   d: "bg-amber-950 text-amber-400 border-amber-900" },
   voice:     { label: "Voice",     Icon: BIcon("voice"), dot: "bg-orange-500", l: "bg-orange-50 text-orange-700 border-orange-200",d: "bg-orange-950 text-orange-400 border-orange-900" },
+};
+
+const CHANNEL_KEY_MAP = {
+  gmail: "email",
+  email: "email",
+  Email: "email",
+  instagram: "instaxbot",
+  Instagram: "instaxbot",
+  instaxbot: "instaxbot",
+  whatsapp: "gowhats",
+  WhatsApp: "gowhats",
+  gowhats: "gowhats",
+  youtube: "channelbot",
+  YouTube: "channelbot",
+  channelbot: "channelbot",
+  missed_call: "missed_call",
+  "missed call": "missed_call",
+  "Missed Call": "missed_call",
+  missedcall: "missed_call",
+  phone: "missed_call",
+  Phone: "missed_call",
+  voice: "missed_call",
+  Voice: "missed_call",
+  call: "missed_call",
+  Call: "missed_call",
+};
+
+const resolveChannelKey = (platform, channel) => {
+  const p = platform ? String(platform).trim() : "";
+  const c = channel ? String(channel).trim() : "";
+  return (
+    CHANNEL_KEY_MAP[p] ||
+    CHANNEL_KEY_MAP[p.toLowerCase()] ||
+    CHANNEL_KEY_MAP[c] ||
+    CHANNEL_KEY_MAP[c.toLowerCase()] ||
+    "channelbot"
+  );
 };
 
 const SENT = {
@@ -6557,9 +6594,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             const cid = m.conversationId;
             if (!cid) return;
             if (!msgsByConvId[cid]) msgsByConvId[cid] = [];
-            const isInstagram = m.platform === "instagram" || m.platform === "Instagram";
-            const isEmail = m.platform === "gmail" || m.platform === "email" || m.platform === "Email" || m.channel === "Email" || m.channel === "email";
-            const channelKey = isEmail ? "email" : (isInstagram ? "instaxbot" : (m.platform === "whatsapp" || m.platform === "gowhats" ? "channelbot" : (m.channel || "channelbot")));
+            const channelKey = resolveChannelKey(m.platform, m.channel);
             const normMsg = {
               id: m.id || m._id || `msg_${Date.now()}`,
               from: (m.sender === "customer" || m.direction === "inbound" || m.sender?.kind === "customer") ? "customer" : "agent",
@@ -6581,10 +6616,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
               ? c.msgs
               : (msgsByConvId[c.id] || []);
             const lastMsgItem = attachedMsgs.length > 0 ? attachedMsgs[attachedMsgs.length - 1] : null;
-            const cIsEmail = c.channel === "Email" || c.channel === "email" || c.channel === "gmail";
+            const channelKey = resolveChannelKey(c.platform, c.channel);
             return {
               ...c,
-              channel: cIsEmail ? "email" : c.channel,
+              channel: channelKey,
               msgs: attachedMsgs,
               unread: c.unread !== undefined ? c.unread : (c.unreadCount || 0),
               last: c.last || c.lastMessage || (lastMsgItem ? lastMsgItem.text : ""),
@@ -6614,9 +6649,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             const { conversation: backendConv, message: backendMsg } = data.payload;
             if (!backendConv || !backendMsg) return;
 
-            const isInstagram = backendConv?.channel === "Instagram" || backendConv?.channel === "instagram" || backendMsg?.platform === "instagram";
-            const isEmail = backendConv?.channel === "Email" || backendConv?.channel === "email" || backendMsg?.platform === "gmail" || backendMsg?.platform === "email";
-            const channelKey = isEmail ? "email" : (isInstagram ? "instaxbot" : "channelbot");
+            const channelKey = resolveChannelKey(backendMsg?.platform || backendConv?.platform, backendConv?.channel);
             const newMsgItem = {
               id: backendMsg.id || `msg_${Date.now()}`,
               from: (backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer") ? "customer" : "agent",
@@ -6628,6 +6661,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
 
             setConvs((cs) => {
               const cleanPhone = backendConv.phone ? String(backendConv.phone).replace(/\D/g, "") : "";
+              const isEmail = channelKey === "email";
               const existingIdx = cs.findIndex(
                 (c) => c.id === backendConv.id || (cleanPhone && c.phone && String(c.phone).replace(/\D/g, "") === cleanPhone) || (isEmail && (c.phone === backendConv.phone || c.email === backendConv.email))
               );
@@ -6640,6 +6674,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
                 updated[existingIdx] = {
                   ...target,
                   customerName: backendConv.customerName || target.customerName,
+                  channel: target.channel || channelKey,
                   unread: (backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer") ? (target.unread || 0) + 1 : target.unread,
                   last: newMsgItem.text,
                   msgs: newMsgs,
@@ -6649,17 +6684,17 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
                 const newConvObj = {
                   id: backendConv.id || `conv_${Date.now()}`,
                   contactId: backendConv.contactId || `cnt_${Date.now()}`,
-                  customerName: backendConv.customerName || backendConv.phone || (isEmail ? "Email Sender" : (isInstagram ? "Instagram User" : "ChannelBot Customer")),
-                  channel: isEmail ? "email" : (isInstagram ? "Instagram" : channelKey),
+                  customerName: backendConv.customerName || backendConv.phone || (channelKey === "email" ? "Email Sender" : (channelKey === "instaxbot" ? "Instagram User" : "Customer")),
+                  channel: channelKey,
                   phone: backendConv.phone || "",
-                  email: backendConv.email || (isEmail ? backendConv.phone : ""),
+                  email: backendConv.email || (channelKey === "email" ? backendConv.phone : ""),
                   unread: 1,
                   ai: false,
                   state: "New Lead",
                   priority: "high",
                   msgs: [newMsgItem],
                   last: newMsgItem.text,
-                  tags: isEmail ? ["Gmail", "Email"] : (isInstagram ? ["InstaxBot", "Instagram"] : ["ChannelBot.in"]),
+                  tags: [channelKey],
                 };
                 return [newConvObj, ...cs];
               }
@@ -12170,7 +12205,7 @@ function InboxView() {
                 <div className="h-full flex items-center gap-3">
                   <div className="relative shrink-0">
                     <Avatar name={k.name || "?"} i={CONTACTS.indexOf(k)} size="w-8 h-8 text-[11px]" />
-                    <span className={`absolute -bottom-0.5 -right-1 rounded-[4px] ring-2 ${dk ? "ring-zinc-950" : "ring-white"}`}><Brand id={c.channel === "email" ? "gmail" : c.channel} size={12} /></span>
+                    <span className={`absolute -bottom-1 -right-1 rounded-[5px] ring-2 ${dk ? "ring-zinc-950" : "ring-white"}`}><Brand id={c.channel === "email" ? "gmail" : c.channel} size={16} /></span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">

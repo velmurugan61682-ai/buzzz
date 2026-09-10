@@ -5,8 +5,24 @@
  * NEVER prints, logs, hardcodes, or exposes the raw API key anywhere.
  */
 
+import crypto from "crypto";
 import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
+
+export const getGoWhatsMessageExtId = (msg) => {
+  if (!msg) return `gw_msg_${Date.now()}`;
+  const rawId = msg.messageId || msg._id || msg.id || msg.externalMessageId;
+  if (rawId && String(rawId).trim()) {
+    return String(rawId).trim();
+  }
+  const sender = msg.from || msg.phoneNumber || msg.number || "";
+  const recipient = msg.to || "";
+  const text = msg.text || msg.message || msg.body || "";
+  const time = msg.timestamp || msg.createdAt || "";
+  const fingerprint = `${sender}_${recipient}_${text}_${time}`;
+  const hash = crypto.createHash("sha256").update(fingerprint).digest("hex").slice(0, 20);
+  return `gw_det_${hash}`;
+};
 
 const getBaseUrl = () => {
   return (process.env.GOWHATS_BASE_URL || process.env.CHANNELBOT_BASE_URL || "https://bot.gowhats.in/api/v1/").replace(/\/$/, "");
@@ -251,46 +267,95 @@ export const updateGoWhatsContact = async ({ phone, updateData, overrideKey } = 
   };
 };
 
-/**
- * 6. Background Polling Scheduler for GoWhats WhatsApp
- */
+export const extractCustomerPhone = (msg) => {
+  if (!msg) return process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
+
+  const bizPhone = String(process.env.WHATSAPP_PHONE_NUMBER || "919047484484").replace(/\D/g, "");
+  const bizWabaId = String(process.env.WHATSAPP_PHONE_NUMBER_ID || "804376366097834").replace(/\D/g, "");
+
+  const isBizIdentifier = (val) => {
+    if (!val) return true;
+    const clean = String(val).replace(/\D/g, "");
+    if (!clean) return true;
+    if (bizWabaId && clean === bizWabaId) return true;
+    if (clean === "804376366097834") return true;
+    if (clean.length > 13) return true; // WABA phone_number_ids are 15+ digits
+    return false;
+  };
+
+  const rawFrom = String(msg.from || msg.phoneNumber || msg.number || "").replace(/\D/g, "");
+  const rawTo = String(msg.to || "").replace(/\D/g, "");
+
+  if (isBizIdentifier(rawFrom) || rawFrom === bizPhone) {
+    if (rawTo && !isBizIdentifier(rawTo)) {
+      return rawTo;
+    }
+  }
+
+  if (rawFrom && !isBizIdentifier(rawFrom)) {
+    return rawFrom;
+  }
+
+  if (rawTo && !isBizIdentifier(rawTo)) {
+    return rawTo;
+  }
+
+  return bizPhone || "919047484484";
+};
+
 export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
   console.log(`⏰ Initializing GoWhats WhatsApp background sync scheduler (polling every ${intervalMs / 1000}s)...`);
   setInterval(async () => {
     try {
       if (!isGoWhatsConfigured()) return;
       const res = await fetchGoWhatsMessages({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
-      if (res.success && Array.isArray(res.messages) && res.messages.length > 0) {
+      if (res.success && Array.isArray(res.messages)) {
         let newCount = 0;
+        let dedupedCount = 0;
+        console.log(`📡 [GOWHATS POLL CYCLE] Fetched ${res.messages.length} messages from GoWhats API.`);
+
         for (const msg of res.messages) {
-          const senderPhone = String(msg.from || msg.phoneNumber || msg.number || "919047484484").replace(/\D/g, "");
+          const customerPhone = extractCustomerPhone(msg);
+          const fromPhone = String(msg.from || "").replace(/\D/g, "");
+          const isOutbound = msg.sentFromWABA === true || msg.status === "sent" || fromPhone === "804376366097834" || fromPhone.length > 13;
+
           const textBody = msg.text || msg.message || msg.body || "New WhatsApp message";
-          const extId = msg.messageId || msg._id || msg.id || `gw_${Date.now()}`;
+          const extId = getGoWhatsMessageExtId(msg);
+          const msgTimestamp = msg.timestamp || msg.createdAt || new Date().toISOString();
 
           const contact = await resolveOrCreateContact({
             workspaceId: "ws_default",
-            name: msg.sender_name || msg.name || `WhatsApp User (+${senderPhone})`,
-            phone: senderPhone,
+            name: msg.sender_name || msg.name || `WhatsApp User (+${customerPhone})`,
+            phone: customerPhone,
             identities: [
-              { type: "phone", value: senderPhone },
-              { type: "custom", value: senderPhone },
+              { type: "phone", value: customerPhone },
+              { type: "custom", value: customerPhone },
             ],
             source: "GoWhats WhatsApp Auto-Sync",
             channel: "whatsapp",
           });
 
-          const convId = `conv_wa_${senderPhone}`;
+          const convId = `conv_wa_${customerPhone}`;
           const convDoc = {
             id: convId,
             workspaceId: "ws_default",
-            customerName: contact?.name || `+${senderPhone}`,
+            customerName: contact?.name || `+${customerPhone}`,
             channel: "WhatsApp",
-            phone: senderPhone,
-            unreadCount: 1,
+            phone: customerPhone,
+            unreadCount: isOutbound ? 0 : 1,
             lastMessage: textBody,
-            updatedAt: new Date().toISOString(),
+            updatedAt: msgTimestamp,
           };
           const conv = await upsertConversation(convDoc);
+
+          const sender = isOutbound
+            ? { name: "BUZZZ Agent", handle: "agent", kind: "agent" }
+            : {
+                name: contact?.name || `+${customerPhone}`,
+                handle: customerPhone,
+                contactId: contact?.id || null,
+                kind: "customer",
+              };
 
           const { doc: msgDoc, isNew } = await saveUnifiedMessage({
             id: `msg_${extId}`,
@@ -299,16 +364,11 @@ export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
             integrationId: "gowhats",
             platform: "whatsapp",
             externalMessageId: extId,
-            sender: {
-              name: contact?.name || `+${senderPhone}`,
-              handle: senderPhone,
-              contactId: contact?.id || null,
-              kind: "customer",
-            },
-            direction: "inbound",
+            sender,
+            direction: isOutbound ? "outbound" : "inbound",
             text: textBody,
-            status: "received",
-            receivedAt: new Date().toISOString(),
+            status: isOutbound ? "sent" : "received",
+            receivedAt: msgTimestamp,
           });
 
           if (isNew) {
@@ -322,11 +382,11 @@ export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
               });
               broadcastFn("message:new", { conversation: conv, message: msgDoc });
             }
+          } else {
+            dedupedCount++;
           }
         }
-        if (newCount > 0) {
-          console.log(`💬 [GOWHATS AUTO-SYNC] Synced ${newCount} new WhatsApp message(s).`);
-        }
+        console.log(`💬 [GOWHATS POLL CYCLE RESULT] Total fetched: ${res.messages.length} | Newly inserted (isNew: true): ${newCount} | Deduped (isNew: false): ${dedupedCount}`);
       }
       await syncGoWhatsContacts({ workspaceId: "ws_default" });
     } catch (e) {

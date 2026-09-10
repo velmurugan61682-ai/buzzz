@@ -181,7 +181,7 @@ export const updateChannelBotLeadStatus = async ({ leadId, status, overrideKey }
 
   try {
     const response = await fetch(url, {
-      method: "PATCH",
+      method: "PUT",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Accept": "application/json",
@@ -192,12 +192,13 @@ export const updateChannelBotLeadStatus = async ({ leadId, status, overrideKey }
 
     const data = await response.json().catch(() => ({}));
     console.log(`[updateChannelBotLeadStatus] HTTP Status: ${response.status}`, data);
-    const isSuccess = response.status < 500;
+    const isSuccess = response.ok;
 
     return {
       success: isSuccess,
       status: response.status,
-      message: response.ok ? "Lead status updated" : `Authenticated leads:write request processed (HTTP ${response.status})`,
+      message: isSuccess ? "Lead status updated" : `Failed to update lead status (HTTP ${response.status})`,
+      error: isSuccess ? undefined : (data.error || data.message || `HTTP ${response.status}`),
       data,
     };
   } catch (err) {

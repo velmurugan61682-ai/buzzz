@@ -331,10 +331,106 @@ db.contacts = [seedContact];
 // ==============================================================================
 let isDbConnected = false;
 
+export const mergeDuplicateWhatsAppConversations = async () => {
+  const canonicalPhone = String(process.env.WHATSAPP_PHONE_NUMBER || "919047484484").replace(/\D/g, "");
+  const targetConvId = `conv_wa_${canonicalPhone}`;
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    try {
+      const allConvs = await ConversationModel.find({
+        $or: [{ channel: "WhatsApp" }, { channel: "whatsapp" }, { channel: "WHATSAPP" }],
+      }).lean();
+
+      const dupes = allConvs.filter(
+        (c) =>
+          c.id !== targetConvId &&
+          (c.phone === "804376366097834" ||
+            c.id === "conv_wa_804376366097834" ||
+            (c.phone && c.phone.replace(/\D/g, "") === canonicalPhone) ||
+            c.id === "conv_1")
+      );
+
+      if (dupes.length > 0) {
+        const dupeIds = dupes.map((d) => d.id);
+        console.log(`🧹 [DATA MIGRATION] Merging ${dupes.length} duplicate WhatsApp conversation(s) [${dupeIds.join(", ")}] into '${targetConvId}'...`);
+
+        await UnifiedMessageModel.updateMany(
+          { conversationId: { $in: dupeIds } },
+          { $set: { conversationId: targetConvId } }
+        );
+
+        await MessageModel.updateMany(
+          { conversationId: { $in: dupeIds } },
+          { $set: { conversationId: targetConvId } }
+        );
+
+        await ConversationModel.deleteMany({ id: { $in: dupeIds } });
+
+        const latestMsg = await UnifiedMessageModel.findOne({ conversationId: targetConvId }).sort({ receivedAt: -1 }).lean();
+        await ConversationModel.findOneAndUpdate(
+          { id: targetConvId },
+          {
+            $set: {
+              id: targetConvId,
+              workspaceId: "ws_default",
+              customerName: `WhatsApp User (+${canonicalPhone})`,
+              channel: "WhatsApp",
+              phone: canonicalPhone,
+              unreadCount: 0,
+              lastMessage: latestMsg?.text || "WhatsApp conversation",
+              updatedAt: latestMsg?.receivedAt || new Date(),
+            },
+          },
+          { upsert: true }
+        );
+        console.log(`✅ [DATA MIGRATION] Duplicate WhatsApp conversations successfully merged into '${targetConvId}'.`);
+      }
+    } catch (err) {
+      console.warn("⚠️ WhatsApp conversation merge warning:", err.message);
+    }
+    return;
+  }
+
+  const dupes = db.conversations.filter(
+    (c) =>
+      c.id !== targetConvId &&
+      (c.phone === "804376366097834" ||
+        c.id === "conv_wa_804376366097834" ||
+        (c.phone && c.phone.replace(/\D/g, "") === canonicalPhone) ||
+        c.id === "conv_1")
+  );
+
+  if (dupes.length > 0) {
+    const dupeIds = new Set(dupes.map((d) => d.id));
+    db.unifiedMessages.forEach((m) => {
+      if (dupeIds.has(m.conversationId)) {
+        m.conversationId = targetConvId;
+      }
+    });
+
+    db.conversations = db.conversations.filter((c) => !dupeIds.has(c.id));
+
+    const existing = db.conversations.find((c) => c.id === targetConvId);
+    if (!existing) {
+      db.conversations.unshift({
+        id: targetConvId,
+        workspaceId: "ws_default",
+        customerName: `WhatsApp User (+${canonicalPhone})`,
+        channel: "WhatsApp",
+        phone: canonicalPhone,
+        unreadCount: 0,
+        lastMessage: "WhatsApp conversation",
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+};
+
 export const connectDB = async () => {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
     console.warn("⚠️ MONGODB_URI is not defined in environment. Using in-memory dataset.");
+    await mergeDuplicateWhatsAppConversations();
     return false;
   }
 
@@ -363,11 +459,15 @@ export const connectDB = async () => {
       await ContactModel.create(seedContact);
     }
 
+    // Merge any duplicate WhatsApp conversations created by legacy WABA ID bug
+    await mergeDuplicateWhatsAppConversations();
+
     return true;
   } catch (err) {
     console.error(`❌ MongoDB connection failed: ${err.message}`);
     console.warn("⚠️ Falling back to in-memory dataset.");
     isDbConnected = false;
+    await mergeDuplicateWhatsAppConversations();
     return false;
   }
 };
@@ -605,19 +705,18 @@ export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const doc = await InstaxBotAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
     if (doc) return doc;
-    if (workspaceId !== "ws_default") {
+    if (workspaceId === "ws_default") {
       const defaultDoc = await InstaxBotAccountModel.findOne({ workspaceId: "ws_default" }).sort({ updatedAt: -1 }).lean();
       if (defaultDoc) return defaultDoc;
+    } else {
+      return null;
     }
   }
-  const mem = db.instaxbotAccounts.find(
-    (a) => a.workspaceId === workspaceId || a.workspaceId === "ws_default" || !a.workspaceId
-  );
+  const mem = db.instaxbotAccounts.find((a) => a.workspaceId === workspaceId);
   if (mem) return mem;
 
-  const envKey = process.env.INSTAXBOT_API_KEY;
-  if (envKey) {
-    const clean = String(envKey).trim();
+  if ((workspaceId === "ws_default" || !workspaceId) && process.env.INSTAXBOT_API_KEY) {
+    const clean = String(process.env.INSTAXBOT_API_KEY).trim();
     const maskedKey = "••••" + clean.slice(-4);
     return {
       workspaceId,

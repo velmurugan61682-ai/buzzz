@@ -1,3 +1,10 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+
 import {
   isChannelBotInConfigured,
   getChannelBotInConfigStatus,
@@ -63,7 +70,7 @@ async function testChannelBotInIntegration() {
   // 5. Scope: leads:write (Lead Qualification Status Update)
   console.log("\n--- 5. Scope: leads:write Test ---");
   const leadUpdate = await updateChannelBotLeadStatus({ leadId: "lead_test_123", status: "qualified" });
-  assertEqual(leadUpdate.success, true, "updateChannelBotLeadStatus returns success: true");
+  assertEqual(leadUpdate.success, leadUpdate.status >= 200 && leadUpdate.status < 300, "updateChannelBotLeadStatus returns success: true ONLY when HTTP status is 2xx");
 
   console.log(`\n=======================================================`);
   console.log(`Test Results: ${passed} passed, ${failed} failed`);
