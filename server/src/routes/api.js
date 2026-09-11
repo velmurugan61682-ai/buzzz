@@ -29,9 +29,11 @@ import {
   fetchUnifiedInbox,
   UnifiedMessageModel,
   findOrCreateGoogleUser,
+  saveGoWhatsOrder,
+  fetchOrdersByPhone,
 } from "../data/db.js";
 
-import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
+import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
 import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus } from "../services/channelbot.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
 import { fetchInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast } from "../services/instaxbot.js";
@@ -59,7 +61,16 @@ const sseClients = new Set();
 export const broadcastSseEvent = (type, payload) => {
   const data = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
   for (const client of sseClients) {
-    client.write(`data: ${data}\n\n`);
+    if (client.writable && !client.destroyed && !client.writableEnded) {
+      try {
+        client.write(`data: ${data}\n\n`);
+      } catch (err) {
+        console.warn("⚠️ SSE write error, removing disconnected client:", err.message);
+        sseClients.delete(client);
+      }
+    } else {
+      sseClients.delete(client);
+    }
   }
 };
 
@@ -434,11 +445,24 @@ apiRouter.get("/events", (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
+  try {
+    res.write(`: sse connected\n\n`);
+  } catch (_e) {
+    return;
+  }
+
   sseClients.add(res);
 
-  req.on("close", () => {
+  const cleanup = () => {
     sseClients.delete(res);
-  });
+  };
+
+  req.on("close", cleanup);
+  req.on("end", cleanup);
+  req.on("error", cleanup);
+  res.on("close", cleanup);
+  res.on("finish", cleanup);
+  res.on("error", cleanup);
 });
 
 // Health Endpoint (Includes DB & gowhats.in status)
@@ -458,6 +482,30 @@ apiRouter.get("/health", (req, res) => {
 // Status helper endpoints
 apiRouter.get("/gowhats/status", (req, res) => {
   res.json(getGoWhatsConfigStatus());
+});
+
+// GET /api/orders — returns all orders for a customer phone from the local store
+apiRouter.get("/orders", async (req, res) => {
+  try {
+    const rawPhone = req.query.phone || req.query.phoneNumber || req.query.customerPhone || req.query.customer_phone || "";
+    const cleanPhone = String(rawPhone).replace(/\D/g, "");
+
+    const orders = await fetchOrdersByPhone(cleanPhone || rawPhone);
+    return res.json({
+      ok: true,
+      success: true,
+      count: orders.length,
+      orders,
+    });
+  } catch (err) {
+    console.error("❌ GET /api/orders error:", err.message);
+    return res.status(500).json({
+      ok: false,
+      success: false,
+      error: err.message,
+      orders: [],
+    });
+  }
 });
 
 apiRouter.get("/channelbot/status", (req, res) => {

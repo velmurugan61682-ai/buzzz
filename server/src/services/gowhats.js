@@ -6,7 +6,7 @@
  */
 
 import crypto from "crypto";
-import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage } from "../data/db.js";
+import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveGoWhatsOrder } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 export const getGoWhatsMessageExtId = (msg) => {
@@ -189,6 +189,73 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey }) => {
   }
 };
 
+const loggedOrdersSyncErrors = new Set();
+
+/**
+ * 3b. Scope: Read Orders
+ * Queries WhatsApp orders from GoWhats API: GET /api/v1/orders
+ * Supports optional phoneNumber query param to filter for one customer & pagination params.
+ * NEVER returns synthetic fallback data — returns genuine API status and errors.
+ */
+export const fetchGoWhatsOrders = async ({ phoneNumber, page, limit, overrideKey } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, orders: [], statusCode: 401, error: "No GoWhats API key configured" };
+
+  const baseUrl = getBaseUrl();
+  const queryParams = new URLSearchParams();
+  if (phoneNumber) {
+    const cleanPhone = String(phoneNumber).replace(/\D/g, "");
+    if (cleanPhone) {
+      queryParams.append("phoneNumber", cleanPhone);
+      queryParams.append("phone", cleanPhone);
+    }
+  }
+  if (page) queryParams.append("page", page);
+  if (limit) queryParams.append("limit", limit);
+
+  const queryString = queryParams.toString();
+  const url = `${baseUrl}/orders${queryString ? `?${queryString}` : ""}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok || data.success === false) {
+      const errMsg = data.message || data.error || `HTTP ${response.status} ${response.statusText}`;
+      return {
+        success: false,
+        orders: [],
+        statusCode: response.status,
+        error: errMsg,
+        raw: data,
+      };
+    }
+
+    // Confirmed response nesting: data.data.orders or data.orders or data.data
+    const rawOrders = data.data?.orders || data.orders || (Array.isArray(data.data) ? data.data : []);
+
+    return {
+      success: true,
+      orders: Array.isArray(rawOrders) ? rawOrders : [],
+      statusCode: response.status,
+      page: data.data?.page || data.page || 1,
+      totalPages: data.data?.totalPages || data.totalPages || 1,
+      hasMore: Boolean(data.data?.hasMore || data.hasMore),
+      raw: data,
+    };
+  } catch (err) {
+    console.error("❌ [GOWHATS ORDERS FETCH EXCEPTION]:", err.message);
+    return { success: false, orders: [], statusCode: 500, error: err.message };
+  }
+};
+
 /**
  * 4. Scope: Read Contacts
  * Fetches GoWhats contact list and merges into BUZZZ unified Contact model.
@@ -303,9 +370,13 @@ export const extractCustomerPhone = (msg) => {
   return bizPhone || "919047484484";
 };
 
-export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
+let isGoWhatsSyncRunning = false;
+
+export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
   console.log(`⏰ Initializing GoWhats WhatsApp background sync scheduler (polling every ${intervalMs / 1000}s)...`);
   setInterval(async () => {
+    if (isGoWhatsSyncRunning) return;
+    isGoWhatsSyncRunning = true;
     try {
       if (!isGoWhatsConfigured()) return;
       const res = await fetchGoWhatsMessages({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
@@ -388,9 +459,58 @@ export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
         }
         console.log(`💬 [GOWHATS POLL CYCLE RESULT] Total fetched: ${res.messages.length} | Newly inserted (isNew: true): ${newCount} | Deduped (isNew: false): ${dedupedCount}`);
       }
+
+      // Sync GoWhats Orders on schedule
+      const resOrders = await fetchGoWhatsOrders({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
+
+      if (!resOrders.success) {
+        const errKey = `${resOrders.statusCode}_${resOrders.error}`;
+        if (!loggedOrdersSyncErrors.has(errKey)) {
+          loggedOrdersSyncErrors.add(errKey);
+          if (resOrders.statusCode === 403 || (resOrders.error && resOrders.error.includes("permissions"))) {
+            console.warn(`⚠️ GoWhats orders sync disabled: API key missing 'orders.read' permission. Enable this scope in the GoWhats dashboard to activate order sync.`);
+          } else {
+            console.warn(`⚠️ GoWhats orders sync disabled (${resOrders.statusCode || "Error"}): ${resOrders.error}`);
+          }
+        }
+      } else if (Array.isArray(resOrders.orders) && resOrders.orders.length > 0) {
+        let newOrders = 0;
+        let updatedOrders = 0;
+        let dedupedOrders = 0;
+        for (const orderItem of resOrders.orders) {
+          const customerPhone = extractCustomerPhone(orderItem);
+          const convId = `conv_wa_${customerPhone}`;
+          const { doc: orderDoc, isNew, isUpdated } = await saveGoWhatsOrder({
+            ...orderItem,
+            customerPhone,
+            conversationId: convId,
+          });
+
+          if (isNew) newOrders++;
+          else if (isUpdated) updatedOrders++;
+          else dedupedOrders++;
+
+          if ((isNew || isUpdated) && typeof broadcastFn === "function") {
+            broadcastFn("order_update", {
+              order: orderDoc,
+              conversationId: convId,
+              isNew,
+              isUpdated,
+              platform: "whatsapp",
+            });
+            broadcastFn(isNew ? "order:new" : "order:updated", { conversationId: convId, order: orderDoc });
+          }
+        }
+        console.log(`📦 [GOWHATS ORDERS POLL RESULT] Total fetched: ${resOrders.orders.length} | New (isNew: true): ${newOrders} | Updated (isUpdated: true): ${updatedOrders} | Deduped (unchanged): ${dedupedOrders}`);
+      } else {
+        console.log(`📦 [GOWHATS ORDERS POLL RESULT] Fetch success=true, 0 orders returned.`);
+      }
+
       await syncGoWhatsContacts({ workspaceId: "ws_default" });
     } catch (e) {
       console.warn("⚠️ Background GoWhats auto-sync error:", e.message);
+    } finally {
+      isGoWhatsSyncRunning = false;
     }
   }, intervalMs);
 }

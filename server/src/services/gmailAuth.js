@@ -362,16 +362,19 @@ export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn 
   }
 }
 
-/**
- * Background scheduler to poll Gmail messages every N milliseconds (default 30 seconds)
- */
+let isGmailSyncRunning = false;
+
 export function startGmailMessagesAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
   console.log(`⏰ Initializing Gmail background email sync scheduler (polling every ${intervalMs / 1000}s)...`);
   setInterval(async () => {
+    if (isGmailSyncRunning) return;
+    isGmailSyncRunning = true;
     try {
       await syncGmailMessages("ws_default", broadcastFn);
     } catch (e) {
       console.warn("⚠️ Background Gmail auto-sync error:", sanitizeMessage(e.message));
+    } finally {
+      isGmailSyncRunning = false;
     }
   }, intervalMs);
 }

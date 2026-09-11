@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+
+
 import { apiRouter, broadcastSseEvent } from "./routes/api.js";
 import { connectDB } from "./data/db.js";
 import { startGmailMessagesAutoSyncScheduler } from "./services/gmailAuth.js";
@@ -90,6 +92,14 @@ app.use((err, req, res, _next) => {
     request_id: `req_${Date.now()}`,
     fields: err.fields || null,
   });
+});
+
+process.on("unhandledRejection", (reason, _promise) => {
+  console.warn("⚠️ Handled global unhandledRejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ Handled global uncaughtException:", err.message);
 });
 
 // Initialize DB and Start Server

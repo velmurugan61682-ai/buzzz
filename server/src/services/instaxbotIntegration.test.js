@@ -6,10 +6,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 import { saveInstaxBotConfig, getInstaxBotConfig, deleteInstaxBotConfig } from "../data/db.js";
-import { fetchInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotTemplates, fetchInstaxBotMessages } from "./instaxbot.js";
+import {
+  fetchInstaxBotOrders,
+  syncInstaxBotContacts,
+  registerInstaxBotWebhook,
+  fetchInstaxBotTemplates,
+  fetchInstaxBotMessages,
+} from "./instaxbot.js";
 
 async function testInstaxBotIntegration() {
-  console.log("🧪 Testing InstaxBot API Key Integration Flow & 8 Permission Scopes...\n");
+  console.log("🧪 Testing InstaxBot Real API Gateway & Key Integration Flow...\n");
 
   let passed = 0;
   let failed = 0;
@@ -38,41 +44,47 @@ async function testInstaxBotIntegration() {
   }
 
   const wsId = "test_instaxbot_ws";
-  const validKey = "ib_live_9f2a841d77e0";
+  const apiKey = (process.env.INSTAXBOT_API_KEY || "").trim();
 
-  // 1. Connect with valid key
-  const maskedKey = "••••" + validKey.slice(-4);
+  // 1. Configuration & Key Safety Test
+  console.log("--- 1. Configuration & Key Safety Test ---");
+  const maskedKey = "••••" + apiKey.slice(-4);
   const saved = await saveInstaxBotConfig({
     workspaceId: wsId,
-    apiKey: validKey,
+    apiKey,
     maskedKey,
     accountName: `InstaxBot Account (${maskedKey})`,
   });
 
-  assertEqual(saved.maskedKey, "••••77e0", "Masked key matches last 4 characters");
-  assertEqual(saved.apiKey, validKey, "API key saved in DB layer");
+  assertEqual(saved.maskedKey, maskedKey, `Masked key matches expected pattern (${maskedKey})`);
+  assertEqual(saved.apiKey, apiKey, "API key saved in DB layer");
 
   // 2. Verify status check returns connected state
   const statusConfig = await getInstaxBotConfig(wsId);
-  assertEqual(statusConfig.maskedKey, "••••77e0", "getInstaxBotConfig returns saved masked key");
+  assertEqual(statusConfig.maskedKey, maskedKey, "getInstaxBotConfig returns saved masked key");
 
-  // 3. Test Service Scope Handlers (webhooks.manage, orders.read, contacts.read, templates.read, messages.read)
-  console.log("\n  --- Scope API Execution Tests ---");
+  // 3. Test Service Scope Handlers against Real API Gateway
+  console.log("\n--- 2. Scope API Execution Tests (Strict Response & Content-Type Assertions) ---");
 
-  const ordersRes = await fetchInstaxBotOrders({ overrideKey: validKey });
-  assertTruthy(ordersRes !== undefined, "fetchInstaxBotOrders executes without throwing");
+  const ordersRes = await fetchInstaxBotOrders();
+  console.log(`  [fetchInstaxBotOrders] success: ${ordersRes.success}, status: ${ordersRes.status || "N/A"}`);
+  assertEqual(ordersRes.success, true, "fetchInstaxBotOrders returns success: true on valid API gateway response");
 
-  const webhookRes = await registerInstaxBotWebhook({ overrideKey: validKey });
-  assertTruthy(webhookRes !== undefined, "registerInstaxBotWebhook executes without throwing");
+  const webhookRes = await registerInstaxBotWebhook();
+  console.log(`  [registerInstaxBotWebhook] success: ${webhookRes.success}, status: ${webhookRes.status || "N/A"}`);
+  assertEqual(webhookRes.success, true, "registerInstaxBotWebhook returns success: true on valid API gateway response");
 
-  const contactsRes = await syncInstaxBotContacts({ workspaceId: wsId, overrideKey: validKey });
-  assertTruthy(contactsRes.syncedCount !== undefined, "syncInstaxBotContacts returns synced count");
+  const contactsRes = await syncInstaxBotContacts({ workspaceId: wsId });
+  console.log(`  [syncInstaxBotContacts] success: ${contactsRes.success}, syncedCount: ${contactsRes.syncedCount}`);
+  assertEqual(contactsRes.success, true, "syncInstaxBotContacts returns success: true");
 
-  const templatesRes = await fetchInstaxBotTemplates({ overrideKey: validKey });
-  assertTruthy(Array.isArray(templatesRes.templates), "fetchInstaxBotTemplates returns templates array");
+  const templatesRes = await fetchInstaxBotTemplates();
+  console.log(`  [fetchInstaxBotTemplates] success: ${templatesRes.success}, count: ${templatesRes.templates?.length || 0}`);
+  assertEqual(templatesRes.success, true, "fetchInstaxBotTemplates returns success: true");
 
-  const messagesRes = await fetchInstaxBotMessages({ overrideKey: validKey });
-  assertTruthy(Array.isArray(messagesRes.messages), "fetchInstaxBotMessages returns messages array");
+  const messagesRes = await fetchInstaxBotMessages();
+  console.log(`  [fetchInstaxBotMessages] success: ${messagesRes.success}, count: ${messagesRes.messages?.length || 0}`);
+  assertEqual(messagesRes.success, true, "fetchInstaxBotMessages returns success: true");
 
   // 4. Cleanup
   await deleteInstaxBotConfig(wsId);

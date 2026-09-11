@@ -2,6 +2,8 @@
  * channelbot.in YouTube Video Comment & Lead Automation Service
  *
  * Strictly references key via process.env.CHANNELBOT_IN_API_KEY (or fallback process.env.CHANNELBOT_API_KEY).
+ * REAL API Gateway: https://server-youtube-auto.onrender.com/api/external
+ * REAL Auth Header: x-api-key: YOUR_KEY
  * NEVER prints, logs, hardcodes, or exposes the raw API key anywhere in code, logs, or responses.
  */
 
@@ -9,7 +11,11 @@ import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage } from "
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 const getBaseUrl = () => {
-  return (process.env.CHANNELBOT_IN_BASE_URL || "https://channelbot.in/api").replace(/\/$/, "");
+  return (
+    process.env.CHANNELBOT_IN_BASE_URL ||
+    process.env.CHANNELBOT_BASE_URL ||
+    "https://server-youtube-auto.onrender.com/api/external"
+  ).replace(/\/$/, "");
 };
 
 const getApiKey = () => {
@@ -32,22 +38,22 @@ export const getChannelBotInConfigStatus = () => {
 
 /**
  * 1. Connection Verification & Dashboard Call Counter Driver
- * Executes a real authenticated API call to channelbot.in using process.env.CHANNELBOT_IN_API_KEY.
- * Increments the call counter on the channelbot.in dashboard.
+ * Executes a real authenticated API call to ChannelBot using process.env.CHANNELBOT_IN_API_KEY.
+ * Auth Header: x-api-key: <key>
+ * Endpoint: GET /api/external/leads
  */
 export const verifyChannelBotInConnection = async (overrideKey) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { connected: false, error: "No channelbot.in API key configured" };
 
   const baseUrl = getBaseUrl();
-  // Call comments or leads endpoint with Accept: application/json
-  const url = `${baseUrl}/comments`;
+  const url = `${baseUrl}/leads`;
 
   try {
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
         "Accept": "application/json",
         "Content-Type": "application/json",
       },
@@ -59,7 +65,7 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
     return {
       connected: isOk,
       status: response.status,
-      message: isOk ? "channelbot.in YouTube comments API connected and verified" : (data.error || data.message || `HTTP ${response.status}`),
+      message: isOk ? "ChannelBot.in API connected and verified" : (data.error || data.message || `HTTP ${response.status}`),
       data,
     };
   } catch (err) {
@@ -71,28 +77,29 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
 };
 
 /**
- * 2. Scope: comments:read (YouTube Video Comments Ingestion)
- * Fetches YouTube video comments captured by channelbot.in.
+ * 2. Scope: leads:read (Captured YouTube Leads / Video Comments Ingestion)
+ * Fetches captured video leads from GET /api/external/leads.
+ * Auth Header: x-api-key: <key>
  */
 export const fetchYouTubeComments = async ({ overrideKey, limit = 50 } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, comments: [] };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/comments?limit=${limit}`;
+  const url = `${baseUrl}/leads`;
 
   try {
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
         "Accept": "application/json",
         "Content-Type": "application/json",
       },
     });
 
     const data = await response.json().catch(() => ({}));
-    const rawComments = data.data || data.comments || (Array.isArray(data) ? data : []);
+    const rawComments = data.data || data.leads || data.comments || (Array.isArray(data) ? data : []);
 
     return {
       success: response.ok,
@@ -105,8 +112,79 @@ export const fetchYouTubeComments = async ({ overrideKey, limit = 50 } = {}) => 
 };
 
 /**
- * 3. Scope: leads:read / customers:read (YouTube Lead Sync)
- * Fetches captured video leads and merges into BUZZZ Unified Contact model.
+ * 3. Scope: customers:read (Fetch Detailed Customer Profiles with Metrics)
+ * Calls GET /api/external/customers/details?page={page}&limit={limit}
+ * Auth Header: x-api-key: <key>
+ */
+export const fetchChannelBotCustomerDetails = async ({ page = 1, limit = 20, overrideKey } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, customers: [] };
+
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/customers/details?page=${page}&limit=${limit}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-api-key": apiKey,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const rawCustomers = data.data || data.customers || data.details || (Array.isArray(data) ? data : []);
+
+    return {
+      success: response.ok,
+      customers: Array.isArray(rawCustomers) ? rawCustomers : [],
+      page,
+      limit,
+      raw: data,
+    };
+  } catch (err) {
+    return { success: false, customers: [], error: err.message };
+  }
+};
+
+/**
+ * 4. Scope: leads:write (Create a New Lead Record)
+ * Calls POST /api/external/leads
+ * Auth Header: x-api-key: <key>
+ */
+export const createChannelBotLead = async ({ name, email, phone, overrideKey } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, error: "No channelbot.in API key configured" };
+
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/leads`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name, email, phone }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    return {
+      success: response.ok,
+      status: response.status,
+      data,
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * 5. Scope: leads:read / customers:read (YouTube Lead Sync)
+ * Fetches captured video leads from GET /api/external/leads and merges into BUZZZ Contact model.
  */
 export const syncChannelBotLeads = async ({ workspaceId = "ws_default", overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
@@ -119,7 +197,7 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
         "Accept": "application/json",
         "Content-Type": "application/json",
       },
@@ -159,7 +237,7 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
     }
 
     return {
-      success: true,
+      success: response.ok,
       syncedCount: synced.length,
       contacts: synced,
     };
@@ -169,8 +247,8 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
 };
 
 /**
- * 4. Scope: leads:write (Lead Qualification / Status Update)
- * Updates a lead's qualification status in channelbot.in backend.
+ * 6. Scope: leads:write (Lead Qualification / Status Update)
+ * Updates a lead's qualification status in ChannelBot backend.
  */
 export const updateChannelBotLeadStatus = async ({ leadId, status, overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
@@ -183,7 +261,7 @@ export const updateChannelBotLeadStatus = async ({ leadId, status, overrideKey }
     const response = await fetch(url, {
       method: "PUT",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
         "Accept": "application/json",
         "Content-Type": "application/json",
       },
@@ -208,25 +286,29 @@ export const updateChannelBotLeadStatus = async ({ leadId, status, overrideKey }
 };
 
 /**
- * 5. Background Polling Scheduler for ChannelBot.in YouTube
+ * 7. Background Polling Scheduler for ChannelBot.in YouTube
  */
-export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
+let isChannelBotSyncRunning = false;
+
+export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000) {
   console.log(`⏰ Initializing ChannelBot.in YouTube background sync scheduler (polling every ${intervalMs / 1000}s)...`);
   setInterval(async () => {
+    if (isChannelBotSyncRunning) return;
+    isChannelBotSyncRunning = true;
     try {
       if (!isChannelBotInConfigured()) return;
       const commentsRes = await fetchYouTubeComments({ limit: 20 });
       if (commentsRes.success && Array.isArray(commentsRes.comments) && commentsRes.comments.length > 0) {
         let newCount = 0;
         for (const cmt of commentsRes.comments) {
-          const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || "YouTube Viewer";
-          const textBody = cmt.text || cmt.comment_text || cmt.message || "New YouTube comment";
-          const extId = cmt.comment_id || cmt.commentId || cmt.id || `yt_${Date.now()}`;
+          const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || cmt.name || "YouTube Viewer";
+          const textBody = cmt.text || cmt.comment_text || cmt.message || cmt.lead_source || "New YouTube lead captured";
+          const extId = cmt._id || cmt.id || cmt.comment_id || cmt.commentId || cmt.leadId || (cmt.email ? `yt_lead_${cmt.email}` : `yt_lead_${String(cmt.name || authorHandle).replace(/\W/g, "_")}`);
           const videoTitle = cmt.videoTitle || cmt.video_title || "YouTube Video";
 
           const contact = await resolveOrCreateContact({
             workspaceId: "ws_default",
-            name: cmt.author_name || authorHandle,
+            name: cmt.author_name || cmt.name || authorHandle,
             email: cmt.email || undefined,
             identities: [
               { type: "youtube", value: authorHandle },
@@ -236,7 +318,7 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
             channel: "youtube",
           });
 
-          const convId = `conv_yt_${authorHandle.replace(/\s+/g, "_")}`;
+          const convId = `conv_yt_${String(authorHandle).replace(/\s+/g, "_")}`;
           const convDoc = {
             id: convId,
             workspaceId: "ws_default",
@@ -282,12 +364,14 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
           }
         }
         if (newCount > 0) {
-          console.log(`▶️ [CHANNELBOT AUTO-SYNC] Synced ${newCount} new YouTube comment(s).`);
+          console.log(`▶️ [CHANNELBOT AUTO-SYNC] Synced ${newCount} new YouTube lead/comment(s).`);
         }
       }
       await syncChannelBotLeads({ workspaceId: "ws_default" });
     } catch (e) {
       console.warn("⚠️ Background ChannelBot.in auto-sync error:", e.message);
+    } finally {
+      isChannelBotSyncRunning = false;
     }
   }, intervalMs);
 }

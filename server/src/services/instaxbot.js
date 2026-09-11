@@ -10,7 +10,7 @@ import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage } from "
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 const getBaseUrl = () => {
-  return (process.env.INSTAXBOT_BASE_URL || "https://instaxbot.com").replace(/\/$/, "");
+  return (process.env.INSTAXBOT_BASE_URL || "https://app.instaxbot.com").replace(/\/$/, "");
 };
 
 const getApiKey = () => {
@@ -317,9 +317,13 @@ export const sendInstaxBotMessage = async ({ recipientId, text, overrideKey } = 
 /**
  * 8. Background Polling Scheduler for InstaxBot Instagram
  */
-export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
+let isInstaxBotSyncRunning = false;
+
+export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
   console.log(`⏰ Initializing InstaxBot Instagram background sync scheduler (polling every ${intervalMs / 1000}s)...`);
   setInterval(async () => {
+    if (isInstaxBotSyncRunning) return;
+    isInstaxBotSyncRunning = true;
     try {
       if (!isInstaxBotConfigured()) return;
       const res = await fetchInstaxBotMessages({ limit: 20 });
@@ -393,6 +397,8 @@ export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 30000)
       await syncInstaxBotContacts({ workspaceId: "ws_default" });
     } catch (e) {
       console.warn("⚠️ Background InstaxBot auto-sync error:", e.message);
+    } finally {
+      isInstaxBotSyncRunning = false;
     }
   }, intervalMs);
 }

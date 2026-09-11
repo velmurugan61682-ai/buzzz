@@ -40,6 +40,7 @@ export const db = {
   googleAccounts: [],
   instaxbotAccounts: [],
   unifiedMessages: [],
+  orders: [],
 };
 
 // ==============================================================================
@@ -238,6 +239,44 @@ const UserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const OrderSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    workspaceId: { type: String, default: "ws_default", index: true },
+    conversationId: { type: String, required: true, index: true },
+    platform: { type: String, default: "whatsapp", index: true },
+    externalOrderId: { type: String, required: true, index: true },
+    orderId: { type: String, index: true },
+    customerPhone: { type: String, required: true, index: true },
+    customerName: { type: String, default: "WhatsApp Customer" },
+    totalAmount: { type: Number, default: 0 },
+    currency: { type: String, default: "INR" },
+    status: { type: String, default: "pending" },
+    paymentMethod: { type: String, default: "online" },
+    paymentStatus: { type: String, default: "pending" },
+    items: {
+      type: [
+        {
+          name: { type: String, default: "Item" },
+          quantity: { type: Number, default: 1 },
+          price: { type: Number, default: 0 },
+          totalPrice: { type: Number, default: 0 },
+        },
+      ],
+      default: [],
+    },
+    flowToken: { type: String, default: "" },
+    isPrinted: { type: Boolean, default: false },
+    isPacked: { type: Boolean, default: false },
+    metadata: { type: Object, default: {} },
+    trackingHistory: { type: Array, default: [] },
+  },
+  { timestamps: true }
+);
+
+OrderSchema.index({ platform: 1, externalOrderId: 1 }, { unique: true });
+OrderSchema.index({ customerPhone: 1, createdAt: -1 });
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
 export const UnifiedMessageModel = mongoose.models.UnifiedMessage || mongoose.model("UnifiedMessage", UnifiedMessageSchema);
@@ -247,6 +286,7 @@ export const InstaxBotAccountModel = mongoose.models.InstaxBotAccount || mongoos
 export const ContactModel = mongoose.models.Contact || mongoose.model("Contact", ContactSchema);
 export const MissedCallModel = mongoose.models.MissedCall || mongoose.model("MissedCall", MissedCallSchema);
 export const UserModel = mongoose.models.User || mongoose.model("User", UserSchema);
+export const OrderModel = mongoose.models.Order || mongoose.model("Order", OrderSchema);
 
 
 export const findOrCreateGoogleUser = async ({ googleId, email, name, picture }) => {
@@ -1149,4 +1189,159 @@ export const fetchMissedCalls = async (userId = null, limit = 20, page = 1) => {
   const docs = filtered.slice(skip, skip + limit);
   return { docs, total: filtered.length, page, limit };
 };
+
+/**
+ * Save / Update GoWhats WhatsApp Order with Strict Deduplication:
+ * Pre-checks existence by [platform: "whatsapp", externalOrderId].
+ * If existing: Updates fields (status, paymentStatus, items, totalAmount, etc.) if changed.
+ * If new: Inserts order.
+ * Returns { doc, isNew: boolean, isUpdated: boolean }.
+ */
+export const saveGoWhatsOrder = async (data) => {
+  if (!data || typeof data !== "object") {
+    return { doc: null, isNew: false, isUpdated: false };
+  }
+
+  const extId = String(data.externalOrderId || data._id || data.orderId || "").trim();
+  if (!extId) {
+    return { doc: null, isNew: false, isUpdated: false };
+  }
+
+  const cleanPhone = String(data.customerPhone || data.customerDetails?.phone || data.phone || "919047484484").replace(/\D/g, "");
+  const convId = data.conversationId || `conv_wa_${cleanPhone}`;
+
+  const payload = {
+    id: data.id || `ord_${extId}`,
+    workspaceId: data.workspaceId || "ws_default",
+    conversationId: convId,
+    platform: "whatsapp",
+    externalOrderId: extId,
+    orderId: data.orderId || extId,
+    customerPhone: cleanPhone,
+    customerName: data.customerName || data.customerDetails?.name || `WhatsApp User (+${cleanPhone})`,
+    totalAmount: typeof data.totalAmount === "number" ? data.totalAmount : parseFloat(data.totalAmount || 0),
+    currency: data.currency || "INR",
+    status: data.status || "pending",
+    paymentMethod: data.paymentMethod || "online",
+    paymentStatus: data.paymentStatus || "pending",
+    items: Array.isArray(data.items)
+      ? data.items.map((i) => ({
+          name: i.name || i.title || "Product Item",
+          quantity: typeof i.quantity === "number" ? i.quantity : parseInt(i.quantity || 1, 10),
+          price: typeof i.price === "number" ? i.price : parseFloat(i.price || 0),
+          totalPrice: typeof i.totalPrice === "number" ? i.totalPrice : parseFloat(i.totalPrice || 0),
+        }))
+      : [],
+    flowToken: data.flowToken || "",
+    isPrinted: Boolean(data.isPrinted),
+    isPacked: Boolean(data.isPacked),
+    metadata: data.metadata || {},
+    trackingHistory: Array.isArray(data.trackingHistory) ? data.trackingHistory : [],
+  };
+
+  const compareItems = (a, b) => {
+    const normA = (a || []).map((x) => ({ name: x.name, quantity: x.quantity, price: x.price, totalPrice: x.totalPrice }));
+    const normB = (b || []).map((x) => ({ name: x.name, quantity: x.quantity, price: x.price, totalPrice: x.totalPrice }));
+    return JSON.stringify(normA) === JSON.stringify(normB);
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    try {
+      const existing = await OrderModel.findOne({
+        platform: "whatsapp",
+        externalOrderId: extId,
+      }).lean();
+
+      if (existing) {
+        const isChanged =
+          existing.status !== payload.status ||
+          existing.paymentStatus !== payload.paymentStatus ||
+          existing.totalAmount !== payload.totalAmount ||
+          !compareItems(existing.items, payload.items);
+
+        if (isChanged) {
+          const updatedDoc = await OrderModel.findOneAndUpdate(
+            { platform: "whatsapp", externalOrderId: extId },
+            { $set: { ...payload, updatedAt: new Date() } },
+            { new: true }
+          ).lean();
+          return { doc: normalizeMongoDoc(updatedDoc), isNew: false, isUpdated: true };
+        }
+        return { doc: normalizeMongoDoc(existing), isNew: false, isUpdated: false };
+      }
+
+      const created = await OrderModel.create({
+        ...payload,
+        createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+      });
+      return { doc: normalizeMongoDoc(created.toObject()), isNew: true, isUpdated: false };
+    } catch (err) {
+      if (err.code === 11000) {
+        const existing = await OrderModel.findOne({
+          platform: "whatsapp",
+          externalOrderId: extId,
+        }).lean();
+        return { doc: normalizeMongoDoc(existing || payload), isNew: false, isUpdated: false };
+      }
+      throw err;
+    }
+  }
+
+  // Fallback in-memory deduplication
+  if (!db.orders) db.orders = [];
+  const existingIdx = db.orders.findIndex(
+    (o) => o.platform === "whatsapp" && o.externalOrderId === extId
+  );
+
+  if (existingIdx !== -1) {
+    const existing = db.orders[existingIdx];
+    const isChanged =
+      existing.status !== payload.status ||
+      existing.paymentStatus !== payload.paymentStatus ||
+      existing.totalAmount !== payload.totalAmount ||
+      !compareItems(existing.items, payload.items);
+
+    if (isChanged) {
+      db.orders[existingIdx] = { ...existing, ...payload, updatedAt: new Date().toISOString() };
+      return { doc: db.orders[existingIdx], isNew: false, isUpdated: true };
+    }
+    return { doc: existing, isNew: false, isUpdated: false };
+  } else {
+    const newDoc = { ...payload, createdAt: new Date().toISOString() };
+    db.orders.unshift(newDoc);
+    return { doc: newDoc, isNew: true, isUpdated: false };
+  }
+};
+
+/**
+ * Fetch stored orders by customer phone number or conversation ID
+ */
+export const fetchOrdersByPhone = async (phone) => {
+  const cleanPhone = String(phone || "").replace(/\D/g, "");
+  const targetConvId = `conv_wa_${cleanPhone}`;
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const docs = await OrderModel.find({
+      $or: [
+        { customerPhone: cleanPhone },
+        { conversationId: targetConvId },
+        ...(phone ? [{ customerPhone: phone }] : []),
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+    return docs.map(normalizeMongoDoc);
+  }
+
+  if (!db.orders) db.orders = [];
+  return db.orders
+    .filter(
+      (o) =>
+        o.customerPhone === cleanPhone ||
+        o.conversationId === targetConvId ||
+        (phone && o.customerPhone === phone)
+    )
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+};
+
 

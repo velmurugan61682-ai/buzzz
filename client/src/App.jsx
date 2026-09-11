@@ -6700,6 +6700,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
               }
             });
           }
+
+          if ((data.type === "order_update" || data.type === "order:new" || data.type === "order:updated") && data.payload) {
+            window.dispatchEvent(new CustomEvent("buzzz_order_event", { detail: data.payload }));
+          }
         } catch (e) {
           console.error("Error parsing SSE event:", e);
         }
@@ -12521,6 +12525,8 @@ function ContextPanel({ conv, close }) {
   const { T, dk, deals, appts, convs, openContact, updateContact, addTask, bookAppointment, flash, log } = useApp();
   const [fetchedContact, setFetchedContact] = useState(null);
   const [loadingContact, setLoadingContact] = useState(false);
+  const [customerOrders, setCustomerOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
   const [tagIn, setTagIn] = useState("");
 
   if (!conv) return null;
@@ -12561,6 +12567,53 @@ function ContextPanel({ conv, close }) {
     channel: conv.channel,
     identities: [],
   };
+
+  const customerPhone = c.phone || conv.phone || "";
+
+  useEffect(() => {
+    if (!customerPhone) {
+      setCustomerOrders([]);
+      return;
+    }
+    let active = true;
+    setLoadingOrders(true);
+    const cleanPhone = String(customerPhone).replace(/\D/g, "");
+    fetch(`/api/orders?phone=${encodeURIComponent(cleanPhone)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && data && Array.isArray(data.orders)) {
+          setCustomerOrders(data.orders);
+        }
+      })
+      .catch((err) => console.warn("⚠️ Orders fetch warning:", err.message))
+      .finally(() => { if (active) setLoadingOrders(false); });
+
+    return () => { active = false; };
+  }, [conv.id, conv.phone, c.phone, customerPhone]);
+
+  useEffect(() => {
+    const handleOrderUpdate = (e) => {
+      const payload = e.detail;
+      const order = payload?.order || payload;
+      if (!order) return;
+      const cleanTargetPhone = String(customerPhone).replace(/\D/g, "");
+      const orderPhone = String(order.customerPhone || "").replace(/\D/g, "");
+      if (cleanTargetPhone && (orderPhone === cleanTargetPhone || order.conversationId === `conv_wa_${cleanTargetPhone}`)) {
+        setCustomerOrders((prev) => {
+          const extId = order.externalOrderId || order._id || order.orderId;
+          const idx = prev.findIndex((o) => (o.externalOrderId || o._id || o.orderId) === extId);
+          if (idx !== -1) {
+            const copy = [...prev];
+            copy[idx] = { ...copy[idx], ...order };
+            return copy;
+          }
+          return [order, ...prev];
+        });
+      }
+    };
+    window.addEventListener("buzzz_order_event", handleOrderUpdate);
+    return () => window.removeEventListener("buzzz_order_event", handleOrderUpdate);
+  }, [customerPhone]);
 
   const targetId = c?.id || (c?._id ? String(c._id) : null);
   const deal = targetId ? (deals || []).find((d) => d && d.contactId === targetId) : null;
@@ -12663,6 +12716,78 @@ function ContextPanel({ conv, close }) {
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+        </PanelSection>
+
+        {/* WHATSAPP ORDERS PANEL SECTION */}
+        <PanelSection title={`WhatsApp Orders${customerOrders.length ? ` (${customerOrders.length})` : ""}`} defaultOpen>
+          {loadingOrders ? (
+            <div className="text-[11px] text-zinc-400 py-2 flex items-center gap-2">
+              <span className="animate-spin">🌀</span> Fetching orders...
+            </div>
+          ) : customerOrders.length === 0 ? (
+            <div className="text-[11px] text-zinc-400 py-1">No order data available yet</div>
+          ) : (
+            <div className="space-y-2.5">
+              {customerOrders.map((ord, idx) => {
+                const statusLower = String(ord.status || "pending").toLowerCase();
+                const payStatusLower = String(ord.paymentStatus || "pending").toLowerCase();
+
+                const isPaid = payStatusLower === "paid" || payStatusLower === "success";
+                const isConfirmed = statusLower === "confirmed" || statusLower === "delivered" || statusLower === "shipped";
+
+                return (
+                  <div key={ord.id || ord._id || idx} className={`p-2.5 rounded-xl border ${T.border} ${T.softcard} space-y-1.5`}>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Brand id="gowhats" size={14} />
+                        <span className="text-[11px] font-bold truncate">#{ord.orderId || ord.externalOrderId}</span>
+                      </div>
+                      <span className="text-[11px] font-extrabold tabular-nums text-emerald-500">
+                        {ord.currency || "INR"} {ord.totalAmount}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold border ${
+                        isConfirmed
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : statusLower === "cancelled" || statusLower === "failed"
+                          ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                          : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                      }`}>
+                        {ord.status || "pending"}
+                      </span>
+
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-semibold border ${
+                        isPaid
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                      }`}>
+                        {ord.paymentStatus ? `Pay: ${ord.paymentStatus}` : "Unpaid"}
+                      </span>
+
+                      {ord.paymentMethod && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-md ${T.chip}`}>
+                          {ord.paymentMethod}
+                        </span>
+                      )}
+                    </div>
+
+                    {Array.isArray(ord.items) && ord.items.length > 0 && (
+                      <div className={`mt-1 pt-1.5 border-t text-[10px] space-y-0.5 ${T.border} ${T.faint}`}>
+                        {ord.items.map((item, itemIdx) => (
+                          <div key={itemIdx} className="flex items-center justify-between gap-2 truncate">
+                            <span className="truncate">• {item.name || item.title || "Product"}</span>
+                            <span className="shrink-0 tabular-nums font-medium">x{item.quantity || 1} ({ord.currency || "₹"}{item.price || item.totalPrice || 0})</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </PanelSection>
