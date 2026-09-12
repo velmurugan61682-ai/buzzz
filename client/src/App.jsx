@@ -12169,23 +12169,7 @@ function InboxView() {
   };
   const seenContactsInInbox = new Set();
   const list = convs.filter(matches).filter((c) => {
-    // BUG FIX: Use a channel-aware dedup key.
-    // Previously: c.phone.replace(/\D/g,"") stripped email addresses to ""
-    // making ALL Gmail conversations share the same key → only 1 visible.
-    let key;
-    if (c.contactId) {
-      // Prefer explicit contact record link
-      key = c.contactId;
-    } else if (c.phone && (c.channel === "gowhats" || c.channel === "whatsapp" || c.channel === "missed_call" || c.channel === "voice" || c.channel === "call")) {
-      // Phone-based channels: normalize to digits only
-      key = String(c.phone).replace(/\D/g, "") || c.id;
-    } else if (c.email) {
-      // Email-based channels: use the raw email as key
-      key = c.email.toLowerCase();
-    } else {
-      // Default: each conversation is its own unique entry (no dedup)
-      key = c.id;
-    }
+    let key = c.id;
     if (!key) key = c.id;
     if (seenContactsInInbox.has(key)) return false;
     seenContactsInInbox.add(key);
@@ -12335,6 +12319,28 @@ function Thread({ conv, showPanel, setShowPanel }) {
   useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [(conv.msgs || []).length, conv.id]);
   useEffect(() => { setSendCh(conv.channel); setMenu(null); }, [conv.id]);
 
+  useEffect(() => {
+    if (!conv?.id) return;
+    let active = true;
+    api.getMessages("ws_default", conv.id).then((res) => {
+      if (!active) return;
+      const rawMsgs = Array.isArray(res) ? res : (res?.data || res?.messages || []);
+      if (Array.isArray(rawMsgs) && rawMsgs.length > 0) {
+        const channelKey = resolveChannelKey(conv.platform, conv.channel);
+        const normMsgs = rawMsgs.map((m) => ({
+          id: m.id || m._id || `msg_${Date.now()}`,
+          from: (m.sender === "customer" || m.direction === "inbound" || m.sender?.kind === "customer") ? "customer" : "agent",
+          text: m.text || "",
+          time: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
+          at: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
+          channel: resolveChannelKey(m.platform, channelKey),
+        }));
+        setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, msgs: normMsgs, last: normMsgs[normMsgs.length - 1]?.text || x.last } : x));
+      }
+    }).catch((err) => console.warn("⚠️ Error fetching thread messages:", err));
+    return () => { active = false; };
+  }, [conv?.id]);
+
   const st = statusOf(conv);
   const pendingAp = (approvals || []).filter((a) => a && apState(a) === "Pending" && (a.contactId === conv.contactId || (contact?.name && a.to === contact.name)));
   const patchConv = (p, logMsg) => { setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, ...p } : x)); if (logMsg && contact?.name) log("You", logMsg, contact.name); };
@@ -12354,9 +12360,13 @@ function Thread({ conv, showPanel, setShowPanel }) {
   const sendPlain = () => {
     if (contact?.id) recordTouch(contact.id, sendCh);
     if (!text.trim()) return;
-    addMsg(note ? { from: "human", who: "Jordan Lee", text, note: true, channel: null } : { from: "human", who: "Jordan Lee", text });
+    const msgText = text;
+    addMsg(note ? { from: "human", who: "Jordan Lee", text: msgText, note: true, channel: null } : { from: "human", who: "Jordan Lee", text: msgText });
     if (!note) patchConv({ state: "Waiting", unread: 0 });
     log("You", note ? "Internal note added" : "Reply sent", contact?.name || "Customer");
+    if (!note) {
+      api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" }).catch((err) => console.warn("⚠️ Outbound send API error:", err));
+    }
     setText(""); setNote(false);
   };
   const sendAsAI = () => {
