@@ -6612,17 +6612,30 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
           });
 
           const convData = rawConvData.map((c) => {
-            const attachedMsgs = (Array.isArray(c.msgs) && c.msgs.length > 0)
+            let attachedMsgs = (Array.isArray(c.msgs) && c.msgs.length > 0)
               ? c.msgs
               : (msgsByConvId[c.id] || []);
-            const lastMsgItem = attachedMsgs.length > 0 ? attachedMsgs[attachedMsgs.length - 1] : null;
+            const lastText = c.last || c.lastMessage || "";
             const channelKey = resolveChannelKey(c.platform, c.channel);
+            if (attachedMsgs.length === 0 && lastText) {
+              attachedMsgs = [
+                {
+                  id: `msg_init_${c.id}`,
+                  from: "customer",
+                  text: lastText,
+                  time: c.updatedAt || new Date().toISOString(),
+                  at: c.updatedAt || new Date().toISOString(),
+                  channel: channelKey,
+                },
+              ];
+            }
+            const lastMsgItem = attachedMsgs.length > 0 ? attachedMsgs[attachedMsgs.length - 1] : null;
             return {
               ...c,
               channel: channelKey,
               msgs: attachedMsgs,
               unread: c.unread !== undefined ? c.unread : (c.unreadCount || 0),
-              last: c.last || c.lastMessage || (lastMsgItem ? lastMsgItem.text : ""),
+              last: lastText || (lastMsgItem ? lastMsgItem.text : ""),
             };
           });
 
@@ -12156,7 +12169,24 @@ function InboxView() {
   };
   const seenContactsInInbox = new Set();
   const list = convs.filter(matches).filter((c) => {
-    const key = c.contactId || (c.phone ? String(c.phone).replace(/\D/g, "") : c.id);
+    // BUG FIX: Use a channel-aware dedup key.
+    // Previously: c.phone.replace(/\D/g,"") stripped email addresses to ""
+    // making ALL Gmail conversations share the same key → only 1 visible.
+    let key;
+    if (c.contactId) {
+      // Prefer explicit contact record link
+      key = c.contactId;
+    } else if (c.phone && (c.channel === "gowhats" || c.channel === "whatsapp" || c.channel === "missed_call" || c.channel === "voice" || c.channel === "call")) {
+      // Phone-based channels: normalize to digits only
+      key = String(c.phone).replace(/\D/g, "") || c.id;
+    } else if (c.email) {
+      // Email-based channels: use the raw email as key
+      key = c.email.toLowerCase();
+    } else {
+      // Default: each conversation is its own unique entry (no dedup)
+      key = c.id;
+    }
+    if (!key) key = c.id;
     if (seenContactsInInbox.has(key)) return false;
     seenContactsInInbox.add(key);
     return true;
@@ -12541,6 +12571,10 @@ function ContextPanel({ conv, close }) {
 
   useEffect(() => {
     if (!conv) return;
+    // BUG 2 FIX: Reset stale contact immediately so switching convs never shows
+    // leftover data from a previously-viewed conversation.
+    setFetchedContact(null);
+
     const lookupKey = conv.contactId || conv.phone || conv.email || conv.id;
     if (!lookupKey) return;
 
@@ -12558,7 +12592,9 @@ function ContextPanel({ conv, close }) {
       .finally(() => { if (isMounted) setLoadingContact(false); });
 
     return () => { isMounted = false; };
-  }, [conv.id, conv.contactId, conv.phone, conv.email]);
+    // conv.id ALONE as the key — it always changes on conversation switch,
+    // regardless of whether phone/email/contactId happen to both be empty.
+  }, [conv.id]);
 
   const c = fetchedContact || localMatch || {
     name: conv.customerName || conv.name || "Customer",
@@ -12622,52 +12658,74 @@ function ContextPanel({ conv, close }) {
   const agent = conv.agent || "Kai · Support Agent";
 
   // Build unified list of linked identities/channels
+  // BUG 1 FIX: Normalize phone numbers and skip 'custom' type identities
+  // (which are internal routing values, not separate channels) to prevent
+  // duplicate WhatsApp / gowhats / Voice entries for the same phone number.
+  const normalizePhone = (val) => String(val || "").replace(/\D/g, "");
   const rawIdentities = [];
+
+  // Collect the primary phone/email values so we can skip duplicates from identities[]
+  const primaryPhoneNorm = normalizePhone(c.phone);
+  const primaryEmail = (c.email || "").trim().toLowerCase();
 
   // Add primary phone if present
   if (c.phone) {
-    rawIdentities.push({ type: "phone", label: "WhatsApp / Phone", value: c.phone, brandId: "whatsapp", color: "#25D366" });
+    rawIdentities.push({ type: "phone", label: "WhatsApp / Phone", value: c.phone, brandId: "whatsapp", color: "#25D366", _normKey: `whatsapp_${primaryPhoneNorm}` });
   }
 
   // Add primary email if present
   if (c.email) {
-    rawIdentities.push({ type: "email", label: "Gmail / Email", value: c.email, brandId: "google", color: "#EA4335" });
+    rawIdentities.push({ type: "email", label: "Gmail / Email", value: c.email, brandId: "google", color: "#EA4335", _normKey: `google_${primaryEmail}` });
   }
 
-  // Add all identities from c.identities
+  // Add identities from c.identities — skipping:
+  //  • 'custom' type (internal routing handles, not user-facing channels)
+  //  • any phone/email that is the same number as the primary (different formatting)
   if (Array.isArray(c.identities)) {
     c.identities.forEach((idObj) => {
       if (!idObj || !idObj.value) return;
       const type = (idObj.type || "").toLowerCase();
       const val = String(idObj.value);
+
+      // Skip internal 'custom' entries — they are stored for routing only
+      if (type === "custom") return;
+
       if (type === "phone" || type === "whatsapp") {
-        rawIdentities.push({ type: "phone", label: "WhatsApp", value: val, brandId: "whatsapp", color: "#25D366" });
+        // Skip if it normalizes to the same phone as the primary
+        const normVal = normalizePhone(val);
+        if (primaryPhoneNorm && normVal === primaryPhoneNorm) return;
+        rawIdentities.push({ type: "phone", label: "WhatsApp", value: val, brandId: "whatsapp", color: "#25D366", _normKey: `whatsapp_${normVal}` });
       } else if (type === "email" || type === "gmail") {
-        rawIdentities.push({ type: "email", label: "Gmail", value: val, brandId: "google", color: "#EA4335" });
+        const normVal = val.trim().toLowerCase();
+        if (primaryEmail && normVal === primaryEmail) return;
+        rawIdentities.push({ type: "email", label: "Gmail", value: val, brandId: "google", color: "#EA4335", _normKey: `google_${normVal}` });
       } else if (type === "instagram" || type === "instaxbot") {
-        rawIdentities.push({ type: "instagram", label: "Instagram", value: val.startsWith("@") ? val : `@${val}`, brandId: "instagram", color: "#E1306C" });
+        rawIdentities.push({ type: "instagram", label: "Instagram", value: val.startsWith("@") ? val : `@${val}`, brandId: "instagram", color: "#E1306C", _normKey: `instagram_${val.toLowerCase()}` });
       } else if (type === "youtube" || type === "channelbot") {
-        rawIdentities.push({ type: "youtube", label: "YouTube", value: val.startsWith("@") ? val : `@${val}`, brandId: "youtube", color: "#FF0000" });
-      } else {
-        rawIdentities.push({ type: "custom", label: "Voice / Direct", value: val, brandId: "gowhats", color: "#6366F1" });
+        rawIdentities.push({ type: "youtube", label: "YouTube", value: val.startsWith("@") ? val : `@${val}`, brandId: "youtube", color: "#FF0000", _normKey: `youtube_${val.toLowerCase()}` });
       }
+      // Intentionally no else-branch — unknown types are silently dropped
     });
   }
 
-  // If conversation channel is present and not yet in rawIdentities, add it
-  if (conv.channel && !rawIdentities.some((i) => i.brandId === (conv.channel === "email" ? "google" : conv.channel.toLowerCase()))) {
+  // If conversation channel is not yet represented in rawIdentities, add it
+  if (conv.channel) {
     const chLower = conv.channel.toLowerCase();
     const brandId = chLower === "email" ? "google" : chLower;
-    const label = chLower === "email" ? "Gmail" : chLower === "whatsapp" ? "WhatsApp" : chLower === "instagram" ? "Instagram" : chLower === "youtube" ? "YouTube" : conv.channel;
-    const val = conv.phone || conv.email || conv.customerName || "Connected";
-    rawIdentities.push({ type: chLower, label, value: val, brandId, color: "#6366F1" });
+    const alreadyCovered = rawIdentities.some((i) => i.brandId === brandId);
+    if (!alreadyCovered) {
+      const label = chLower === "email" ? "Gmail" : chLower === "whatsapp" ? "WhatsApp" : chLower === "instagram" ? "Instagram" : chLower === "youtube" ? "YouTube" : conv.channel;
+      const val = conv.phone || conv.email || conv.customerName || "Connected";
+      const normKey = brandId === "whatsapp" ? `whatsapp_${normalizePhone(val)}` : `${brandId}_${val.toLowerCase()}`;
+      rawIdentities.push({ type: chLower, label, value: val, brandId, color: "#6366F1", _normKey: normKey });
+    }
   }
 
-  // Deduplicate identities by brandId + value
+  // Deduplicate using normalized _normKey (handles +91 vs 91 phone variants)
   const seenKeys = new Set();
   const linkedIdentities = [];
   for (const item of rawIdentities) {
-    const key = `${item.brandId}_${item.value}`.toLowerCase();
+    const key = item._normKey || `${item.brandId}_${item.value}`.toLowerCase();
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
       linkedIdentities.push(item);

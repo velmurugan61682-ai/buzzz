@@ -33,7 +33,7 @@ import {
   fetchOrdersByPhone,
 } from "../data/db.js";
 
-import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
+import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
 import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus } from "../services/channelbot.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
 import { fetchInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast } from "../services/instaxbot.js";
@@ -622,15 +622,7 @@ apiRouter.post("/webhooks/channelbot", async (req, res) => {
   }
 });
 
-// Legacy / alias route
-apiRouter.post("/webhooks/gowhats", async (req, res) => {
-  res.status(200).json({ status: "received" });
-  try {
-    await processIncomingWebhook(req.body || {}, "channelbot");
-  } catch (err) {
-    console.error("❌ Error processing incoming gowhats.in webhook:", err.message);
-  }
-});
+
 
 // Simulator endpoint to test incoming channelbot.in messages landing directly in Inbox
 apiRouter.post("/channelbot/simulate-incoming", async (req, res) => {
@@ -1879,6 +1871,45 @@ apiRouter.post("/integrations/gowhats/sync-contacts", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// POST /api/integrations/gowhats/sync-messages & POST /api/gowhats/sync-messages
+const handleGoWhatsSyncMessages = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const result = await syncGoWhatsMessages({ workspaceId: wsId, broadcastFn: broadcastSseEvent });
+    res.json({
+      success: true,
+      totalFetched: result.totalFetched,
+      syncedCount: result.syncedCount,
+      dedupedCount: result.dedupedCount,
+      messages: result.messages,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.post("/integrations/gowhats/sync-messages", handleGoWhatsSyncMessages);
+apiRouter.post("/gowhats/sync-messages", handleGoWhatsSyncMessages);
+
+// DELETE /api/integrations/gowhats/messages & POST /api/gowhats/clear-messages
+const handleGoWhatsClearMessages = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const result = await clearGoWhatsMessages({ workspaceId: wsId });
+    res.json({
+      success: true,
+      message: `Successfully cleared ${result.deletedCount} old WhatsApp messages. Cutoff set to ${result.clearedAt}.`,
+      ...result,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.delete("/integrations/gowhats/messages", handleGoWhatsClearMessages);
+apiRouter.delete("/gowhats/messages", handleGoWhatsClearMessages);
+apiRouter.post("/gowhats/clear-messages", handleGoWhatsClearMessages);
 
 // POST /api/integrations/gowhats/webhook & /api/webhooks/gowhats
 const handleGoWhatsWebhook = async (req, res) => {

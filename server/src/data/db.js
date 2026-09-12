@@ -139,6 +139,7 @@ const GoogleAccountSchema = new mongoose.Schema(
     accessToken: { type: String, required: true },
     refreshToken: { type: String },
     expiresAt: { type: Date, required: true },
+    needsReauth: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -277,6 +278,14 @@ const OrderSchema = new mongoose.Schema(
 OrderSchema.index({ platform: 1, externalOrderId: 1 }, { unique: true });
 OrderSchema.index({ customerPhone: 1, createdAt: -1 });
 
+const SystemSettingSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true, unique: true, index: true },
+    value: { type: mongoose.Schema.Types.Mixed, required: true },
+  },
+  { timestamps: true }
+);
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
 export const UnifiedMessageModel = mongoose.models.UnifiedMessage || mongoose.model("UnifiedMessage", UnifiedMessageSchema);
@@ -287,6 +296,30 @@ export const ContactModel = mongoose.models.Contact || mongoose.model("Contact",
 export const MissedCallModel = mongoose.models.MissedCall || mongoose.model("MissedCall", MissedCallSchema);
 export const UserModel = mongoose.models.User || mongoose.model("User", UserSchema);
 export const OrderModel = mongoose.models.Order || mongoose.model("Order", OrderSchema);
+export const SystemSettingModel = mongoose.models.SystemSetting || mongoose.model("SystemSetting", SystemSettingSchema);
+
+export const getSystemSetting = async (key, defaultValue = null) => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const doc = await SystemSettingModel.findOne({ key }).lean();
+    return doc ? doc.value : defaultValue;
+  }
+  if (!db.systemSettings) db.systemSettings = {};
+  return db.systemSettings[key] !== undefined ? db.systemSettings[key] : defaultValue;
+};
+
+export const setSystemSetting = async (key, value) => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const doc = await SystemSettingModel.findOneAndUpdate(
+      { key },
+      { $set: { key, value } },
+      { upsert: true, new: true }
+    ).lean();
+    return doc ? doc.value : value;
+  }
+  if (!db.systemSettings) db.systemSettings = {};
+  db.systemSettings[key] = value;
+  return value;
+};
 
 
 export const findOrCreateGoogleUser = async ({ googleId, email, name, picture }) => {
@@ -586,7 +619,37 @@ export const upsertConversation = async (data) => {
 
 export const fetchMessagesByConversationId = async (conversationId) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    return await MessageModel.find({ conversationId }).sort({ createdAt: 1 }).lean();
+    const legacyMsgs = await MessageModel.find({ conversationId }).sort({ createdAt: 1 }).lean();
+    if (legacyMsgs && legacyMsgs.length > 0) {
+      return legacyMsgs;
+    }
+    const unifiedMsgs = await UnifiedMessageModel.find({ conversationId }).sort({ receivedAt: 1, createdAt: 1 }).lean();
+    if (unifiedMsgs && unifiedMsgs.length > 0) {
+      return unifiedMsgs.map((m) => ({
+        id: m.id || m._id,
+        conversationId: m.conversationId,
+        sender: typeof m.sender === "object" ? (m.sender?.kind || (m.direction === "inbound" ? "customer" : "agent")) : (m.sender || (m.direction === "inbound" ? "customer" : "agent")),
+        text: m.text || "",
+        timestamp: m.receivedAt || m.createdAt || new Date().toISOString(),
+        status: m.status || "received",
+        platform: m.platform,
+      }));
+    }
+    const conv = await ConversationModel.findOne({ id: conversationId }).lean();
+    if (conv && conv.lastMessage) {
+      return [
+        {
+          id: `msg_conv_${conv.id}`,
+          conversationId: conv.id,
+          sender: "customer",
+          text: conv.lastMessage,
+          timestamp: conv.updatedAt || new Date().toISOString(),
+          status: "received",
+          platform: conv.platform || (conv.channel || "").toLowerCase(),
+        },
+      ];
+    }
+    return [];
   }
   return db.messages[conversationId] || [];
 };
@@ -674,10 +737,11 @@ export const deleteLinkedInAccount = async (workspaceId = "ws_default") => {
 };
 
 export const saveGoogleAccount = async (data) => {
+  const { _id, ...cleanData } = data || {};
   const payload = {
-    ...data,
-    workspaceId: data.workspaceId || "ws_default",
-    expiresAt: data.expiresAt ? new Date(data.expiresAt) : new Date(Date.now() + 3600000),
+    ...cleanData,
+    workspaceId: cleanData.workspaceId || "ws_default",
+    expiresAt: cleanData.expiresAt ? new Date(cleanData.expiresAt) : new Date(Date.now() + 3600000),
     updatedAt: new Date(),
   };
 
@@ -806,6 +870,37 @@ export const fetchContactById = async (id) => {
   const cleanEmail = cleanStr.toLowerCase();
 
   if (isDbConnected && mongoose.connection.readyState === 1) {
+    if (cleanStr.startsWith("conv_")) {
+      const conv = await ConversationModel.findOne({ id: cleanStr }).lean();
+      if (conv) {
+        const handleOrPhone = conv.phone || conv.customerName || cleanStr.replace(/^conv_[a-z0-9]+_/, "");
+        const cleanHandlePhone = String(handleOrPhone).replace(/\D/g, "");
+        const orConds = [
+          { name: conv.customerName },
+          { "identities.value": handleOrPhone },
+        ];
+        if (cleanHandlePhone && cleanHandlePhone.length >= 7) {
+          orConds.push({ phone: cleanHandlePhone });
+          orConds.push({ "identities.value": cleanHandlePhone });
+        }
+        const contactByConv = await ContactModel.findOne({ $or: orConds }).lean();
+        if (contactByConv) return normalizeMongoDoc(contactByConv);
+
+        return {
+          id: `c_${conv.id}`,
+          workspaceId: conv.workspaceId || "ws_default",
+          name: conv.customerName || handleOrPhone,
+          phone: conv.phone || "",
+          channels: [conv.channel?.toLowerCase() || "whatsapp"],
+          stage: "Lead",
+          status: "Active",
+          source: conv.channel || "Unified Inbox",
+          engagement: 75,
+          score: 60,
+        };
+      }
+    }
+
     const orConditions = [
       { id: cleanStr },
       ...(mongoose.isValidObjectId(cleanStr) ? [{ _id: cleanStr }] : []),
@@ -818,7 +913,7 @@ export const fetchContactById = async (id) => {
     }
 
     const doc = await ContactModel.findOne({ $or: orConditions }).lean();
-    return normalizeMongoDoc(doc);
+    if (doc) return normalizeMongoDoc(doc);
   }
 
   const found = db.contacts.find(
@@ -1027,12 +1122,18 @@ export const resolveOrCreateContact = async ({
   }
   if (Array.isArray(identities) && identities.length > 0) {
     for (const idObj of identities) {
-      if (idObj && idObj.value) {
-        const rawVal = String(idObj.value).trim();
-        const esc = rawVal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        searchConditions.push({ "identities.value": rawVal });
-        searchConditions.push({ "identities.value": new RegExp(`^${esc}$`, "i") });
-      }
+      // BUG 2 FIX: Skip 'custom' type identities as search keys.
+      // 'custom' entries are internal routing duplicates (e.g. phone stored
+      // again, or YouTube handle stored twice). Using them as lookup keys
+      // caused cross-channel contact merges (YouTube lead resolving to
+      // a WhatsApp contact that happened to also store its phone as 'custom').
+      if (!idObj || !idObj.value) continue;
+      const idType = String(idObj.type || "").toLowerCase();
+      if (idType === "custom") continue;
+      const rawVal = String(idObj.value).trim();
+      const esc = rawVal.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
+      searchConditions.push({ "identities.value": rawVal });
+      searchConditions.push({ "identities.value": new RegExp(`^${esc}$`, "i") });
     }
   }
 
@@ -1069,20 +1170,38 @@ export const resolveOrCreateContact = async ({
     }
 
     if (!existingContact.identities) existingContact.identities = [];
-    const currentValues = new Set(existingContact.identities.map((i) => i.value));
+    // BUG 1 FIX: Build normalized value set for dedup — treats phone numbers
+    // with different formatting (+91... vs 91...) as the same value.
+    const existingNormValues = new Set(
+      existingContact.identities.map((i) => {
+        const v = String(i.value || "");
+        // Normalize phone-like values by stripping non-digits
+        return (i.type === "phone" || i.type === "whatsapp") ? v.replace(/\D/g, "") : v.toLowerCase();
+      })
+    );
+    const isPhoneType = (t) => t === "phone" || t === "whatsapp";
 
-    if (cleanPhone && !currentValues.has(cleanPhone)) {
+    if (cleanPhone && !existingNormValues.has(cleanPhone)) {
       existingContact.identities.push({ type: "phone", value: cleanPhone });
       updated = true;
     }
-    if (cleanEmail && !currentValues.has(cleanEmail)) {
+    if (cleanEmail && !existingNormValues.has(cleanEmail)) {
       existingContact.identities.push({ type: "email", value: cleanEmail });
       updated = true;
     }
     if (Array.isArray(identities)) {
       for (const idObj of identities) {
-        if (idObj && idObj.value && !currentValues.has(idObj.value)) {
-          existingContact.identities.push({ type: idObj.type || "custom", value: idObj.value });
+        if (!idObj || !idObj.value) continue;
+        const idType = String(idObj.type || "").toLowerCase();
+        // Skip 'custom' identities — they are internal routing duplicates
+        // and must not be stored as linked channel entries on the contact.
+        if (idType === "custom") continue;
+        const normVal = isPhoneType(idType)
+          ? String(idObj.value).replace(/\D/g, "")
+          : String(idObj.value).toLowerCase();
+        if (!existingNormValues.has(normVal)) {
+          existingContact.identities.push({ type: idType || "custom", value: idObj.value });
+          existingNormValues.add(normVal);
           updated = true;
         }
       }
@@ -1108,9 +1227,18 @@ export const resolveOrCreateContact = async ({
   if (cleanPhone) initialIdentities.push({ type: "phone", value: cleanPhone });
   if (cleanEmail) initialIdentities.push({ type: "email", value: cleanEmail });
   if (Array.isArray(identities)) {
+    const initNormVals = new Set(initialIdentities.map((i) => String(i.value).replace(/\D/g, "") || String(i.value).toLowerCase()));
     for (const idObj of identities) {
-      if (idObj && idObj.value && !initialIdentities.some((i) => i.value === idObj.value)) {
-        initialIdentities.push({ type: idObj.type || "custom", value: idObj.value });
+      if (!idObj || !idObj.value) continue;
+      const idType = String(idObj.type || "").toLowerCase();
+      // Skip 'custom' typed identities — do not store them as linked channel entries
+      if (idType === "custom") continue;
+      const normVal = (idType === "phone" || idType === "whatsapp")
+        ? String(idObj.value).replace(/\D/g, "")
+        : String(idObj.value).toLowerCase();
+      if (!initNormVals.has(normVal)) {
+        initialIdentities.push({ type: idType, value: idObj.value });
+        initNormVals.add(normVal);
       }
     }
   }

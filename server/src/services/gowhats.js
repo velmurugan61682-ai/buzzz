@@ -6,7 +6,8 @@
  */
 
 import crypto from "crypto";
-import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveGoWhatsOrder } from "../data/db.js";
+import mongoose from "mongoose";
+import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveGoWhatsOrder, UnifiedMessageModel, MessageModel, ConversationModel, db, getSystemSetting, setSystemSetting } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 export const getGoWhatsMessageExtId = (msg) => {
@@ -157,32 +158,45 @@ export const sendWhatsAppMessage = async ({ to, text, overrideKey }) => {
 
 /**
  * 3. Scope: Read Messages
- * Queries messages from GoWhats for a given phone number.
+ * Queries messages from GoWhats API: GET /api/v1/messages
  */
-export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey }) => {
+export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, messages: [] };
 
   const baseUrl = getBaseUrl();
-  const phone = phoneNumber || process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
-  const url = `${baseUrl}/messages?phoneNumber=${phone}`;
+  const phone = phoneNumber !== undefined ? phoneNumber : (process.env.WHATSAPP_PHONE_NUMBER || "919047484484");
+  const queryParam = phone ? `?phoneNumber=${encodeURIComponent(phone)}` : "";
+  const primaryUrl = `${baseUrl}/messages${queryParam}`;
 
-  try {
-    const response = await fetch(url, {
+  const fetchUrl = async (targetUrl) => {
+    const response = await fetch(targetUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
     });
-
     const data = await response.json().catch(() => ({}));
-    const rawList = data.data || data.messages || [];
+    const rawList = data.data?.messages || data.messages || data.data?.data || (Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []));
+    return { ok: response.ok, rawList: Array.isArray(rawList) ? rawList : [], data };
+  };
+
+  try {
+    let result = await fetchUrl(primaryUrl);
+
+    if ((!result.ok || result.rawList.length === 0) && queryParam) {
+      const fallbackUrl = `${baseUrl}/messages`;
+      const fallbackResult = await fetchUrl(fallbackUrl);
+      if (fallbackResult.ok && fallbackResult.rawList.length > 0) {
+        result = fallbackResult;
+      }
+    }
 
     return {
-      success: response.ok,
-      messages: Array.isArray(rawList) ? rawList : [],
-      raw: data,
+      success: result.ok,
+      messages: result.rawList,
+      raw: result.data,
     };
   } catch (err) {
     return { success: false, messages: [], error: err.message };
@@ -370,6 +384,202 @@ export const extractCustomerPhone = (msg) => {
   return bizPhone || "919047484484";
 };
 
+let gowhatsClearedAtTimestamp = null;
+let clearedExternalMsgIds = new Set();
+
+export const clearGoWhatsMessages = async ({ workspaceId = "ws_default" } = {}) => {
+  gowhatsClearedAtTimestamp = new Date().toISOString();
+  await setSystemSetting("gowhatsClearedAt", gowhatsClearedAtTimestamp);
+
+  const filter = {
+    $or: [{ platform: "whatsapp" }, { integrationId: "gowhats" }],
+  };
+
+  const remote = await fetchGoWhatsMessages();
+  if (remote.success && Array.isArray(remote.messages)) {
+    remote.messages.forEach((m) => {
+      const extId = getGoWhatsMessageExtId(m);
+      if (extId) clearedExternalMsgIds.add(extId);
+    });
+  }
+
+  let deletedCount = 0;
+  if (mongoose.connection.readyState === 1) {
+    const existing = await UnifiedMessageModel.find(filter).lean();
+    existing.forEach((m) => {
+      if (m.externalMessageId) clearedExternalMsgIds.add(m.externalMessageId);
+      if (m.id) clearedExternalMsgIds.add(m.id);
+    });
+
+    const waConvs = await ConversationModel.find({ channel: { $in: ["WhatsApp", "whatsapp", "gowhats"] } }).lean();
+    const waConvIds = waConvs.map((c) => c.id);
+
+    const resMsg = await UnifiedMessageModel.deleteMany(filter);
+    deletedCount = resMsg.deletedCount || 0;
+
+    if (waConvIds.length > 0) {
+      await MessageModel.deleteMany({ conversationId: { $in: waConvIds } });
+    }
+    await ConversationModel.deleteMany({ channel: { $in: ["WhatsApp", "whatsapp", "gowhats"] } });
+  } else {
+    const initialLen = db.unifiedMessages.length;
+    db.unifiedMessages.forEach((m) => {
+      if (m.platform === "whatsapp" || m.integrationId === "gowhats") {
+        if (m.externalMessageId) clearedExternalMsgIds.add(m.externalMessageId);
+        if (m.id) clearedExternalMsgIds.add(m.id);
+      }
+    });
+    db.unifiedMessages = db.unifiedMessages.filter((m) => m.platform !== "whatsapp" && m.integrationId !== "gowhats");
+    deletedCount = initialLen - db.unifiedMessages.length;
+
+    const waConvIds = db.conversations.filter((c) => c.channel === "WhatsApp" || c.channel === "whatsapp" || c.channel === "gowhats").map((c) => c.id);
+    for (const cid of waConvIds) {
+      delete db.messages[cid];
+    }
+    db.conversations = db.conversations.filter((c) => c.channel !== "WhatsApp" && c.channel !== "whatsapp" && c.channel !== "gowhats");
+  }
+
+  const idsArray = Array.from(clearedExternalMsgIds);
+  await setSystemSetting("gowhatsClearedMsgIds", idsArray);
+
+  console.log(`🧹 [GOWHATS CLEAR] Deleted ${deletedCount} WhatsApp messages. Persistent cutoff set to ${gowhatsClearedAtTimestamp} with ${idsArray.length} cleared IDs saved to DB.`);
+
+  return {
+    success: true,
+    deletedCount,
+    clearedAt: gowhatsClearedAtTimestamp,
+    clearedIdCount: idsArray.length,
+  };
+};
+
+export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", overrideKey, broadcastFn } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, syncedCount: 0, error: "No GoWhats API key configured" };
+
+  if (!gowhatsClearedAtTimestamp) {
+    gowhatsClearedAtTimestamp = await getSystemSetting("gowhatsClearedAt", null);
+  }
+
+  if (clearedExternalMsgIds.size === 0) {
+    const savedIds = await getSystemSetting("gowhatsClearedMsgIds", []);
+    if (Array.isArray(savedIds)) {
+      savedIds.forEach((id) => clearedExternalMsgIds.add(id));
+    }
+  }
+
+  const res = await fetchGoWhatsMessages({ overrideKey: apiKey });
+  if (!res.success || !Array.isArray(res.messages)) {
+    return { success: res.success, syncedCount: 0, messages: [], error: res.error || "Failed to fetch GoWhats messages" };
+  }
+
+  let newCount = 0;
+  let dedupedCount = 0;
+  let skippedHistoricalCount = 0;
+  const processedMsgs = [];
+
+  for (const msg of res.messages) {
+    const extId = getGoWhatsMessageExtId(msg);
+    if (clearedExternalMsgIds.has(extId)) {
+      skippedHistoricalCount++;
+      continue;
+    }
+    const rawTimestamp = msg.timestamp || msg.createdAt || msg.created_at || msg.date || msg.time;
+    if (gowhatsClearedAtTimestamp) {
+      if (!rawTimestamp || new Date(rawTimestamp) <= new Date(gowhatsClearedAtTimestamp)) {
+        clearedExternalMsgIds.add(extId);
+        skippedHistoricalCount++;
+        continue;
+      }
+    }
+
+    const customerPhone = extractCustomerPhone(msg);
+    const fromPhone = String(msg.from || msg.sender || msg.phone || "").replace(/\D/g, "");
+    const isOutbound = msg.sentFromWABA === true || msg.status === "sent" || fromPhone === "804376366097834" || fromPhone.length > 13;
+
+    const textBody = msg.text || msg.message || msg.body || "New WhatsApp message";
+    const msgTimestamp = rawTimestamp || new Date().toISOString();
+
+    const contact = await resolveOrCreateContact({
+      workspaceId,
+      name: msg.sender_name || msg.name || `WhatsApp User (+${customerPhone})`,
+      phone: customerPhone,
+      identities: [
+        { type: "phone", value: customerPhone },
+        { type: "custom", value: customerPhone },
+      ],
+      source: "GoWhats WhatsApp Auto-Sync",
+      channel: "whatsapp",
+    });
+
+    const convId = `conv_wa_${customerPhone}`;
+    const convDoc = {
+      id: convId,
+      workspaceId,
+      customerName: contact?.name || `+${customerPhone}`,
+      channel: "WhatsApp",
+      phone: customerPhone,
+      unreadCount: isOutbound ? 0 : 1,
+      lastMessage: textBody,
+      updatedAt: msgTimestamp,
+    };
+    const conv = await upsertConversation(convDoc);
+
+    const sender = isOutbound
+      ? { name: "BUZZZ Agent", handle: "agent", kind: "agent" }
+      : {
+          name: contact?.name || `+${customerPhone}`,
+          handle: customerPhone,
+          contactId: contact?.id || null,
+          kind: "customer",
+        };
+
+    const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+      id: `msg_${extId}`,
+      workspaceId,
+      conversationId: conv.id,
+      integrationId: "gowhats",
+      platform: "whatsapp",
+      externalMessageId: extId,
+      sender,
+      direction: isOutbound ? "outbound" : "inbound",
+      text: textBody,
+      status: isOutbound ? "sent" : "received",
+      receivedAt: msgTimestamp,
+    });
+
+    processedMsgs.push(msgDoc);
+
+    if (isNew) {
+      newCount++;
+      if (typeof broadcastFn === "function") {
+        broadcastFn("new_message", {
+          message: msgDoc,
+          conversation: conv,
+          platform: "whatsapp",
+          platformMeta: PLATFORM_META.whatsapp,
+        });
+        broadcastFn("message:new", { conversation: conv, message: msgDoc });
+      }
+    } else {
+      dedupedCount++;
+    }
+  }
+
+  if (newCount > 0) {
+    console.log(`💬 [GOWHATS POLL CYCLE] New messages ingested: ${newCount} | Skipped historical: ${skippedHistoricalCount}`);
+  }
+
+  return {
+    success: true,
+    totalFetched: res.messages.length,
+    newCount,
+    dedupedCount,
+    skippedHistoricalCount,
+    syncedCount: newCount,
+    messages: processedMsgs,
+  };
+};
+
 let isGoWhatsSyncRunning = false;
 
 export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
@@ -379,86 +589,7 @@ export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
     isGoWhatsSyncRunning = true;
     try {
       if (!isGoWhatsConfigured()) return;
-      const res = await fetchGoWhatsMessages({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
-      if (res.success && Array.isArray(res.messages)) {
-        let newCount = 0;
-        let dedupedCount = 0;
-        console.log(`📡 [GOWHATS POLL CYCLE] Fetched ${res.messages.length} messages from GoWhats API.`);
-
-        for (const msg of res.messages) {
-          const customerPhone = extractCustomerPhone(msg);
-          const fromPhone = String(msg.from || "").replace(/\D/g, "");
-          const isOutbound = msg.sentFromWABA === true || msg.status === "sent" || fromPhone === "804376366097834" || fromPhone.length > 13;
-
-          const textBody = msg.text || msg.message || msg.body || "New WhatsApp message";
-          const extId = getGoWhatsMessageExtId(msg);
-          const msgTimestamp = msg.timestamp || msg.createdAt || new Date().toISOString();
-
-          const contact = await resolveOrCreateContact({
-            workspaceId: "ws_default",
-            name: msg.sender_name || msg.name || `WhatsApp User (+${customerPhone})`,
-            phone: customerPhone,
-            identities: [
-              { type: "phone", value: customerPhone },
-              { type: "custom", value: customerPhone },
-            ],
-            source: "GoWhats WhatsApp Auto-Sync",
-            channel: "whatsapp",
-          });
-
-          const convId = `conv_wa_${customerPhone}`;
-          const convDoc = {
-            id: convId,
-            workspaceId: "ws_default",
-            customerName: contact?.name || `+${customerPhone}`,
-            channel: "WhatsApp",
-            phone: customerPhone,
-            unreadCount: isOutbound ? 0 : 1,
-            lastMessage: textBody,
-            updatedAt: msgTimestamp,
-          };
-          const conv = await upsertConversation(convDoc);
-
-          const sender = isOutbound
-            ? { name: "BUZZZ Agent", handle: "agent", kind: "agent" }
-            : {
-                name: contact?.name || `+${customerPhone}`,
-                handle: customerPhone,
-                contactId: contact?.id || null,
-                kind: "customer",
-              };
-
-          const { doc: msgDoc, isNew } = await saveUnifiedMessage({
-            id: `msg_${extId}`,
-            workspaceId: "ws_default",
-            conversationId: conv.id,
-            integrationId: "gowhats",
-            platform: "whatsapp",
-            externalMessageId: extId,
-            sender,
-            direction: isOutbound ? "outbound" : "inbound",
-            text: textBody,
-            status: isOutbound ? "sent" : "received",
-            receivedAt: msgTimestamp,
-          });
-
-          if (isNew) {
-            newCount++;
-            if (typeof broadcastFn === "function") {
-              broadcastFn("new_message", {
-                message: msgDoc,
-                conversation: conv,
-                platform: "whatsapp",
-                platformMeta: PLATFORM_META.whatsapp,
-              });
-              broadcastFn("message:new", { conversation: conv, message: msgDoc });
-            }
-          } else {
-            dedupedCount++;
-          }
-        }
-        console.log(`💬 [GOWHATS POLL CYCLE RESULT] Total fetched: ${res.messages.length} | Newly inserted (isNew: true): ${newCount} | Deduped (isNew: false): ${dedupedCount}`);
-      }
+      await syncGoWhatsMessages({ workspaceId: "ws_default", broadcastFn });
 
       // Sync GoWhats Orders on schedule
       const resOrders = await fetchGoWhatsOrders({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });

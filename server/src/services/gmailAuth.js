@@ -94,6 +94,10 @@ export async function getValidGoogleAccount(workspaceId = "ws_default") {
     return null;
   }
 
+  if (account.needsReauth) {
+    return { ...account, isExpired: true, needsReauth: true };
+  }
+
   const expiresTime = new Date(account.expiresAt).getTime();
   const bufferMs = 5 * 60 * 1000; // 5 minute safety buffer
 
@@ -103,7 +107,10 @@ export async function getValidGoogleAccount(workspaceId = "ws_default") {
         return await refreshGoogleAccessToken(account);
       } catch (err) {
         console.warn(`⚠️ Failed auto-refresh for ${account.email}: ${sanitizeMessage(err.message)}`);
-        return { ...account, isExpired: true };
+        if (err.message.includes("invalid_grant") || err.message.includes("expired or revoked")) {
+          await saveGoogleAccount({ ...account, needsReauth: true });
+        }
+        return { ...account, isExpired: true, needsReauth: true };
       }
     } else {
       return { ...account, isExpired: true };
@@ -202,11 +209,11 @@ export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn 
     };
   }
 
-  if (validAccount.isExpired) {
+  if (validAccount.isExpired || validAccount.needsReauth) {
     return {
       connected: false,
       expired: true,
-      reason: "Google access token expired and auto-refresh failed",
+      reason: "Google access token expired or revoked; re-authentication required",
     };
   }
 
@@ -392,7 +399,7 @@ export async function fetchGooglePeopleContacts(workspaceId = "ws_default") {
     };
   }
 
-  if (validAccount.isExpired) {
+  if (validAccount.isExpired || validAccount.needsReauth) {
     return {
       connected: false,
       error: "token_expired",
