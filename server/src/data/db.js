@@ -620,21 +620,48 @@ export const upsertConversation = async (data) => {
 export const fetchMessagesByConversationId = async (conversationId) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const legacyMsgs = await MessageModel.find({ conversationId }).sort({ createdAt: 1 }).lean();
-    if (legacyMsgs && legacyMsgs.length > 0) {
-      return legacyMsgs;
-    }
     const unifiedMsgs = await UnifiedMessageModel.find({ conversationId }).sort({ receivedAt: 1, createdAt: 1 }).lean();
-    if (unifiedMsgs && unifiedMsgs.length > 0) {
-      return unifiedMsgs.map((m) => ({
-        id: m.id || m._id,
-        conversationId: m.conversationId,
-        sender: typeof m.sender === "object" ? (m.sender?.kind || (m.direction === "inbound" ? "customer" : "agent")) : (m.sender || (m.direction === "inbound" ? "customer" : "agent")),
-        text: m.text || "",
-        timestamp: m.receivedAt || m.createdAt || new Date().toISOString(),
-        status: m.status || "received",
-        platform: m.platform,
-      }));
+
+    const normalizedUnified = (unifiedMsgs || []).map((m) => ({
+      id: m.id || String(m._id),
+      conversationId: m.conversationId,
+      sender: typeof m.sender === "object" ? (m.sender?.kind || (m.direction === "inbound" ? "customer" : "agent")) : (m.sender || (m.direction === "inbound" ? "customer" : "agent")),
+      text: m.text || "",
+      timestamp: m.receivedAt || m.createdAt || new Date().toISOString(),
+      status: m.status || "received",
+      platform: m.platform,
+      externalMessageId: m.externalMessageId,
+    }));
+
+    const normalizedLegacy = (legacyMsgs || []).map((m) => ({
+      id: m.id || String(m._id),
+      conversationId: m.conversationId,
+      sender: m.sender || "customer",
+      text: m.text || "",
+      timestamp: m.timestamp || m.createdAt || new Date().toISOString(),
+      status: m.status || "received",
+      platform: m.platform || "whatsapp",
+      gowhatsMessageId: m.gowhatsMessageId,
+      externalMessageId: m.gowhatsMessageId || m.id,
+    }));
+
+    // Deduplicate by externalMessageId / gowhatsMessageId / id / text+timestamp
+    const seenKeys = new Set();
+    const combined = [];
+
+    for (const m of [...normalizedUnified, ...normalizedLegacy]) {
+      const key = m.externalMessageId || m.gowhatsMessageId || m.id;
+      if (key && seenKeys.has(key)) continue;
+      if (key) seenKeys.add(key);
+      combined.push(m);
     }
+
+    combined.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    if (combined.length > 0) {
+      return combined;
+    }
+
     const conv = await ConversationModel.findOne({ id: conversationId }).lean();
     if (conv && conv.lastMessage) {
       return [

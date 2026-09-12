@@ -479,18 +479,7 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
 
   for (const msg of res.messages) {
     const extId = getGoWhatsMessageExtId(msg);
-    if (clearedExternalMsgIds.has(extId)) {
-      skippedHistoricalCount++;
-      continue;
-    }
     const rawTimestamp = msg.timestamp || msg.createdAt || msg.created_at || msg.date || msg.time;
-    if (gowhatsClearedAtTimestamp) {
-      if (!rawTimestamp || new Date(rawTimestamp) <= new Date(gowhatsClearedAtTimestamp)) {
-        clearedExternalMsgIds.add(extId);
-        skippedHistoricalCount++;
-        continue;
-      }
-    }
 
     const customerPhone = extractCustomerPhone(msg);
     const fromPhone = String(msg.from || msg.sender || msg.phone || "").replace(/\D/g, "");
@@ -527,11 +516,11 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
     const sender = isOutbound
       ? { name: "BUZZZ Agent", handle: "agent", kind: "agent" }
       : {
-          name: contact?.name || `+${customerPhone}`,
-          handle: customerPhone,
-          contactId: contact?.id || null,
-          kind: "customer",
-        };
+        name: contact?.name || `+${customerPhone}`,
+        handle: customerPhone,
+        contactId: contact?.id || null,
+        kind: "customer",
+      };
 
     const { doc: msgDoc, isNew } = await saveUnifiedMessage({
       id: `msg_${extId}`,
