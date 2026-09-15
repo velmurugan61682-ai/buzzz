@@ -9528,8 +9528,9 @@ function BuzzzAI({ close }) {
       if (when === "today") {} else if (when === "next week") date.setDate(date.getDate() + 7);
       else if (when === "tomorrow") date.setDate(date.getDate() + 1);
       else { const idx = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].indexOf(when); if (idx >= 0) { let add = (idx - date.getDay() + 7) % 7; date.setDate(date.getDate() + (add || 7)); } else date.setDate(date.getDate() + 1); }
-      const svc = services[0];
-      const loc = locations.find((l) => svc.locations.includes(l.id)) || locations[2];
+      const svc = (Array.isArray(services) && services.length > 0) ? services[0] : null;
+      if (!svc) return { text: "No services are currently configured." };
+      const loc = (Array.isArray(locations) && svc.locations) ? (locations.find((l) => svc.locations.includes(l.id)) || locations[0] || null) : null;
       const av = availability({ date, service: svc, staff: null, location: loc, appts, rules, staffList: staff });
       let slots = av.slots;
       if (part.includes("morning")) slots = slots.filter((x) => x.getHours() < 12);
@@ -9550,10 +9551,12 @@ function BuzzzAI({ close }) {
     }
     /* next available */
     if (/next available|earliest (?:appointment|slot)|first available/.test(s)) {
-      const svc = services[0];
+      const svc = (Array.isArray(services) && services.length > 0) ? services[0] : null;
+      if (!svc) return { text: "No services are currently configured." };
       for (let i = 0; i < 14; i++) {
         const d = new Date(); d.setDate(d.getDate() + i); d.setHours(0, 0, 0, 0);
-        const av = availability({ date: d, service: svc, staff: null, location: locations.find((l) => svc.locations.includes(l.id)) || locations[2], appts, rules, staffList: staff });
+        const loc = (Array.isArray(locations) && svc.locations) ? (locations.find((l) => svc.locations.includes(l.id)) || locations[0] || null) : null;
+        const av = availability({ date: d, service: svc, staff: null, location: loc, appts, rules, staffList: staff });
         if (av.slots.length) return { text: `The earliest real opening is ${fmtD(av.slots[0])} at ${fmtT(av.slots[0])} for a ${svc.name.toLowerCase()}. ${av.slots.length} slots are free that day.`, nav: ["Open the calendar", "appointments"] };
       }
       return { text: "Nothing is bookable in the next two weeks under your current rules. Loosening the minimum notice or adding staff hours would open slots." };
@@ -9594,8 +9597,9 @@ function BuzzzAI({ close }) {
       const d = new Date(); d.setHours(0, 0, 0, 0);
       if (target === "tomorrow") d.setDate(d.getDate() + 1);
       else if (target !== "today") { const idx = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].indexOf(target); let add = (idx - d.getDay() + 7) % 7; d.setDate(d.getDate() + (add || 7)); }
-      const svc = services.find((x) => x.id === a.serviceId) || services[0];
-      const av = availability({ date: d, service: svc, staff: staff.find((p) => p.id === a.staffId), location: locations.find((l) => l.id === a.locationId), appts: appts.filter((x) => x.id !== a.id), rules, staffList: staff });
+      const svc = (Array.isArray(services) ? services : []).find((x) => x.id === a.serviceId) || (services && services[0]);
+      if (!svc) return { text: "Service not found." };
+      const av = availability({ date: d, service: svc, staff: (staff || []).find((p) => p.id === a.staffId), location: (locations || []).find((l) => l.id === a.locationId), appts: (appts || []).filter((x) => x.id !== a.id), rules, staffList: staff });
       if (!av.slots.length) return { text: `Nothing is free on ${fmtD(d)} for that service, so I have not moved it. ${av.blocked.length ? "Staff hours and existing bookings fill the day." : ""}` };
       const slot = av.slots[0];
       return { text: `I can move ${c.name}'s ${a.title} from ${fmtWhen(a)} to ${fmtD(slot)} at ${fmtT(slot)}, the first free slot with the same staff member.`,
@@ -9612,7 +9616,9 @@ function BuzzzAI({ close }) {
     /* gaps + insight */
     if (/gap|free time|utilization|utilisation/.test(s)) {
       const d = new Date(); d.setHours(0, 0, 0, 0);
-      const av = availability({ date: d, service: services[0], staff: null, location: locations[2], appts, rules, staffList: staff });
+      const svc = (Array.isArray(services) && services.length > 0) ? services[0] : null;
+      const loc = (Array.isArray(locations) && locations.length > 0) ? (locations[2] || locations[0]) : null;
+      const av = svc ? availability({ date: d, service: svc, staff: null, location: loc, appts, rules, staffList: staff }) : { slots: [], blocked: [] };
       return { text: av.slots.length ? `Today has ${av.slots.length} open slots, the first at ${fmtT(av.slots[0])} and the last at ${fmtT(av.slots[av.slots.length - 1])}. That is room for about ${Math.floor(av.slots.length / 2)} more consultations. ${waitlist.length ? waitlist.length + " people on the waitlist could fill them." : ""}` : "Today is fully booked." };
     }
 
@@ -19855,16 +19861,24 @@ function StaffView() {
 }
 
 function AvailabilityView() {
-  const { T, dk, rules, setRules, locations, setLocations, flash, services, staff, appts } = useApp();
+  const { T, dk, rules, setRules, locations = [], setLocations, flash, services = [], staff = [], appts = [] } = useApp();
   const [probe, setProbe] = useState({ serviceId: "", date: new Date().toISOString().slice(0, 10) });
-  const svc = services.find((x) => x.id === probe.serviceId) || services[0];
+
+  const safeServices = Array.isArray(services) ? services : [];
+  const safeLocations = Array.isArray(locations) ? locations : [];
+  const safeStaff = Array.isArray(staff) ? staff : [];
+
+  const svc = safeServices.find((x) => x.id === probe.serviceId) || safeServices[0] || null;
   const probeDate = new Date(probe.date + "T00:00:00");
-  const av = availability({ date: probeDate, service: svc, staff: null, location: locations.find((l) => svc.locations.includes(l.id)) || locations[2], appts, rules, staffList: staff });
+  const loc = svc ? (safeLocations.find((l) => Array.isArray(svc.locations) && svc.locations.includes(l.id)) || safeLocations[2] || safeLocations[0] || null) : null;
+  const av = svc ? availability({ date: probeDate, service: svc, staff: null, location: loc, appts: Array.isArray(appts) ? appts : [], rules: rules || {}, staffList: safeStaff }) : { slots: [], blocked: [] };
   const num = (label, k, hint) => (
     <Field key={k} label={label} hint={hint}>
-      <input type="number" value={rules[k]} onChange={(e) => setRules({ ...rules, [k]: +e.target.value || 0 })} className={inputCls(T)} />
+      <input type="number" value={(rules || {})[k] || 0} onChange={(e) => setRules({ ...rules, [k]: +e.target.value || 0 })} className={inputCls(T)} />
     </Field>
   );
+  const safeReminders = Array.isArray(rules?.reminders) ? rules.reminders : [];
+
   return (
     <div className="h-full overflow-y-auto bz-scroll p-6 space-y-4 max-w-3xl">
       <div className={`rounded-2xl p-5 ${T.card}`}>
@@ -19876,67 +19890,67 @@ function AvailabilityView() {
           {num("Max open per customer", "maxPerCustomer")}
           {num("Cancellation window (h)", "cancelWindowH")}
           {num("Reschedule window (h)", "rescheduleWindowH")}
-          <Field label="Slot interval (min)"><select value={rules.slotStep} onChange={(e) => setRules({ ...rules, slotStep: +e.target.value })} className={inputCls(T)}>{[10, 15, 20, 30, 60].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
-          <Field label="Time zone"><input value={rules.tz} onChange={(e) => setRules({ ...rules, tz: e.target.value })} className={inputCls(T)} /></Field>
-          <Field label="Auto confirm"><button onClick={() => setRules({ ...rules, autoConfirm: !rules.autoConfirm })} className={`h-10 px-3 rounded-xl border text-xs inline-flex items-center gap-2 ${T.chip}`}>{rules.autoConfirm ? <CheckCircle2 size={13} className="text-emerald-500" /> : <Circle size={13} />} {rules.autoConfirm ? "On" : "Approve manually"}</button></Field>
+          <Field label="Slot interval (min)"><select value={rules?.slotStep || 15} onChange={(e) => setRules({ ...rules, slotStep: +e.target.value })} className={inputCls(T)}>{[10, 15, 20, 30, 60].map((x) => <option key={x} value={x}>{x}</option>)}</select></Field>
+          <Field label="Time zone"><input value={rules?.tz || ""} onChange={(e) => setRules({ ...rules, tz: e.target.value })} className={inputCls(T)} /></Field>
+          <Field label="Auto confirm"><button onClick={() => setRules({ ...rules, autoConfirm: !rules?.autoConfirm })} className={`h-10 px-3 rounded-xl border text-xs inline-flex items-center gap-2 ${T.chip}`}>{rules?.autoConfirm ? <CheckCircle2 size={13} className="text-emerald-500" /> : <Circle size={13} />} {rules?.autoConfirm ? "On" : "Approve manually"}</button></Field>
         </div>
       </div>
 
       <div className={`rounded-2xl p-5 ${T.card}`}>
         <SecTitle>Reminders & confirmations</SecTitle>
         <div className="space-y-1.5">
-          {rules.reminders.map((r) => (
+          {safeReminders.map((r) => (
             <div key={r.id} className={`flex items-center gap-2.5 rounded-xl px-3 py-2 ${T.softcard}`}>
-              <Toggle on={r.on} set={(v) => setRules({ ...rules, reminders: rules.reminders.map((x) => x.id === r.id ? { ...x, on: v } : x) })} />
-              <select value={r.at} onChange={(e) => setRules({ ...rules, reminders: rules.reminders.map((x) => x.id === r.id ? { ...x, at: e.target.value } : x) })} className={`h-8 px-2 rounded-lg text-[11px] outline-none flex-1 ${T.input}`}>
+              <Toggle on={r.on} set={(v) => setRules({ ...rules, reminders: safeReminders.map((x) => x.id === r.id ? { ...x, on: v } : x) })} />
+              <select value={r.at} onChange={(e) => setRules({ ...rules, reminders: safeReminders.map((x) => x.id === r.id ? { ...x, at: e.target.value } : x) })} className={`h-8 px-2 rounded-lg text-[11px] outline-none flex-1 ${T.input}`}>
                 {["On booking", "48 hours before", "24 hours before", "2 hours before", "1 hour before", "After completion"].map((x) => <option key={x}>{x}</option>)}
               </select>
-              <select value={r.ch} onChange={(e) => setRules({ ...rules, reminders: rules.reminders.map((x) => x.id === r.id ? { ...x, ch: e.target.value } : x) })} className={`h-8 px-2 rounded-lg text-[11px] outline-none ${T.input}`}>
+              <select value={r.ch} onChange={(e) => setRules({ ...rules, reminders: safeReminders.map((x) => x.id === r.id ? { ...x, ch: e.target.value } : x) })} className={`h-8 px-2 rounded-lg text-[11px] outline-none ${T.input}`}>
                 {["whatsapp", "sms", "email", "voice"].map((x) => <option key={x} value={x}>{CH[x] ? CH[x].label : x}</option>)}
               </select>
-              <button onClick={() => setRules({ ...rules, reminders: rules.reminders.filter((x) => x.id !== r.id) })} className={T.faint}><X size={12} /></button>
+              <button onClick={() => setRules({ ...rules, reminders: safeReminders.filter((x) => x.id !== r.id) })} className={T.faint}><X size={12} /></button>
             </div>
           ))}
         </div>
-        <button onClick={() => setRules({ ...rules, reminders: [...rules.reminders, { id: "r" + Date.now(), at: "1 hour before", ch: "whatsapp", on: true }] })}
+        <button onClick={() => setRules({ ...rules, reminders: [...safeReminders, { id: "r" + Date.now(), at: "1 hour before", ch: "whatsapp", on: true }] })}
           className={`mt-2 h-8 px-3 rounded-xl border text-[11px] font-semibold inline-flex items-center gap-1 ${T.chip} ${T.hover}`}><Plus size={11} /> Add reminder</button>
       </div>
 
       <div className={`rounded-2xl p-5 ${T.card}`}>
         <SecTitle>Locations & rooms</SecTitle>
         <div className="space-y-2">
-          {locations.map((l) => (
+          {safeLocations.map((l) => (
             <div key={l.id} className={`rounded-xl p-3 ${T.softcard}`}>
               <div className="flex items-center gap-2">
-                <input value={l.name} onChange={(e) => setLocations(locations.map((x) => x.id === l.id ? { ...x, name: e.target.value } : x))} className="flex-1 bg-transparent text-xs font-semibold outline-none" />
+                <input value={l.name} onChange={(e) => setLocations(safeLocations.map((x) => x.id === l.id ? { ...x, name: e.target.value } : x))} className="flex-1 bg-transparent text-xs font-semibold outline-none" />
                 <Pill c={T.chip}>{l.kind}</Pill>
-                <button onClick={() => setLocations(locations.filter((x) => x.id !== l.id))} className={T.faint}><X size={12} /></button>
+                <button onClick={() => setLocations(safeLocations.filter((x) => x.id !== l.id))} className={T.faint}><X size={12} /></button>
               </div>
-              <input value={l.addr} onChange={(e) => setLocations(locations.map((x) => x.id === l.id ? { ...x, addr: e.target.value } : x))} className={`w-full bg-transparent text-[11px] outline-none mt-1 ${T.faint}`} />
+              <input value={l.addr} onChange={(e) => setLocations(safeLocations.map((x) => x.id === l.id ? { ...x, addr: e.target.value } : x))} className={`w-full bg-transparent text-[11px] outline-none mt-1 ${T.faint}`} />
               <div className="flex flex-wrap gap-1 mt-2">
-                {l.rooms.map((r, i) => <span key={i} className={`h-6 px-2 rounded-full border text-[10px] inline-flex items-center gap-1 ${T.chip}`}>{r}<button onClick={() => setLocations(locations.map((x) => x.id === l.id ? { ...x, rooms: x.rooms.filter((_, j) => j !== i) } : x))}><X size={9} /></button></span>)}
-                <button onClick={() => setLocations(locations.map((x) => x.id === l.id ? { ...x, rooms: [...x.rooms, "Room " + (x.rooms.length + 1)] } : x))} className={`h-6 px-2 rounded-full border text-[10px] ${T.chip}`}>+ room</button>
+                {(Array.isArray(l.rooms) ? l.rooms : []).map((r, i) => <span key={i} className={`h-6 px-2 rounded-full border text-[10px] inline-flex items-center gap-1 ${T.chip}`}>{r}<button onClick={() => setLocations(safeLocations.map((x) => x.id === l.id ? { ...x, rooms: (x.rooms || []).filter((_, j) => j !== i) } : x))}><X size={9} /></button></span>)}
+                <button onClick={() => setLocations(safeLocations.map((x) => x.id === l.id ? { ...x, rooms: [...(x.rooms || []), "Room " + ((x.rooms || []).length + 1)] } : x))} className={`h-6 px-2 rounded-full border text-[10px] ${T.chip}`}>+ room</button>
               </div>
             </div>
           ))}
         </div>
-        <button onClick={() => { setLocations([...locations, { id: "L" + Date.now(), name: "New location", addr: "Set the address", kind: "In person", rooms: [], hours: { 1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: null, 0: null } }]); flash("Location added with its own hours"); }}
+        <button onClick={() => { setLocations([...safeLocations, { id: "L" + Date.now(), name: "New location", addr: "Set the address", kind: "In person", rooms: [], hours: { 1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: null, 0: null } }]); flash("Location added with its own hours"); }}
           className={`mt-2 h-8 px-3 rounded-xl border text-[11px] font-semibold inline-flex items-center gap-1 ${T.chip} ${T.hover}`}><Plus size={11} /> Add location</button>
       </div>
 
       <div className={`rounded-2xl p-5 ${T.card}`}>
         <SecTitle>Test the engine</SecTitle>
         <div className="flex gap-2 flex-wrap">
-          <select value={probe.serviceId || services[0].id} onChange={(e) => setProbe({ ...probe, serviceId: e.target.value })} className={`h-9 px-2.5 rounded-xl text-xs outline-none ${T.input}`}>
-            {services.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          <select value={probe.serviceId || (svc ? svc.id : "")} onChange={(e) => setProbe({ ...probe, serviceId: e.target.value })} className={`h-9 px-2.5 rounded-xl text-xs outline-none ${T.input}`}>
+            {safeServices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
           <input type="date" value={probe.date} onChange={(e) => setProbe({ ...probe, date: e.target.value })} className={`h-9 px-2.5 rounded-xl text-xs outline-none ${T.input}`} />
         </div>
         <div className="flex flex-wrap gap-1.5 mt-3">
-          {av.slots.map((sl) => <span key={sl.getTime()} className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold tabular-nums ${T.chip}`}>{fmtT(sl)}</span>)}
-          {av.slots.length === 0 && <p className={`text-xs ${T.sub}`}>{av.blocked[0] ? av.blocked[0].why : "Nothing available."}</p>}
+          {(av.slots || []).map((sl) => <span key={sl.getTime()} className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold tabular-nums ${T.chip}`}>{fmtT(sl)}</span>)}
+          {(!av.slots || av.slots.length === 0) && <p className={`text-xs ${T.sub}`}>{av.blocked && av.blocked[0] ? av.blocked[0].why : "Nothing available."}</p>}
         </div>
-        <p className={`text-[10px] mt-2 ${T.faint}`}>{av.slots.length} bookable · {av.blocked.length} blocked by notice window, staff hours, breaks, buffers or existing bookings.</p>
+        <p className={`text-[10px] mt-2 ${T.faint}`}>{(av.slots || []).length} bookable · {(av.blocked || []).length} blocked by notice window, staff hours, breaks, buffers or existing bookings.</p>
       </div>
     </div>
   );
