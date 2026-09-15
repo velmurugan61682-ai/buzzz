@@ -329,11 +329,11 @@ const CONVS = [
     ai: true, unread: 2, tags: ["High Intent", "Pricing"],
     msgs: [
       { id: 1, from: "customer", channel: "whatsapp", time: t(160), text: "Hi, I want to know if the Enterprise plan supports 14 store locations and how much it costs." },
-      { id: 2, from: "ai", agent: "Sales Agent", channel: "whatsapp", time: t(158), text: "Hi Arun, yes. Enterprise supports unlimited locations with a shared knowledge base per brand. For 14 stores you would be on the Enterprise tier at $1,150 per month billed annually. Want me to send the full breakdown?" },
+      { id: 2, from: "ai", agent: "Sales Agent", channel: "whatsapp", time: t(158), text: "Hi Arun, yes. Enterprise supports unlimited locations with a shared knowledge base per brand. For 14 stores you would be on the Enterprise tier at ₹95,000 per month billed annually. Want me to send the full breakdown?" },
       { id: 3, from: "system", time: t(158), text: "AI queried knowledge base: pricing.pdf, plans.md · Lead score 74 → 81" },
       { id: 4, from: "customer", channel: "whatsapp", time: t(90), text: "Yes please. Also, can we get onboarding done before October?" },
       { id: 5, from: "ai", agent: "Sales Agent", channel: "whatsapp", time: t(89), text: "Sent the breakdown to your email as well. Onboarding for your size typically takes 3 weeks, so an early September start comfortably lands before October. I can book a scoping call with our team this week." },
-      { id: 6, from: "system", time: t(89), text: "AI created opportunity: Vertex Retail · Enterprise ($18,400) · Stage: Demo Booked" },
+      { id: 6, from: "system", time: t(89), text: "AI created opportunity: Vertex Retail · Enterprise (₹15,000,000) · Stage: Demo Booked" },
       { id: 7, from: "customer", channel: "whatsapp", time: t(4), text: "Yes, I would like to book the scoping call. Thursday works." },
     ],
   },
@@ -343,8 +343,8 @@ const CONVS = [
     ai: true, unread: 1, tags: ["SMB"],
     msgs: [
       { id: 1, from: "customer", channel: "instagram", time: t(300), text: "Hi! Saw your reel. Is the blue dashboard theme available on the Growth plan? And how much is it monthly?" },
-      { id: 2, from: "ai", agent: "Sales Agent", channel: "instagram", time: t(299), text: "Hey Sarah! Yes, all themes including the blue one are on Growth. It is $249 per month for up to 10 seats. You get the unified inbox, 2 AI agents and WhatsApp plus Instagram channels." },
-      { id: 3, from: "system", time: t(298), text: "AI qualified lead · Budget confirmed above $5,000 annually · Lead score 61 → 74" },
+      { id: 2, from: "ai", agent: "Sales Agent", channel: "instagram", time: t(299), text: "Hey Sarah! Yes, all themes including the blue one are on Growth. It is ₹19,999 per month for up to 10 seats. You get the unified inbox, 2 AI agents and WhatsApp plus Instagram channels." },
+      { id: 3, from: "system", time: t(298), text: "AI qualified lead · Budget confirmed above ₹4,00,000 annually · Lead score 61 → 74" },
       { id: 4, from: "customer", channel: "instagram", time: t(12), text: "That works for us. Can someone show me the automation builder?" },
     ],
   },
@@ -389,7 +389,7 @@ const CONVS = [
     msgs: [
       { id: 1, from: "customer", channel: "whatsapp", time: t(500), text: "I was billed twice this month AGAIN. I have raised this before. Fix it or we are moving providers." },
       { id: 2, from: "system", time: t(499), text: "Retention Agent flagged churn risk High · Escalated per rule: Angry sentiment + VIP" },
-      { id: 3, from: "ai", agent: "Retention Agent", channel: "whatsapp", time: t(499), note: "handoff", text: "AI Handoff Summary — Duplicate billing for the second consecutive month. Customer is a VIP with $61k lifetime value and left a 2 star Google review on 12 Aug. Refund policy permits immediate reversal. Recommend: reverse charge, apply goodwill credit (needs approval), and a personal call from the account manager." },
+      { id: 3, from: "ai", agent: "Retention Agent", channel: "whatsapp", time: t(499), note: "handoff", text: "AI Handoff Summary — Duplicate billing for the second consecutive month. Customer is a VIP with ₹50L lifetime value and left a 2 star Google review on 12 Aug. Refund policy permits immediate reversal. Recommend: reverse charge, apply goodwill credit (needs approval), and a personal call from the account manager." },
       { id: 4, from: "human", who: "Ken Watanabe", channel: "whatsapp", time: t(420), text: "Grace, this is Ken, I own your account now. The duplicate charge is reversed as of this message. I have also requested a goodwill credit and will call you at 3pm today to walk through the permanent fix." },
       { id: 5, from: "customer", channel: "whatsapp", time: t(60), text: "Reversal received. I will take the call at 3. This needs to be the last time." },
     ],
@@ -410,7 +410,7 @@ const CONVS = [
     ai: true, unread: 0, tags: ["Nurture"],
     msgs: [
       { id: 1, from: "customer", channel: "email", time: t(9000), subject: "Pricing request", text: "Hi, could you send over pricing for a 5 person team?" },
-      { id: 2, from: "ai", agent: "Sales Agent", channel: "email", time: t(8990), text: "Hi Fatima, for a 5 person team the Starter plan at $99 per month fits best. Full pricing sheet attached, and I am happy to answer anything." },
+      { id: 2, from: "ai", agent: "Sales Agent", channel: "email", time: t(8990), text: "Hi Fatima, for a 5 person team the Starter plan at ₹7,999 per month fits best. Full pricing sheet attached, and I am happy to answer anything." },
       { id: 3, from: "ai", agent: "Follow up Agent", channel: "email", time: t(4600), text: "Hi Fatima, just circling back on the pricing I sent last week. If budget or timing is the question, we also have a quarterly option. Would a 15 minute call help?" },
       { id: 4, from: "system", time: t(1500), text: "Follow up 2 of 3 sent · Next: move to nurture if no reply in 5 days" },
     ],
@@ -444,7 +444,7 @@ const CONVS = [
     msgs: [
       { id: 1, from: "customer", channel: "linkedin", time: t(25), text: "Hi team! We manage 18 portfolio fintech companies and need a unified messaging platform with WhatsApp, LinkedIn and Voice AI. Can Buzzz deploy a dedicated tenant for us?" },
       { id: 2, from: "ai", agent: "Sales Agent", channel: "linkedin", time: t(24), text: "Hello David, absolutely. Our Enterprise multi-tenant tier offers isolated databases, unified inbox across LinkedIn, WhatsApp & Voice, plus custom SLA guarantees. I can set up a live executive walkthrough for your partners." },
-      { id: 3, from: "system", time: t(23), text: "LinkedIn Lead synced · Lead score: 94 · High Value Enterprise Opportunity created ($36,000)" },
+      { id: 3, from: "system", time: t(23), text: "LinkedIn Lead synced · Lead score: 94 · High Value Enterprise Opportunity created (₹30,00,000)" },
       { id: 4, from: "customer", channel: "linkedin", time: t(5), text: "Sounds promising. Does Thursday 3 PM UK time work for the executive demo?" },
     ],
   },
@@ -935,7 +935,7 @@ const CALLS = [
     agent: "Voz · Voice Agent", outcome: "Lead Qualified", sentiment: "Positive", intent: "Purchase", reason: "Pricing enquiry",
     nextAction: "Send multi brand pricing on WhatsApp", tags: ["Hot Lead", "Sales"], assignee: "Rina Sato", notes: [], recordingUrl: null,
     summary: "Michael asked whether the premium package covers three portfolio companies under one account. Multi brand support was confirmed. He requested pricing and a WhatsApp follow up.",
-    actions: ["CRM updated", "Deal created ($54,000)", "WhatsApp follow up sent", "Lead score 84 → 91"],
+    actions: ["CRM updated", "Deal created (₹45,00,000)", "WhatsApp follow up sent", "Lead score 84 → 91"],
     transcript: [
       { who: "agent", t: 0, text: "Thanks for calling. You are speaking with the Buzzz voice assistant. How can I help today?" },
       { who: "customer", t: 7, text: "I want to know whether you have the premium package, and if it can cover three of our portfolio companies." },
@@ -1504,7 +1504,7 @@ function deriveNotifications({ approvals, appts, wfRuns, calls, convs, kb, conns
     const overdue = apDue(a) < 0;
     push({ key: "ap_" + a.id, cat: "Approvals", priority: overdue ? "critical" : ["High", "Critical"].includes(a.risk) ? "warning" : "info",
       title: overdue ? "Approval overdue" : "Approval needed",
-      body: `${a.title} for ${a.to}${a.meta && a.meta.amount ? " · " + fmtMoney(a.meta.amount, "USD") : ""} · needs ${a.role}`,
+      body: `${a.title} for ${a.to}${a.meta && a.meta.amount ? " · " + fmtMoney(a.meta.amount, "INR") : ""} · needs ${a.role}`,
       at: a.createdAt, go: "approvals" });
   });
 
@@ -1611,10 +1611,10 @@ function priceFor(regionId, plan, cycle = "monthly") {
     label: r.sym + amount.toLocaleString() + (cycle === "annual" ? " a year" : " a month"),
     monthlyEquivalent: cycle === "annual" ? Math.round(pair[1] / 12) : pair[0] };
 }
-const fmtMoney = (n, cur) => {
-  const r = PRICING_REGIONS.find((x) => x.cur === cur) || PRICING_REGIONS[2];
-  const v = Math.abs(n) >= 10000 ? (n / 1000).toFixed(1) + "k" : Math.round(n).toLocaleString();
-  return r.sym + v;
+const fmtMoney = (n, cur = "INR") => {
+  const num = Number(n) || 0;
+  const v = Math.abs(num) >= 100000 ? (num / 100000).toFixed(1) + "L" : Math.abs(num) >= 1000 ? (num / 1000).toFixed(1) + "k" : Math.round(num).toLocaleString("en-IN");
+  return "₹" + v;
 };
 
 /* what each plan actually allows. Enforced at the call sites below. */
@@ -1730,7 +1730,7 @@ const inRange = (iso, days, offset = 0) => {
   return t > start && t <= end;
 };
 const pctChange = (now, prev) => (prev === 0 || prev === undefined || prev === null) ? (now > 0 ? 100 : null) : Math.round(((now - prev) / prev) * 100);
-const money = (n) => "$" + (Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + "k" : Math.round(n));
+const money = (n) => "₹" + (Math.abs(n) >= 100000 ? (n / 100000).toFixed(1) + "L" : Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + "k" : Math.round(n).toLocaleString("en-IN"));
 const csvOf = (rows, headers) => [headers.join(","), ...rows.map((r) => headers.map((h) => `"${String(r[h] ?? "").replace(/"/g, '""')}"`).join(","))].join("\n");
 
 function attribute(data, model = "first") {
@@ -2322,11 +2322,11 @@ Processing time
 Approved refunds are returned to the original payment method and take 3 to 5 business days to appear.`,
   pricing: `Pricing
 Plans
-The Starter plan is $49 a month and includes one channel and two seats. The Growth plan is $99 a month and includes three channels, three seats and the automation builder. Enterprise pricing is custom and starts at $499 a month.
+The Starter plan is ₹2,499 a month and includes one channel and two seats. The Growth plan is ₹6,999 a month and includes three channels, three seats and the automation builder. Enterprise pricing is custom and starts at ₹32,999 a month.
 Discounts
 Annual billing saves two months. Partner and volume discounts above 10 percent require manager approval.
 Add ons
-Additional seats are $19 each per month. Extra WhatsApp numbers are $15 each per month.`,
+Additional seats are ₹1,500 each per month. Extra WhatsApp numbers are ₹1,200 each per month.`,
   hours: `Opening hours and locations
 Downtown branch
 Open Monday to Saturday from 9:00 to 19:00. Closed on Sunday.
@@ -3725,7 +3725,7 @@ const BENTO = [
 /* ---- demo money ----
    The sample deals on the landing page and inside the product mock used to be
    written in rupees. Someone opening the site in London or New York then sees
-   prices they cannot judge, and a straight symbol swap is worse: "$4,500" for
+   prices they cannot judge, and a straight symbol swap is worse: "₹3,50,000" for
    a dental cleaning reads as absurd.
 
    So the amounts are held in one base currency and shown in the visitor's own,
@@ -7181,7 +7181,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     const defaultPipeId = pipelines?.[0]?.id || "p1";
     const deal = { id: "d" + Date.now(), stage: d.stage || defaultStage, pipelineId: d.pipelineId || defaultPipeId, next: "Qualify the opportunity and confirm the decision maker.", owner: "Jordan Lee", prob: 30, close: "", ...d };
     setDeals((ds) => [deal, ...ds]);
-    trail("Deal created", deal.name, "", "$" + (deal.value || 0).toLocaleString());
+    trail("Deal created", deal.name, "", "₹" + (deal.value || 0).toLocaleString());
     log("You", "Deal created", deal.name);
     return deal;
   };
@@ -7214,7 +7214,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     const newContactObj = {
       id, name: f.name.trim(), company: f.company || "—", title: f.title || "", location: f.location || "", loc: f.location || "",
       email: f.email || "", phone: f.phone || "", stage: f.stage || "New Lead", status: f.status || "New", source: f.source || "Manual entry",
-      owner: f.owner || "Unassigned", score: f.score ?? 40, value: f.value || "$0", ltv: "$0", churn: "Low", sentiment: "Neutral", intent: "Unknown",
+      owner: f.owner || "Unassigned", score: f.score ?? 40, value: f.value || "₹0", ltv: "₹0", churn: "Low", sentiment: "Neutral", intent: "Unknown",
       channels: f.channels && f.channels.length ? f.channels : ["whatsapp"], tags: f.tags || [], archived: false, notes: [], cf: f.cf || {},
       created: new Date().toISOString().slice(0, 10), lastContact: 0,
       memory: ["Record created " + new Date().toLocaleDateString()],
@@ -10317,7 +10317,7 @@ function suggestLocale({ country, browserLangs = [], tz } = {}) {
     : (wanted.find((l) => LANGS[l]) || "en");
   return { suggested: true, country: country || null, region: reg ? reg.region : null,
     language: LANGS[match] ? match : "en", timezone: (reg && reg.tz) || tz || "UTC",
-    currency: (reg && reg.currency) || "USD", options: reg ? reg.langs : ["en"] };
+    currency: (reg && reg.currency) || "INR", options: reg ? reg.langs : ["en"] };
 }
 
 /* ---- catalogs ----
@@ -12965,7 +12965,7 @@ function ContextPanel({ conv, close }) {
 
         <PanelSection title="Customer" defaultOpen>
           <div className="space-y-2 text-[11px] leading-none">
-            {[["Phone", c.phone || conv.phone || "—"], ["Location", c.loc || c.location || "—"], ["Stage", c.stage || "New Lead"], ["Value", c.value || "$0"], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "Just now"]].map(([k, v]) => (
+            {[["Phone", c.phone || conv.phone || "—"], ["Location", c.loc || c.location || "—"], ["Stage", c.stage || "New Lead"], ["Value", c.value || "₹0"], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "Just now"]].map(([k, v]) => (
               <div key={k} className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>{k}</span><span className="font-medium text-right truncate min-w-0">{v}</span></div>
             ))}
           </div>
@@ -13086,9 +13086,9 @@ function CrmOverview() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {stat("Total contacts", live.length, CONTACTS.filter((c) => c.archived).length + " archived")}
         {stat("Qualified leads", qualified, Math.round((qualified / Math.max(live.length, 1)) * 100) + "% of records")}
-        {stat("Pipeline value", "$" + (pipeline / 1000).toFixed(1) + "k", deals.filter((d) => d.stage !== "Won").length + " open deals")}
-        {stat("Won revenue", "$" + (revenue / 1000).toFixed(1) + "k", won.length + " deals closed")}
-        {stat("Avg deal size", "$" + (deals.length ? Math.round(deals.reduce((s, d) => s + d.value, 0) / deals.length / 100) / 10 : 0) + "k", "across all stages")}
+        {stat("Pipeline value", "₹" + (pipeline / 1000).toFixed(1) + "k", deals.filter((d) => d.stage !== "Won").length + " open deals")}
+        {stat("Won revenue", "₹" + (revenue / 1000).toFixed(1) + "k", won.length + " deals closed")}
+        {stat("Avg deal size", "₹" + (deals.length ? Math.round(deals.reduce((s, d) => s + d.value, 0) / deals.length / 100) / 10 : 0) + "k", "across all stages")}
         {stat("Conversion rate", Math.round((won.length / Math.max(deals.length, 1)) * 100) + "%", "deals won of total")}
         {stat("Open tasks", tasks.filter((t) => !t.done).length, tasks.filter((t) => t.ai && !t.done).length + " created by AI")}
         {stat("Appointments", appts.filter((a) => !["Completed", "Cancelled"].includes(a.status)).length, "upcoming")}
@@ -13130,7 +13130,7 @@ function CrmOverview() {
 function ContactForm({ initial, onClose }) {
   const { T, createContact, contactPatch, customFields, flash } = useApp();
   const [f, setF] = useState(initial ? { ...initial, tags: [...(initial.tags || [])], cf: { ...(initial.cf || {}) } }
-    : { name: "", company: "", title: "", email: "", phone: "", location: "", status: "New", source: "Manual entry", owner: "Unassigned", score: 40, value: "$0", channels: ["whatsapp"], tags: [], cf: {} });
+    : { name: "", company: "", title: "", email: "", phone: "", location: "", status: "New", source: "Manual entry", owner: "Unassigned", score: 40, value: "₹0", channels: ["whatsapp"], tags: [], cf: {} });
   const [err, setErr] = useState({});
   const [tagIn, setTagIn] = useState("");
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setErr((e) => ({ ...e, [k]: null })); };
@@ -14146,7 +14146,7 @@ function Customer360({ id }) {
 
   const timeline = [
     ...myConvs.flatMap((v) => (v.msgs || []).map((m) => ({ time: m.time, icon: m.from === "system" ? "zap" : "msg", ch: m.channel || v.channel, text: m.from === "system" ? m.text : `${m.from === "customer" ? c.name : m.from === "ai" ? m.agent + " (AI)" : m.who}: ${(m.text || "").slice(0, 90)}${m.text && m.text.length > 90 ? "…" : ""}` }))),
-    ...myDeals.map((d) => ({ time: t(2400), icon: "deal", text: `Deal: ${d.name} · $${(d.value / 1000).toFixed(1)}k · ${d.stage}` })),
+    ...myDeals.map((d) => ({ time: t(2400), icon: "deal", text: `Deal: ${d.name} · ₹${(d.value / 1000).toFixed(1)}k · ${d.stage}` })),
     ...myCalls.map((k) => ({ time: k.at, icon: "call", ch: "voice", callId: k.id, text: `Call · ${k.dir} · ${fmtDur(k.durSec)} · ${k.outcome || STATUS_LABEL[k.status]}${k.summary ? " · " + k.summary.slice(0, 70) + "…" : ""}` })),
     ...(c.notes || []).map((n) => ({ time: t(600), icon: "note", text: `Note by ${n.who}: ${n.text}` })),
     ...myTasks.map((k) => ({ time: t(800), icon: "task", text: `Task${k.done ? " (done)" : ""}: ${k.txt} · ${k.who}` })),
@@ -17610,7 +17610,7 @@ const PLAN_LIB = {
   },
   retail: {
     agents: [
-      { name: "Kai — Support Agent", type: "support", role: "Handles order status, delivery, returns and product questions across every channel.", tone: "Helpful, fast", autonomy: 3, goals: ["Resolve 80% without a human"], rules: ["Refunds above $200 need approval"], tools: ["CRM", "Ticketing", "GoWhats"], knowledge: ["product catalog", "policies"] },
+      { name: "Kai — Support Agent", type: "support", role: "Handles order status, delivery, returns and product questions across every channel.", tone: "Helpful, fast", autonomy: 3, goals: ["Resolve 80% without a human"], rules: ["Refunds above ₹15,000 need approval"], tools: ["CRM", "Ticketing", "GoWhats"], knowledge: ["product catalog", "policies"] },
       { name: "Sarah — Sales Agent", type: "sales", role: "Recommends products, recovers abandoned carts and upsells past buyers.", tone: "Persuasive, honest", autonomy: 2, goals: ["Recover 30% of abandoned carts"], rules: ["Never discount above 10% without approval"], tools: ["CRM", "GoWhats", "Payments"], knowledge: ["product catalog"] },
       { name: "Mira — Follow up Agent", type: "retention", role: "Review requests after delivery, restock alerts, win back lapsed customers.", tone: "Friendly", autonomy: 2, goals: ["Lift repeat purchase rate"], rules: ["Respect opt outs"], tools: ["CRM"], knowledge: [] },
     ],
@@ -18773,7 +18773,7 @@ function EngagementView() {
                     <div className="flex gap-2 mt-2.5">
                       <input value={reply[c.id] || ""} onChange={(e) => setReply({ ...reply, [c.id]: e.target.value })} placeholder="Reply publicly…" className={inputCls(T)} />
                       <button onClick={() => {
-                        const draft = c.kind === "Question" ? "Great question! Plans start at $99 a month and include every channel. Want me to send the full breakdown in a DM?"
+                        const draft = c.kind === "Question" ? "Great question! Plans start at ₹6,999 a month and include every channel. Want me to send the full breakdown in a DM?"
                           : c.kind === "Negative" ? "That is not the experience we want you to have, and I am sorry. Sending you a DM now so we can fix it today."
                           : "Thank you, that genuinely makes our week 🙏";
                         setReply({ ...reply, [c.id]: draft });
@@ -18828,7 +18828,7 @@ function SocialCampaigns({ onOpen }) {
               </div>
               <div className="flex items-center gap-1.5 mt-2">{c.platforms.map((p2) => <Brand key={p2} id={PLATFORMS[p2].logo} size={14} />)}<span className={`text-[10px] ml-1 ${T.faint}`}>{mine.length} pieces of content · audience {c.audience}</span></div>
               <div className={`grid grid-cols-4 gap-3 mt-3 pt-3 border-t ${T.border}`}>
-                {[["Reach", (reach / 1000).toFixed(1) + "k"], ["Clicks", clicks], ["Leads", leads], ["Cost per lead", c.budget && leads ? "$" + Math.round(c.budget / leads) : "—"]].map(([k, v]) => (
+                {[["Reach", (reach / 1000).toFixed(1) + "k"], ["Clicks", clicks], ["Leads", leads], ["Cost per lead", c.budget && leads ? "₹" + Math.round(c.budget / leads) : "—"]].map(([k, v]) => (
                   <div key={k}><div className="text-sm font-semibold bz-display tabular-nums">{v}</div><div className={`text-[9px] ${T.faint}`}>{k}</div></div>
                 ))}
               </div>
@@ -19438,7 +19438,7 @@ function BookModal({ initial, prefillDate, onClose }) {
             {safeContacts.filter((c) => !c.archived).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
-        <Field label="Service" hint={(svc.dur || 30) + " min · " + (svc.price ? "$" + svc.price : "free") + (svc.approval ? " · needs approval" : "")}>
+        <Field label="Service" hint={(svc.dur || 30) + " min · " + (svc.price ? "₹" + svc.price : "free") + (svc.approval ? " · needs approval" : "")}>
           <select value={f.serviceId} onChange={(e) => { setF({ ...f, serviceId: e.target.value, staffId: "", locationId: "" }); setSlot(null); }} className={inputCls(T)}>
             {safeServices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
@@ -19523,7 +19523,7 @@ function ApptDetail({ appt, onClose }) {
       <div className={`grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-[11px] rounded-xl p-3 ${T.softcard}`}>
         {[["When", fmtWhen(appt) + " · " + appt.durMin + " min"], ["Service", svc ? svc.name : appt.title], ["Staff", person ? person.name + " · " + person.role : "Unassigned"],
           ["Location", (loc ? loc.name : "—") + (appt.room ? " · " + appt.room : "")], ["Source", appt.source], ["Confirmation", CH[appt.confirmChannel] ? CH[appt.confirmChannel].label : "WhatsApp"],
-          ["Price", svc && svc.price ? "$" + svc.price + (svc.deposit ? " · $" + svc.deposit + " deposit" : "") : "Free"], ["Policy", svc ? svc.policy : "—"],
+          ["Price", svc && svc.price ? "₹" + svc.price + (svc.deposit ? " · ₹" + svc.deposit + " deposit" : "") : "Free"], ["Policy", svc ? svc.policy : "—"],
           ["Type", (APPT_TYPES.find((t) => t.id === (appt.type || "in_person")) || {}).label || "In person"]].map(([k, v]) => (
           <div key={k} className="flex justify-between gap-3"><span className={T.faint}>{k}</span><span className="font-medium text-right truncate">{v}</span></div>
         ))}
@@ -19803,7 +19803,7 @@ function ServicesView() {
         {services.map((sv) => (
           <div key={sv.id} className={`rounded-2xl p-4 ${T.card} group`}>
             <div className="flex items-start gap-2">
-              <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate">{sv.name}</div><div className={`text-[11px] ${T.faint}`}>{sv.dur} min · {sv.price ? "$" + sv.price : "free"} · {sv.kind}</div></div>
+              <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate">{sv.name}</div><div className={`text-[11px] ${T.faint}`}>{sv.dur} min · {sv.price ? "₹" + sv.price : "free"} · {sv.kind}</div></div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100">
                 <button onClick={() => open(sv)} className={`p-1.5 rounded-lg ${T.hover}`}><Pencil size={12} /></button>
                 <button onClick={() => setConfirm({ text: `Delete "${sv.name}"?`, detail: "Existing appointments keep their details.", onYes: () => { setServices(services.filter((x) => x.id !== sv.id)); flash("Service deleted"); } })} className={`p-1.5 rounded-lg ${T.hover}`}><X size={12} /></button>
@@ -20067,7 +20067,7 @@ function ApptAnalytics() {
       )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[["Total", total, "all time"], ["Confirmation rate", pct(by("Confirmed") + by("Completed")), "confirmed or done"], ["No show rate", pct(by("No show")), by("No show") + " missed"], ["Cancellation rate", pct(by("Cancelled")), by("Cancelled") + " cancelled"],
-          ["Completed", by("Completed"), "delivered"], ["Pending", by("Pending"), "awaiting confirmation"], ["Avg duration", Math.round(appts.reduce((s2, a) => s2 + a.durMin, 0) / Math.max(total, 1)) + " min", "per appointment"], ["Revenue booked", "$" + appts.filter((a) => !["Cancelled", "No show"].includes(a.status)).reduce((s2, a) => { const sv = services.find((x) => x.id === a.serviceId); return s2 + (sv ? sv.price : 0); }, 0), "from service prices"]].map(([k, v, sub]) => (
+          ["Completed", by("Completed"), "delivered"], ["Pending", by("Pending"), "awaiting confirmation"], ["Avg duration", Math.round(appts.reduce((s2, a) => s2 + a.durMin, 0) / Math.max(total, 1)) + " min", "per appointment"], ["Revenue booked", "₹" + appts.filter((a) => !["Cancelled", "No show"].includes(a.status)).reduce((s2, a) => { const sv = services.find((x) => x.id === a.serviceId); return s2 + (sv ? sv.price : 0); }, 0), "from service prices"]].map(([k, v, sub]) => (
           <div key={k} className={`rounded-2xl p-4 ${T.card}`}>
             <div className={`text-[10px] font-medium uppercase tracking-widest ${T.faint}`}>{k}</div>
             <div className="text-xl font-semibold bz-display mt-1.5 tabular-nums">{v}</div>
@@ -21353,7 +21353,7 @@ function ApprovalsView() {
                     )}
                     {edit !== cur.id && (
                       <button onClick={() => ["High", "Critical"].includes(cur.risk)
-                        ? setConfirm({ text: `Approve this ${cur.risk.toLowerCase()} risk action?`, detail: cur.title + (cur.meta.amount ? ` · $${cur.meta.amount.toLocaleString()}` : "") + " → " + cur.to + ". It executes immediately once you confirm.", yes: "Confirm approval", onYes: () => decide(cur, true) })
+                        ? setConfirm({ text: `Approve this ${cur.risk.toLowerCase()} risk action?`, detail: cur.title + (cur.meta.amount ? ` · ₹${cur.meta.amount.toLocaleString()}` : "") + " → " + cur.to + ". It executes immediately once you confirm.", yes: "Confirm approval", onYes: () => decide(cur, true) })
                         : decide(cur, true)}
                         disabled={!gate.ok} className="h-9 px-4 rounded-xl text-xs font-semibold text-white disabled:opacity-40" style={{ background: BRAND }}>Approve</button>
                     )}
@@ -21817,7 +21817,7 @@ function AnalyticsView() {
             <Metric label="AI handled" value={aiShare} suffix="%" sub="of open conversations" />
             <Metric label="Escalation rate" value={escal} suffix="%" sub="passed to a human" />
             <Metric label="Appointments" value={appts.length} sub={apptDone + " completed"} onClick={() => go("appointments")} />
-            <Metric label="Cost per conversation" value={ec.costPerConversation !== null ? "$" + ec.costPerConversation.toFixed(2) : null} sub={"from " + money(ec.total) + " total"} onClick={() => setTab("Revenue")} />
+            <Metric label="Cost per conversation" value={ec.costPerConversation !== null ? "₹" + ec.costPerConversation.toFixed(2) : null} sub={"from " + money(ec.total) + " total"} onClick={() => setTab("Revenue")} />
           </div>
 
           <div className={`rounded-2xl p-5 ${T.card}`}>
