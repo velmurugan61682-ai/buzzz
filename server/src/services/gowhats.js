@@ -7,7 +7,7 @@
 
 import crypto from "crypto";
 import mongoose from "mongoose";
-import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveGoWhatsOrder, UnifiedMessageModel, MessageModel, ConversationModel, db, getSystemSetting, setSystemSetting } from "../data/db.js";
+import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveGoWhatsOrder, saveMissedCall, UnifiedMessageModel, MessageModel, ConversationModel, db, getSystemSetting, setSystemSetting } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 export const getGoWhatsMessageExtId = (msg) => {
@@ -580,6 +580,22 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
       updatedAt: msgTimestamp,
     };
     const conv = await upsertConversation(convDoc);
+
+    const isCallMsg = msg.type === "call" || msg.type === "missed_call" || msg.type === "voice" || /missed.*call|voice.*call|call.*missed|video.*call/i.test(textBody);
+    if (isCallMsg) {
+      await saveMissedCall({
+        id: `mc_${extId}`,
+        userId: "usr_default",
+        deviceId: "dev_gowhats",
+        phoneNumber: customerPhone,
+        contactName: contact?.name || `+${customerPhone}`,
+        calledAt: msgTimestamp,
+        syncSource: "gowhats",
+        externalCallId: `gw_call_${extId}`,
+        contactId: contact?.id || "",
+        type: "MISSED",
+      }).catch(() => null);
+    }
 
     const sender = isOutbound
       ? { name: "BUZZZ Agent", handle: "agent", kind: "agent" }

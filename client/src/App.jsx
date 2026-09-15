@@ -7416,17 +7416,49 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   };
   const syncCalls = async () => {
     try {
-      const res = await voice.listCalls(voiceCfg.agentId, { limit: 100 });
-      const rows = (res.calls || res.items || res || []).map((r) => ({
-        id: r.call_id || r.id, sessionId: r.session_id, contactId: (matchContact(r.direction === "inbound" ? r.from_number : r.to_number) || {}).id || null,
-        dir: r.direction, number: r.direction === "inbound" ? r.from_number : r.to_number, durSec: r.duration_seconds || 0,
-        at: r.started_at || r.created_at, status: r.status, agent: "Voz · Voice Agent", outcome: "", sentiment: "", intent: "",
-        reason: "", nextAction: "", tags: [], assignee: "", notes: [], transcript: [], summary: r.summary || "", actions: [], demo: false,
+      await fetch("/api/v1/gowhats/sync").catch(() => ({}));
+      const apiRes = await fetch("/api/v1/calls").then((r) => r.json()).catch(() => null);
+      
+      let voiceRows = [];
+      try {
+        const res = await voice.listCalls(voiceCfg.agentId, { limit: 100 });
+        voiceRows = (res.calls || res.items || res || []).map((r) => ({
+          id: r.call_id || r.id, sessionId: r.session_id, contactId: (matchContact(r.direction === "inbound" ? r.from_number : r.to_number) || {}).id || null,
+          dir: r.direction, number: r.direction === "inbound" ? r.from_number : r.to_number, durSec: r.duration_seconds || 0,
+          at: r.started_at || r.created_at, status: r.status, agent: "Voz · Voice Agent", outcome: "", sentiment: "", intent: "",
+          reason: "", nextAction: "", tags: [], assignee: "", notes: [], transcript: [], summary: r.summary || "", actions: [], demo: false,
+        }));
+      } catch {}
+
+      const backendRows = (apiRes?.calls || []).map((r) => ({
+        id: r.id, sessionId: r.sessionId || "", contactId: r.contactId || (matchContact(r.number) || {}).id || null,
+        dir: r.dir || "inbound", number: r.number, durSec: r.durSec || 0,
+        at: r.at || new Date().toISOString(), status: r.status || "missed", agent: r.agent || "GoWhats · WhatsApp Call", outcome: r.outcome || "No Answer", sentiment: "", intent: "",
+        reason: "", nextAction: "", tags: r.tags || ["WhatsApp"], assignee: "", notes: [], transcript: [], summary: r.summary || `Call log for ${r.number}`, actions: [], demo: false,
       }));
-      setCalls(rows);
-      log("System", "Calls synced from MrAssistant.ai", rows.length + " records");
-      flash(rows.length + " calls synced");
-    } catch (e) { flash(e.friendly || "Could not sync calls.", "err"); }
+
+      const merged = [...backendRows, ...voiceRows];
+      const seen = new Set();
+      const deduped = [];
+      for (const item of merged) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          deduped.push(item);
+        }
+      }
+
+      if (deduped.length > 0) {
+        setCalls((prev) => {
+          const prevMap = new Map((Array.isArray(prev) ? prev : []).map((x) => [x.id, x]));
+          deduped.forEach((x) => prevMap.set(x.id, { ...prevMap.get(x.id), ...x }));
+          return Array.from(prevMap.values());
+        });
+        log("System", "Calls synced from GoWhats & Voice", deduped.length + " records");
+        flash(deduped.length + " calls synced");
+      } else {
+        flash("Calls synced");
+      }
+    } catch (e) { flash("Could not sync calls.", "err"); }
   };
   /* call outcome writes straight back into the CRM */
   const applyCallOutcome = (callId, outcome) => {

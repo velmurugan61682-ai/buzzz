@@ -435,6 +435,44 @@ apiRouter.get("/calls/missed", requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/calls - Fetch unified call records (GoWhats & Missed Calls)
+apiRouter.get("/calls", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    syncGoWhatsMessages({ workspaceId: wsId, broadcastFn: broadcastSseEvent }).catch(() => ({}));
+
+    const missedRes = await fetchMissedCalls(null, 100, 1);
+    const docs = Array.isArray(missedRes?.docs) ? missedRes.docs : [];
+
+    const calls = docs.map((m) => ({
+      id: m.id || `mc_${m._id}`,
+      sessionId: m.externalCallId || m.id || "",
+      contactId: m.contactId || null,
+      dir: m.direction || "inbound",
+      number: m.phoneNumber || "",
+      durSec: m.durSec || 0,
+      at: m.calledAt || m.createdAt || new Date().toISOString(),
+      status: m.status || (m.type === "MISSED" ? "missed" : "completed"),
+      agent: "GoWhats · WhatsApp Call",
+      outcome: m.outcome || (m.type === "MISSED" ? "No Answer" : "Completed"),
+      sentiment: "",
+      intent: "",
+      reason: "",
+      nextAction: "",
+      tags: ["WhatsApp"],
+      assignee: "",
+      notes: [],
+      transcript: [],
+      summary: `Missed call from ${m.contactName || m.phoneNumber}`,
+      demo: false,
+    }));
+
+    res.json({ success: true, calls, count: calls.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 
 // Real-Time Events Streaming Endpoint (SSE)
