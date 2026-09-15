@@ -13,7 +13,7 @@ import {
   Target, Wand2, Mic, Home, Smartphone, Command as CommandIcon, Circle, Lock, Eye,
   RefreshCw, Upload, Link2, DollarSign, Calendar, ListChecks, Headphones, Radio,
   Share2, Image as ImageIcon, CalendarDays, ArrowLeft, KeyRound, LogOut
-, Download, CheckSquare, Activity , ChevronLeft , Image , PhoneIncoming, PhoneOutgoing, PhoneMissed, Pause , TrendingDown , ArrowLeftRight , Paperclip, Volume2, Video, Menu } from "lucide-react";
+, Download, CheckSquare, Activity , ChevronLeft , Image , PhoneIncoming, PhoneOutgoing, PhoneMissed, Pause , TrendingDown , ArrowLeftRight , Paperclip, Volume2, Video, Menu, Trash2, Trash } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   CartesianGrid, PieChart, Pie, Cell, AreaChart, Area
@@ -285,7 +285,7 @@ const CONTACTS = [
   {
     id: "c1", name: "Arun Kumar", company: "Vertex Retail Group", title: "Head of Operations",
     location: "Chennai, IN", email: "arun.kumar@vertexretail.in", phone: "+91 98407 22110",
-    stage: "Opportunity", score: 87, value: "$18,400", ltv: "$18,400", churn: "Low",
+    stage: "Opportunity", score: 87, value: "₹18,400", ltv: "₹18,400", churn: "Low",
     sentiment: "Positive", intent: "Purchase", channels: ["whatsapp", "voice", "email"],
     tags: ["High Intent", "Enterprise", "Pricing"],
     memory: [
@@ -6514,6 +6514,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [selCall, setSelCall] = useState(null);
   const [convs, setConvs] = useState(CONVS);
   const [deals, setDeals] = useState(DEALS);
+  const [contactsV, setContactsV] = useState(0);
   const [approvals, setApprovals] = useState(APPROVALS_INIT);
   const [policies, setPolicies] = useState(POLICIES_INIT);
   const [delegations, setDelegations] = useState([]);
@@ -6572,10 +6573,15 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       api.getInbox(wsId),
     ]).then(([resContacts, resConvs, resAgents, resWfs, resInbox]) => {
       if (!active) return;
-      if (resContacts.status === "fulfilled" && resContacts.value?.data?.length) {
-        CONTACTS.length = 0;
-        resContacts.value.data.forEach((c) => CONTACTS.push(c));
-        setContactsV((v) => v + 1);
+      if (resContacts.status === "fulfilled" && resContacts.value) {
+        const rawContacts = Array.isArray(resContacts.value)
+          ? resContacts.value
+          : (resContacts.value.data || resContacts.value.contacts || []);
+        if (Array.isArray(rawContacts) && rawContacts.length > 0) {
+          CONTACTS.length = 0;
+          rawContacts.forEach((c) => CONTACTS.push(c));
+          setContactsV((v) => v + 1);
+        }
       }
       if (resConvs.status === "fulfilled") {
         const rawConvData = Array.isArray(resConvs.value)
@@ -6647,6 +6653,50 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     });
     return () => { active = false; };
   }, [route]);
+
+  /* Auto-convert synced contacts (GoWhats / WhatsApp / Web) into Deals pipeline stages */
+  useEffect(() => {
+    if (!Array.isArray(CONTACTS) || CONTACTS.length === 0) return;
+    setDeals((prevDeals) => {
+      const existingContactIds = new Set((prevDeals || []).map((d) => d.contactId));
+      const newDeals = [];
+
+      CONTACTS.forEach((c, idx) => {
+        const contactId = c.id || (c._id ? String(c._id) : `c_${idx}`);
+        if (!existingContactIds.has(contactId)) {
+          let targetStage = "New Lead";
+          if (c.stage && STAGES.includes(c.stage)) {
+            targetStage = c.stage;
+          } else if (c.score >= 80) {
+            targetStage = "Qualified";
+          } else if (c.score >= 50 || c.lastContact || c.phone) {
+            targetStage = "Contacted";
+          }
+
+          const rawVal = c.value ? parseFloat(String(c.value).replace(/[^0-9.]/g, "")) : 0;
+          const dealValue = rawVal > 0 ? rawVal : (c.score ? c.score * 100 : 2500);
+
+          newDeals.push({
+            id: `d_auto_${contactId}_${idx}`,
+            name: `${c.name || "WhatsApp Lead"} - Opportunity`,
+            contactId,
+            pipelineId: "p1",
+            stage: targetStage,
+            value: dealValue,
+            prob: c.score || 60,
+            owner: c.owner || "Jordan Lee",
+            close: "2026-09-30",
+            next: c.aiSummary || `Follow up on WhatsApp (+${c.phone || "GoWhats"})`,
+          });
+        }
+      });
+
+      if (newDeals.length > 0) {
+        return [...(prevDeals || []), ...newDeals];
+      }
+      return prevDeals;
+    });
+  }, [contactsV, CONTACTS.length]);
 
   /* Real-time SSE listener for multi-channel incoming messages (ChannelBot, InstaxBot, Gmail) */
   useEffect(() => {
@@ -6940,7 +6990,6 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [outHooks, setOutHooks] = useState([{ id: "h1", url: "https://acme.example/hooks/buzzz", events: ["contact.created", "deal.won"], on: true, lastStatus: 200, lastAt: atDay(0, 8), failures: 0 }]);
   const [agentEdit, setAgentEdit] = useState(null);      // null | "new" | agent id
   const [wsName, setWsName] = useState("Acme Corporation");
-  const [contactsV, setContactsV] = useState(0);
   const [tasks, setTasks] = useState(TASKS_INIT);
   const addTask = (txt, who = "Unassigned", extra = {}) => createTask({ txt, who, ai: true, ...extra });
   const [crmTabs, setCrmTabs] = useState(["Overview", "Contacts", "Companies", "Pipeline", "Tasks", "Tickets"]);
@@ -6961,10 +7010,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const ind = INDUSTRIES.find((x) => x.id === industry) || INDUSTRIES[INDUSTRIES.length - 1];
   const [activity, setActivity] = useState(ACTIVITY_INIT);
   const [autonomy, setAutonomy] = useState(3);
-  const [billing, setBilling] = useState({ plan: "Growth", sub: "active", cycle: "monthly", country: "SG", region: "sg",
-    renewsAt: atDay(18, 9), startedAt: atDay(-72, 9), trialEndsAt: null, budget: 500, hardCap: false, alertAt: [75, 90, 100], alerted: [] });
+  const [billing, setBilling] = useState({ plan: "Growth", sub: "active", cycle: "monthly", country: "IN", region: "in",
+    renewsAt: atDay(18, 9), startedAt: atDay(-72, 9), trialEndsAt: null, budget: 50000, hardCap: false, alertAt: [75, 90, 100], alerted: [] });
   const [aiCfg, setAiCfg] = useState({ enabled: ["openai"], primary: "gpt-4o-mini", fallback: "gpt-4o", temperature: 0.4, embedding: "text-embedding-3-small" });
-  const [ws, setWs] = useState({ name: "Acme Corporation", country: "SG", tz: "Asia/Singapore", currency: "SGD", locale: "en-SG",
+  const [ws, setWs] = useState({ name: "Acme Corporation", country: "IN", tz: "Asia/Kolkata", currency: "INR", locale: "en-IN",
     dateFmt: "D MMM YYYY", timeFmt: "24h", hours: { start: "09:00", end: "18:00", days: ["Mon", "Tue", "Wed", "Thu", "Fri"] } });
   const [escRules, setEscRules] = useState([
     { id: "e1", label: "Customer is angry", on: true, action: "Hand to a human", team: "Support Lead", threshold: null },
@@ -8144,10 +8193,12 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   }));
   const deleteAppt = (id) => { const a = appts.find((x) => x.id === id); setAppts((as) => as.filter((x) => x.id !== id)); if (a) { trail("Appointment deleted", apptLabel(a), fmtWhen(a), "removed"); log("You", "Appointment deleted", apptLabel(a)); } };
   const bookAppointment = (contactId, title, source, when) => {
-    const svc = services[0];
+    const svc = services && services[0];
+    if (!svc) return null;
+    const loc = locations.find((l) => l.id === (svc.locations ? svc.locations[0] : null)) || locations[0];
     const date = new Date(); date.setDate(date.getDate() + (/tomorrow/i.test(when || "") ? 1 : 1)); date.setHours(10, 0, 0, 0);
-    const av = availability({ date, service: svc, staff: null, location: locations.find((l) => l.id === svc.locations[0]), appts, rules, staffList: staff });
-    const slot = av.slots[0] || date;
+    const av = availability({ date, service: svc, staff: null, location: loc, appts, rules, staffList: staff });
+    const slot = (av && av.slots && av.slots[0]) || date;
     const appt = createAppt({ contactId, serviceId: svc.id, start: slot.toISOString(), title: title || svc.name, source: source && /BUZZZ|AI/i.test(source) ? "Chat AI" : "Manual" }, source || "You");
     flash(`Booked for ${fmtWhen(appt)}. Confirmation queued on the customer's channel.`);
     return appt;
@@ -12138,7 +12189,8 @@ function InboxView() {
 
   const open = (id) => {
     setSelConv(id);
-    setConvs((cs) => cs.map((c) => c.id === id ? { ...c, unread: 0 } : c));   // mark read
+    setConvs((cs) => cs.map((c) => c.id === id ? { ...c, unread: 0 } : c));   // mark read locally
+    fetch(`/api/conversations/${encodeURIComponent(id)}/read`, { method: "PATCH" }).catch(() => {});
   };
 
   const FILTERS = ["All", "Unread", "Mine", "AI", "Human", "Priority", "Waiting", "Resolved"];
@@ -13565,7 +13617,7 @@ function PipelineView() {
         <div className="flex items-center gap-2 mt-2">
           {c && <button onClick={() => openContact(c.id)}><Avatar name={c.name} i={CONTACTS.indexOf(c)} size="w-5 h-5 text-[8px]" /></button>}
           <span className={`text-[10px] flex-1 truncate ${T.faint}`}>{c ? c.name : "unlinked"}</span>
-          <span className="text-xs font-bold bz-display tabular-nums">${((d.value || 0) / 1000).toFixed(0)}k</span>
+          <span className="text-xs font-bold bz-display tabular-nums">₹{((d.value || 0) / 1000).toFixed(0)}k</span>
         </div>
         <div className={`flex items-center gap-2 mt-1.5 text-[9px] ${T.faint}`}>
           <span>{d.owner || "Unassigned"}</span>{d.close && <span>· closes {d.close}</span>}<span className="ml-auto tabular-nums">{d.prob ?? 50}%</span>
@@ -13595,7 +13647,7 @@ function PipelineView() {
               </div>
             </div></>)}
         </div>
-        <span className={`text-[11px] tabular-nums ${T.sub}`}>{mine.length} deals · ${(total / 1000).toFixed(1)}k open · ${(weighted / 1000).toFixed(1)}k weighted</span>
+        <span className={`text-[11px] tabular-nums ${T.sub}`}>{mine.length} deals · ₹{(total / 1000).toFixed(1)}k open · ₹{(weighted / 1000).toFixed(1)}k weighted</span>
         <div className="flex-1" />
         <div className={`flex rounded-full border p-0.5 ${T.border}`}>
           {["Kanban", "List", "Table"].map((v) => (
@@ -13617,7 +13669,7 @@ function PipelineView() {
                 <div className="px-3 h-11 flex items-center gap-2 shrink-0">
                   <span className="w-2 h-2 rounded-full" style={{ background: st.color }} />
                   <span className="text-xs font-bold flex-1 truncate">{st.name}</span>
-                  <span className={`text-[10px] tabular-nums ${T.faint}`}>{cards.length} · ${(sum / 1000).toFixed(1)}k</span>
+                  <span className={`text-[10px] tabular-nums ${T.faint}`}>{cards.length} · ₹{(sum / 1000).toFixed(1)}k</span>
                 </div>
                 <div className="flex-1 px-2 pb-2 space-y-2 overflow-y-auto bz-scroll">
                   {cards.map((d) => <DealCard key={d.id} d={d} />)}

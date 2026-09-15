@@ -26,11 +26,14 @@ export const getGoWhatsMessageExtId = (msg) => {
 };
 
 const getBaseUrl = () => {
-  return (process.env.GOWHATS_BASE_URL || process.env.CHANNELBOT_BASE_URL || "https://bot.gowhats.in/api/v1/").replace(/\/$/, "");
+  let url = (process.env.GOWHATS_BASE_URL || "https://bot.gowhats.in/api/v1").trim().replace(/\/$/, "");
+  // Strip trailing /messages or /messages/send if specified in GOWHATS_BASE_URL environment variable
+  url = url.replace(/\/messages(\/send)?$/i, "");
+  return url;
 };
 
 const getApiKey = () => {
-  return (process.env.GOWHATS_API_KEY || process.env.CHANNELBOT_API_KEY || "").trim();
+  return (process.env.GOWHATS_API_KEY || "").trim();
 };
 
 export const isGoWhatsConfigured = () => {
@@ -165,38 +168,84 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) =>
   if (!apiKey) return { success: false, messages: [] };
 
   const baseUrl = getBaseUrl();
-  const phone = phoneNumber !== undefined ? phoneNumber : (process.env.WHATSAPP_PHONE_NUMBER || "919047484484");
-  const queryParam = phone ? `?phoneNumber=${encodeURIComponent(phone)}` : "";
-  const primaryUrl = `${baseUrl}/messages${queryParam}`;
 
-  const fetchUrl = async (targetUrl) => {
-    const response = await fetch(targetUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    });
-    const data = await response.json().catch(() => ({}));
-    const rawList = data.data?.messages || data.messages || data.data?.data || (Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []));
-    return { ok: response.ok, rawList: Array.isArray(rawList) ? rawList : [], data };
+  const fetchForSinglePhone = async (phone) => {
+    const cleanPhone = String(phone || "").replace(/\D/g, "");
+    if (!cleanPhone) return [];
+    const url = `${baseUrl}/messages?phoneNumber=${encodeURIComponent(cleanPhone)}`;
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      const rawList = data.data?.messages || data.messages || data.data?.data || (Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []));
+      return Array.isArray(rawList) ? rawList : [];
+    } catch {
+      return [];
+    }
   };
 
   try {
-    let result = await fetchUrl(primaryUrl);
+    if (phoneNumber) {
+      const msgs = await fetchForSinglePhone(phoneNumber);
+      return { success: true, messages: msgs };
+    }
 
-    if ((!result.ok || result.rawList.length === 0) && queryParam) {
-      const fallbackUrl = `${baseUrl}/messages`;
-      const fallbackResult = await fetchUrl(fallbackUrl);
-      if (fallbackResult.ok && fallbackResult.rawList.length > 0) {
-        result = fallbackResult;
+    // If no specific phoneNumber passed, fetch ALL contacts first to get every customer's phone number
+    const phoneSet = new Set();
+    const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
+    if (defaultPhone) phoneSet.add(defaultPhone.replace(/\D/g, ""));
+
+    const contactsUrl = `${baseUrl}/contacts`;
+    try {
+      const contactsRes = await fetch(contactsUrl, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const contactsData = await contactsRes.json().catch(() => ({}));
+      const rawContacts = contactsData.data?.contacts || contactsData.contacts || (Array.isArray(contactsData.data) ? contactsData.data : []);
+      if (Array.isArray(rawContacts)) {
+        for (const c of rawContacts) {
+          const p = c.phone_number || c.phone || c.number || (c.bsuid ? String(c.bsuid).replace(/\D/g, "") : "");
+          if (p) {
+            const cleanP = String(p).replace(/\D/g, "");
+            if (cleanP && cleanP.length >= 7) phoneSet.add(cleanP);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("⚠️ GoWhats fetch contacts list warning:", err.message);
+    }
+
+    // Fetch messages for all unique phone numbers concurrently
+    const allMessages = [];
+    const seenMsgIds = new Set();
+
+    const phones = Array.from(phoneSet);
+    const fetchPromises = phones.map((p) => fetchForSinglePhone(p));
+    const results = await Promise.all(fetchPromises);
+
+    for (const msgList of results) {
+      for (const msg of msgList) {
+        const extId = getGoWhatsMessageExtId(msg);
+        if (extId && !seenMsgIds.has(extId)) {
+          seenMsgIds.add(extId);
+          allMessages.push(msg);
+        }
       }
     }
 
     return {
-      success: result.ok,
-      messages: result.rawList,
-      raw: result.data,
+      success: true,
+      messages: allMessages,
+      totalContactsChecked: phones.length,
     };
   } catch (err) {
     return { success: false, messages: [], error: err.message };

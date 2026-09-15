@@ -658,11 +658,39 @@ apiRouter.get("/conversations/:convId/messages", async (req, res, next) => {
   try {
     const { convId } = req.params;
     const messages = await fetchMessagesByConversationId(convId);
+
+    // Auto-mark conversation as read when messages are fetched
+    const conv = await fetchConversationById(convId);
+    if (conv && conv.unreadCount > 0) {
+      conv.unreadCount = 0;
+      await upsertConversation(conv);
+      broadcastSseEvent("conversation:updated", { conversation: conv });
+    }
+
     res.json(messages);
   } catch (err) {
     next(err);
   }
 });
+
+const handleMarkConversationRead = async (req, res, next) => {
+  try {
+    const { convId } = req.params;
+    const conv = await fetchConversationById(convId);
+    if (!conv) {
+      return res.status(404).json({ code: "not_found", message: `Conversation ${convId} not found` });
+    }
+    conv.unreadCount = 0;
+    const updatedConv = await upsertConversation(conv);
+    broadcastSseEvent("conversation:updated", { conversation: updatedConv });
+    res.json({ success: true, conversation: updatedConv });
+  } catch (err) {
+    next(err);
+  }
+};
+
+apiRouter.patch("/conversations/:convId/read", handleMarkConversationRead);
+apiRouter.post("/conversations/:convId/read", handleMarkConversationRead);
 
 apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
   try {
@@ -748,6 +776,8 @@ apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
 apiRouter.get("/contacts", async (req, res, next) => {
   try {
     const wsId = getWorkspaceId(req);
+    // Sync latest GoWhats WhatsApp contacts into database
+    syncGoWhatsContacts({ workspaceId: wsId }).catch((e) => console.warn("⚠️ Contact background sync:", e.message));
     const contacts = await fetchContacts(wsId);
     res.json(contacts);
   } catch (err) {
