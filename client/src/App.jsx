@@ -20370,6 +20370,11 @@ function CallDetail({ call, onClose }) {
 
 function CallsView() {
   const { T, dk, calls, voice, voiceCfg, setVoiceCfg, syncCalls, placeCall, updateCall, openContact, convs, openConv, createTask, flash, go, agents } = useApp();
+  
+  useEffect(() => {
+    syncCalls();
+  }, []);
+
   const [tab, setTab] = useState("All calls");
   const [detail, setDetail] = useState(null);
   const [q, setQ] = useState("");
