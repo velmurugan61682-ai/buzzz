@@ -6688,29 +6688,126 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return () => { active = false; };
   }, [route]);
 
-  /* Auto-convert synced contacts (GoWhats / WhatsApp / Web) into Deals pipeline stages */
+  /* Helper: Automatically derive CRM pipeline stage from GoWhats / WhatsApp chat messages & context */
+  const deriveStageFromConv = useCallback((contact, convsList) => {
+    if (!contact) return "New Lead";
+    const contactId = contact.id || (contact._id ? String(contact._id) : "");
+    const normP = (contact.phone || "").replace(/[^\d]/g, "");
+
+    // Find matching conversation
+    const conv = Array.isArray(convsList)
+      ? convsList.find((v) => {
+          if (contactId && v.contactId === contactId) return true;
+          const vPhone = (v.phone || "").replace(/[^\d]/g, "");
+          if (normP && normP.length >= 7 && vPhone.length >= 7 && (normP.includes(vPhone) || vPhone.includes(normP))) return true;
+          const vName = (v.customerName || v.name || "").toLowerCase();
+          const cName = (contact.name || "").toLowerCase();
+          if (cName && cName.length > 3 && vName.includes(cName)) return true;
+          return false;
+        })
+      : null;
+
+    // Gather text from messages
+    let msgsText = "";
+    if (conv && Array.isArray(conv.msgs)) {
+      msgsText = conv.msgs.map((m) => (m.text || m.body || m.subject || "").toLowerCase()).join(" ");
+    }
+
+    // Gather text from contact fields
+    const cExtra = [
+      contact.aiSummary || "",
+      ...(contact.memory || []),
+      ...(contact.notes || []),
+      contact.goal || "",
+      contact.next || "",
+    ].join(" ").toLowerCase();
+
+    const fullText = (msgsText + " " + cExtra).trim();
+
+    // 1. Won (Payment done, deal closed, order confirmed)
+    if (
+      /(\bwon\b|payment received|invoice paid|\bpaid\b|payment done|deal closed|bought|confirmed order|order placed|deal won|transfer complete|money sent|received payment|amount received)/i.test(fullText)
+    ) {
+      return "Won";
+    }
+
+    // 2. Negotiation (Discount, final price, offer, terms)
+    if (
+      /(\bnegotiat|discount|best price|final price|price reduction|budget limit|contract terms|special offer|lower price|deal price|discounted|bargain|rebate)/i.test(fullText)
+    ) {
+      return "Negotiation";
+    }
+
+    // 3. Proposal Sent (Quote, quotation, proposal, pricing sheet, estimate)
+    if (
+      /(\bproposal\b|\bquote\b|quotation|pricing sheet|price list|cost breakdown|estimate|sent quotation|send quote|sharing proposal|proposal sent|quotation follow)/i.test(fullText)
+    ) {
+      return "Proposal Sent";
+    }
+
+    // 4. Demo Booked (Demo, booked meeting, scoping call, appointment, zoom, meet)
+    if (
+      /(\bdemo\b|\bbooked\b|appointment|meeting|scoping call|schedule call|zoom|google meet|walkthrough|scheduled for|book a call|meet on|meeting confirmed|call booked|book slot|scoping)/i.test(fullText)
+    ) {
+      return "Demo Booked";
+    }
+
+    // 5. Qualified (Enterprise, pricing details, high intent, budget, qualified)
+    if (
+      /(\bqualified\b|enterprise|interested|need details|budget approved|requirement|looking for|want to buy|plan details|pricing details|how much|annual plan|growth plan|starter plan|pricing|cost)/i.test(fullText) ||
+      (contact.score && contact.score >= 70)
+    ) {
+      return "Qualified";
+    }
+
+    // 6. Contacted (Message history exists, replied, or score >= 40)
+    if (
+      (conv && conv.msgs && conv.msgs.length > 0) ||
+      (contact.lastContact && contact.lastContact > 0) ||
+      (contact.score && contact.score >= 40) ||
+      /(\bhi\b|\bhello\b|hey|thanks|thank you|yes|no|info|details|contacted|replied)/i.test(fullText)
+    ) {
+      return "Contacted";
+    }
+
+    // 7. Fallback to contact.stage if valid, else "New Lead"
+    if (contact.stage && STAGES.includes(contact.stage)) {
+      return contact.stage;
+    }
+
+    return "New Lead";
+  }, []);
+
+  /* Auto-convert synced contacts (GoWhats / WhatsApp / Web) into Deals pipeline stages based on chat messages */
   useEffect(() => {
     if (!Array.isArray(CONTACTS) || CONTACTS.length === 0) return;
+
     setDeals((prevDeals) => {
-      const existingContactIds = new Set((prevDeals || []).map((d) => d.contactId));
-      const newDeals = [];
+      const existingMap = new Map((prevDeals || []).map((d) => [d.contactId, d]));
+      let changed = false;
+      const updatedDeals = [...(prevDeals || [])];
 
       CONTACTS.forEach((c, idx) => {
         const contactId = c.id || (c._id ? String(c._id) : `c_${idx}`);
-        if (!existingContactIds.has(contactId)) {
-          let targetStage = "New Lead";
-          if (c.stage && STAGES.includes(c.stage)) {
-            targetStage = c.stage;
-          } else if (c.score >= 80) {
-            targetStage = "Qualified";
-          } else if (c.score >= 50 || c.lastContact || c.phone) {
-            targetStage = "Contacted";
+        const targetStage = deriveStageFromConv(c, convs);
+        const rawVal = c.value ? parseFloat(String(c.value).replace(/[^0-9.]/g, "")) : 0;
+        const dealValue = rawVal > 0 ? rawVal : (c.score ? c.score * 100 : 5000);
+
+        if (existingMap.has(contactId)) {
+          const existingDeal = existingMap.get(contactId);
+          if (existingDeal.stage !== targetStage) {
+            const dealIdx = updatedDeals.findIndex((d) => d.contactId === contactId);
+            if (dealIdx !== -1) {
+              updatedDeals[dealIdx] = {
+                ...updatedDeals[dealIdx],
+                stage: targetStage,
+                next: c.aiSummary || `Follow up on WhatsApp (+${c.phone || "GoWhats"})`,
+              };
+              changed = true;
+            }
           }
-
-          const rawVal = c.value ? parseFloat(String(c.value).replace(/[^0-9.]/g, "")) : 0;
-          const dealValue = rawVal > 0 ? rawVal : (c.score ? c.score * 100 : 2500);
-
-          newDeals.push({
+        } else {
+          updatedDeals.push({
             id: `d_auto_${contactId}_${idx}`,
             name: `${c.name || "WhatsApp Lead"} - Opportunity`,
             contactId,
@@ -6722,15 +6819,13 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             close: "2026-09-30",
             next: c.aiSummary || `Follow up on WhatsApp (+${c.phone || "GoWhats"})`,
           });
+          changed = true;
         }
       });
 
-      if (newDeals.length > 0) {
-        return [...(prevDeals || []), ...newDeals];
-      }
-      return prevDeals;
+      return changed ? updatedDeals : prevDeals;
     });
-  }, [contactsV, CONTACTS.length]);
+  }, [contactsV, CONTACTS.length, convs, deriveStageFromConv]);
 
   /* Real-time SSE listener for multi-channel incoming messages (ChannelBot, InstaxBot, Gmail) */
   useEffect(() => {
