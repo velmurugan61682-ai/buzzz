@@ -2070,6 +2070,27 @@ const CH_CAPS = {
 const CAMPAIGN_GOALS = ["Generate leads", "Book appointments", "Generate sales", "Reactivate customers", "Collect responses", "Promote product", "Follow up on quotation", "Customer retention"];
 const CAMPAIGN_STATUS = ["Draft", "In review", "Scheduled", "Running", "Paused", "Completed", "Cancelled", "Failed"];
 const RCP_STATUS = ["Queued", "Sent", "Delivered", "Opened", "Clicked", "Replied", "Converted", "Failed", "Suppressed"];
+const campStatTint = {
+  Draft: "bg-zinc-100 text-zinc-600 border-zinc-200",
+  "In review": "bg-amber-50 text-amber-700 border-amber-200",
+  Scheduled: "bg-sky-50 text-sky-700 border-sky-200",
+  Running: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Paused: "bg-amber-50 text-amber-700 border-amber-200",
+  Completed: "bg-blue-50 text-blue-700 border-blue-200",
+  Cancelled: "bg-zinc-100 text-zinc-500 border-zinc-200",
+  Failed: "bg-red-50 text-red-700 border-red-200",
+};
+const rcpTint = {
+  Queued: "bg-zinc-100 text-zinc-600 border-zinc-200",
+  Sent: "bg-sky-50 text-sky-700 border-sky-200",
+  Delivered: "bg-blue-50 text-blue-700 border-blue-200",
+  Opened: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  Clicked: "bg-violet-50 text-violet-700 border-violet-200",
+  Replied: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Converted: "bg-green-50 text-green-700 border-green-200",
+  Failed: "bg-red-50 text-red-700 border-red-200",
+  Suppressed: "bg-amber-50 text-amber-700 border-amber-200",
+};
 const FAIL_REASONS = ["Invalid number", "Provider rejected", "Rate limited", "Outside 24h window", "Mailbox full"];
 
 const SEGMENTS_LIB = [
@@ -6569,7 +6590,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [camps, setCamps] = useState(CAMPAIGNS);
   const [suppression, setSuppression] = useState([]);          // {contactId, channel, at, why}
   const [commPrefs, setCommPrefs] = useState({});              // contactId -> {channel:bool}
-  const [quiet, setQuiet] = useState({ from: 9, to: 19, on: true, tz: "Asia/Singapore (GMT+8)" });
+  const [quiet, setQuiet] = useState({ from: 9, to: 19, on: true, tz: "Asia/Kolkata (IST)" });
   const [msgTemplates, setMsgTemplates] = useState([]); // TODO_BACKEND
   const [kb, setKb] = useState(KNOWLEDGE);
   const [kbQueries, setKbQueries] = useState([]);      // every retrieval, real
@@ -16517,7 +16538,7 @@ function CampaignDetail({ camp, onClose }) {
   return (
     <Modal title={c.name} onClose={onClose} wide>
       <div className="flex items-center gap-2 flex-wrap mb-3">
-        <Pill c={campStatTint[c.status]}>{c.status}</Pill>
+        <Pill c={campStatTint[c.status] || "bg-zinc-100 text-zinc-600 border-zinc-200"}>{c.status}</Pill>
         <Brand id={c.channel === "email" ? "gmail" : c.channel} size={16} />
         <span className={`text-[11px] ${T.faint}`}>{c.goal} · created {c.createdAt} by {c.createdBy}</span>
         <div className="flex-1" />
@@ -16592,7 +16613,7 @@ function CampaignDetail({ camp, onClose }) {
                   <tr key={r.id} className={T.hover}>
                     <td className="px-2.5 py-1.5"><button onClick={() => { onClose(); openContact(r.contactId); }} className="font-medium hover:underline underline-offset-2">{ct ? ct.name : "—"}</button></td>
                     <td className="px-2.5">{r.variant}</td>
-                    <td className="px-2.5"><Pill c={rcpTint[r.status]}>{r.status}</Pill></td>
+                    <td className="px-2.5"><Pill c={rcpTint[r.status] || "bg-zinc-100 text-zinc-600 border-zinc-200"}>{r.status}</Pill></td>
                     <td className="px-2.5 tabular-nums">{r.attempts}</td>
                     <td className={`px-2.5 truncate max-w-44 ${r.status === "Failed" ? "text-red-500" : T.faint}`}>{r.fail || (r.sentAt ? fmtT(new Date(r.sentAt)) : "waiting in queue")}</td>
                     <td className="px-2.5">{r.status !== "Suppressed" && <button onClick={() => { optOut(r.contactId, c.channel, "Stopped manually"); flash((ct ? ct.name : "Contact") + " will not receive further messages on this channel."); }} className={`text-[10px] ${T.faint}`}>Stop</button>}</td>
@@ -16733,7 +16754,7 @@ function CampaignsView() {
                       <button onClick={() => setSel(sel.includes(c.id) ? sel.filter((x) => x !== c.id) : [...sel, c.id])}>{sel.includes(c.id) ? <CheckCircle2 size={14} style={{ color: BRAND }} /> : <Circle size={13} className={T.faint} />}</button>
                       <Brand id={c.channel === "email" ? "gmail" : c.channel} size={16} />
                       <button onClick={() => setDetail(c)} className="text-sm font-semibold flex-1 text-left hover:underline underline-offset-2">{c.name}</button>
-                      <Pill c={campStatTint[c.status]}>{c.status}</Pill>
+                      <Pill c={campStatTint[c.status] || "bg-zinc-100 text-zinc-600 border-zinc-200"}>{c.status}</Pill>
                       {c.status === "Running" && <button onClick={() => setCampStatus(c.id, "Paused")} className={`p-1.5 rounded-lg ${T.hover}`} title="Pause"><Circle size={11} /></button>}
                       {["Paused", "Draft", "Scheduled"].includes(c.status) && <button onClick={() => setCampStatus(c.id, "Running")} className={`p-1.5 rounded-lg ${T.hover}`} title="Start"><PlayCircle size={12} /></button>}
                       <button onClick={() => setConfirm({ text: `Delete "${c.name}"?`, detail: "Sent messages stay in each contact's history.", onYes: () => { setCamps((cs) => cs.filter((x) => x.id !== c.id)); flash("Deleted"); } })} className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 ${T.hover}`}><X size={11} /></button>
@@ -19855,7 +19876,7 @@ function StaffView() {
   const { T, dk, staff, setStaff, services, locations, appts, setConfirm, flash, trail } = useApp();
   const [edit, setEdit] = useState(null);
   const [f, setF] = useState(null);
-  const open = (p) => { setF(p ? JSON.parse(JSON.stringify(p)) : { id: "st" + Date.now(), name: "", role: "", tz: "Asia/Singapore", services: [], locations: [], hours: { 1: [9, 17], 2: [9, 17], 3: [9, 17], 4: [9, 17], 5: [9, 17], 6: null, 0: null }, breaks: [[13, 14]], off: [], capacity: 8, color: STAGE_COLORS[staff.length % STAGE_COLORS.length] }); setEdit(p ? p.id : "new"); };
+  const open = (p) => { setF(p ? JSON.parse(JSON.stringify(p)) : { id: "st" + Date.now(), name: "", role: "", tz: "Asia/Kolkata", services: [], locations: [], hours: { 1: [9, 17], 2: [9, 17], 3: [9, 17], 4: [9, 17], 5: [9, 17], 6: null, 0: null }, breaks: [[13, 14]], off: [], capacity: 8, color: STAGE_COLORS[staff.length % STAGE_COLORS.length] }); setEdit(p ? p.id : "new"); };
   const save = () => {
     if (!f.name.trim()) { flash("Name the staff member", "err"); return; }
     if (edit === "new") { setStaff([...staff, f]); trail("Staff added", f.name, "", f.role); flash(f.name + " added and bookable"); }
@@ -22882,7 +22903,7 @@ function IntegrationsView() {
   );
 }
 
-const TZS = ["Asia/Singapore", "Asia/Kolkata", "Asia/Dubai", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Australia/Sydney", "Africa/Lagos", "Africa/Nairobi"];
+const TZS = ["Asia/Kolkata", "Asia/Singapore", "Asia/Dubai", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Australia/Sydney", "Africa/Lagos", "Africa/Nairobi"];
 const COUNTRIES = [["SG", "Singapore"], ["IN", "India"], ["US", "United States"], ["GB", "United Kingdom"], ["DE", "Germany"], ["AU", "Australia"], ["NG", "Nigeria"], ["KE", "Kenya"], ["AE", "United Arab Emirates"], ["MY", "Malaysia"], ["BR", "Brazil"], ["UG", "Uganda"]];
 
 /* ---- model choice ----
