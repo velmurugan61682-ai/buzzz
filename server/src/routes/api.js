@@ -647,12 +647,34 @@ apiRouter.post("/channelbot/simulate-incoming", async (req, res) => {
 apiRouter.get("/conversations", async (req, res, next) => {
   try {
     const wsId = getWorkspaceId(req);
+    // Background sync GoWhats messages to ensure conversations are fresh
+    syncGoWhatsMessages({ workspaceId: wsId, broadcastFn: broadcastSseEvent }).catch((e) => console.warn("⚠️ GoWhats background sync warning:", e.message));
     const conversations = await fetchConversations(wsId);
     res.json(conversations);
   } catch (err) {
     next(err);
   }
 });
+
+const handleGoWhatsSync = async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const msgRes = await syncGoWhatsMessages({ workspaceId: wsId, broadcastFn: broadcastSseEvent });
+    const contactRes = await syncGoWhatsContacts({ workspaceId: wsId, broadcastFn: broadcastSseEvent });
+    res.json({
+      success: true,
+      message: "GoWhats contacts and messages synced without duplicates.",
+      syncedMessages: msgRes.syncedCount || 0,
+      totalFetched: msgRes.totalFetched || 0,
+      syncedContacts: contactRes.syncedCount || 0,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+apiRouter.get("/gowhats/sync", handleGoWhatsSync);
+apiRouter.post("/gowhats/sync", handleGoWhatsSync);
 
 apiRouter.get("/conversations/:convId/messages", async (req, res, next) => {
   try {

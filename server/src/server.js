@@ -108,7 +108,7 @@ const startServer = async () => {
 
   // Start background auto-sync schedulers for all connected channels (polling every 30-60 seconds)
   startGmailMessagesAutoSyncScheduler(broadcastSseEvent, 30000);
-  startGoWhatsAutoSyncScheduler(broadcastSseEvent, 45000);
+  startGoWhatsAutoSyncScheduler(broadcastSseEvent, 10000);
   startInstaxBotAutoSyncScheduler(broadcastSseEvent, 45000);
   startChannelBotAutoSyncScheduler(broadcastSseEvent, 60000);
 

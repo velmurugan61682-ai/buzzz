@@ -323,7 +323,7 @@ export const fetchGoWhatsOrders = async ({ phoneNumber, page, limit, overrideKey
  * 4. Scope: Read Contacts
  * Fetches GoWhats contact list and merges into BUZZZ unified Contact model.
  */
-export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", overrideKey } = {}) => {
+export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", overrideKey, broadcastFn } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, syncedCount: 0, error: "No GoWhats API key configured" };
 
@@ -342,13 +342,17 @@ export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", override
     const data = await response.json().catch(() => ({}));
     const rawContacts = data.data?.contacts || data.contacts || data.data || [];
     const synced = [];
+    const seenPhones = new Set();
 
     if (Array.isArray(rawContacts)) {
       for (const c of rawContacts) {
-        const phone = c.phone_number || c.phone || c.number;
+        const phone = c.phone_number || c.phone || c.number || (c.bsuid ? String(c.bsuid).replace(/\D/g, "") : "");
         if (!phone) continue;
 
         const cleanPhone = String(phone).replace(/\D/g, "");
+        if (!cleanPhone || cleanPhone.length < 7 || seenPhones.has(cleanPhone)) continue;
+        seenPhones.add(cleanPhone);
+
         const displayName = c.alias || c.name || `WhatsApp User (+${cleanPhone})`;
 
         const contact = await resolveOrCreateContact({
@@ -357,7 +361,7 @@ export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", override
           phone: cleanPhone,
           identities: [
             { type: "phone", value: cleanPhone },
-            { type: "custom", value: cleanPhone },
+            { type: "whatsapp", value: cleanPhone },
           ],
           source: "GoWhats WhatsApp Contact Sync",
           channel: "whatsapp",
@@ -368,6 +372,10 @@ export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", override
           },
         });
         synced.push(contact);
+
+        if (typeof broadcastFn === "function") {
+          broadcastFn("contact:updated", { contact });
+        }
       }
     }
 
@@ -525,9 +533,17 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
   let dedupedCount = 0;
   let skippedHistoricalCount = 0;
   const processedMsgs = [];
+  const processedConvSet = new Set();
+
+  const defaultStaff = { id: "st1", name: "Dr. Sarah Mitchell", role: "Primary Care", avatar: "" };
 
   for (const msg of res.messages) {
     const extId = getGoWhatsMessageExtId(msg);
+    if (clearedExternalMsgIds.has(extId)) {
+      skippedHistoricalCount++;
+      continue;
+    }
+
     const rawTimestamp = msg.timestamp || msg.createdAt || msg.created_at || msg.date || msg.time;
 
     const customerPhone = extractCustomerPhone(msg);
@@ -543,7 +559,7 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
       phone: customerPhone,
       identities: [
         { type: "phone", value: customerPhone },
-        { type: "custom", value: customerPhone },
+        { type: "whatsapp", value: customerPhone },
       ],
       source: "GoWhats WhatsApp Auto-Sync",
       channel: "whatsapp",
@@ -558,6 +574,9 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
       phone: customerPhone,
       unreadCount: isOutbound ? 0 : 1,
       lastMessage: textBody,
+      staffId: defaultStaff.id,
+      staffName: defaultStaff.name,
+      assignedStaff: defaultStaff,
       updatedAt: msgTimestamp,
     };
     const conv = await upsertConversation(convDoc);
@@ -597,9 +616,18 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
           platformMeta: PLATFORM_META.whatsapp,
         });
         broadcastFn("message:new", { conversation: conv, message: msgDoc });
+        broadcastFn("conversation:updated", { conversation: conv });
+        if (!processedConvSet.has(convId)) {
+          processedConvSet.add(convId);
+          broadcastFn("conversation:new", { conversation: conv });
+        }
       }
     } else {
       dedupedCount++;
+      if (typeof broadcastFn === "function" && !processedConvSet.has(convId)) {
+        processedConvSet.add(convId);
+        broadcastFn("conversation:updated", { conversation: conv });
+      }
     }
   }
 
@@ -620,14 +648,16 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
 
 let isGoWhatsSyncRunning = false;
 
-export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
+export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 10000) {
   console.log(`⏰ Initializing GoWhats WhatsApp background sync scheduler (polling every ${intervalMs / 1000}s)...`);
-  setInterval(async () => {
+
+  const runSync = async () => {
     if (isGoWhatsSyncRunning) return;
     isGoWhatsSyncRunning = true;
     try {
       if (!isGoWhatsConfigured()) return;
       await syncGoWhatsMessages({ workspaceId: "ws_default", broadcastFn });
+      await syncGoWhatsContacts({ workspaceId: "ws_default", broadcastFn });
 
       // Sync GoWhats Orders on schedule
       const resOrders = await fetchGoWhatsOrders({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
@@ -670,16 +700,17 @@ export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
             broadcastFn(isNew ? "order:new" : "order:updated", { conversationId: convId, order: orderDoc });
           }
         }
-        console.log(`📦 [GOWHATS ORDERS POLL RESULT] Total fetched: ${resOrders.orders.length} | New (isNew: true): ${newOrders} | Updated (isUpdated: true): ${updatedOrders} | Deduped (unchanged): ${dedupedOrders}`);
-      } else {
-        console.log(`📦 [GOWHATS ORDERS POLL RESULT] Fetch success=true, 0 orders returned.`);
       }
-
-      await syncGoWhatsContacts({ workspaceId: "ws_default" });
     } catch (e) {
       console.warn("⚠️ Background GoWhats auto-sync error:", e.message);
     } finally {
       isGoWhatsSyncRunning = false;
     }
-  }, intervalMs);
+  };
+
+  // Immediate initial sync
+  runSync();
+
+  // Recurring polling
+  setInterval(runSync, intervalMs);
 }
