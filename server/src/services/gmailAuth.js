@@ -101,14 +101,20 @@ export async function getValidGoogleAccount(workspaceId = "ws_default") {
   const expiresTime = new Date(account.expiresAt).getTime();
   const bufferMs = 5 * 60 * 1000; // 5 minute safety buffer
 
+  if (account.needsReauth || account.isRevoked) {
+    return { ...account, isExpired: true, needsReauth: true };
+  }
+
   if (Date.now() + bufferMs >= expiresTime) {
     if (account.refreshToken) {
       try {
         return await refreshGoogleAccessToken(account);
       } catch (err) {
-        console.warn(`⚠️ Failed auto-refresh for ${account.email}: ${sanitizeMessage(err.message)}`);
         if (err.message.includes("invalid_grant") || err.message.includes("expired or revoked")) {
-          await saveGoogleAccount({ ...account, needsReauth: true });
+          await saveGoogleAccount({ ...account, needsReauth: true, isRevoked: true });
+          console.warn(`⚠️ Google account ${account.email} re-authentication required (token revoked). Auto-refresh paused.`);
+        } else {
+          console.warn(`⚠️ Failed auto-refresh for ${account.email}: ${sanitizeMessage(err.message)}`);
         }
         return { ...account, isExpired: true, needsReauth: true };
       }
@@ -129,6 +135,10 @@ export async function verifyGmailConnection(workspaceId = "ws_default") {
     return { connected: false, reason: "No Google account connected" };
   }
 
+  if (account.needsReauth || account.isRevoked) {
+    return { connected: false, expired: true, needsReauth: true, error: "Google access token has been revoked or expired. Re-authentication required." };
+  }
+
   let activeAccount = account;
 
   // Check expiration & auto-refresh token if needed
@@ -138,7 +148,10 @@ export async function verifyGmailConnection(workspaceId = "ws_default") {
       try {
         activeAccount = await refreshGoogleAccessToken(account);
       } catch (e) {
-        return { connected: false, expired: true, error: sanitizeMessage(e.message) };
+        if (e.message.includes("invalid_grant") || e.message.includes("expired or revoked")) {
+          await saveGoogleAccount({ ...account, needsReauth: true, isRevoked: true });
+        }
+        return { connected: false, expired: true, needsReauth: true, error: sanitizeMessage(e.message) };
       }
     } else {
       return { connected: false, expired: true, error: "Access token expired and no refresh token saved." };
