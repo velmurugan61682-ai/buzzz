@@ -916,7 +916,7 @@ apiRouter.get("/contacts/:id", async (req, res, next) => {
     const { id } = req.params;
     const contact = await fetchContactById(id);
     if (!contact) {
-      return res.status(404).json({ code: "not_found", message: `Contact '${id}' not found` });
+      return res.json({ success: true, contact: null, code: "not_found", message: `Contact '${id}' not found` });
     }
     res.json({ success: true, contact });
   } catch (err) {
