@@ -1522,6 +1522,27 @@ function deriveNotifications({ approvals, appts, wfRuns, calls, convs, kb, conns
     push({ key: "call_" + k.id, cat: "Calls", priority: "warning", title: "Missed call",
       body: `${(contacts || []).find((c) => c.id === k.contactId) ? contacts.find((c) => c.id === k.contactId).name : k.number} has not been called back`, at: k.at, go: "calls" }));
 
+  (convs || []).filter((c) => c && ((c.unread || 0) > 0 || (c.unreadCount || 0) > 0)).forEach((c) => {
+    const contact = (contacts || []).find((x) => x && (x.id === c.contactId || (c.phone && x.phone === c.phone)));
+    const senderName = contact?.name || c.customerName || c.name || c.phone || "Customer";
+    const chLabel = (typeof CH !== "undefined" && CH[c.channel] && CH[c.channel].label) || (c.channel ? (c.channel.charAt(0).toUpperCase() + c.channel.slice(1)) : "Messages");
+    const lastMsg = c.last || c.lastMessage || (Array.isArray(c.msgs) && c.msgs.length ? c.msgs[c.msgs.length - 1].text : "New message received");
+    const lastTime = c.updatedAt || (Array.isArray(c.msgs) && c.msgs.length ? (c.msgs[c.msgs.length - 1].time || c.msgs[c.msgs.length - 1].at) : new Date().toISOString());
+    const isCritical = ["critical", "high"].includes((c.priority || "").toLowerCase()) || (c.sentiment || "").toLowerCase() === "angry";
+    const unreadNum = c.unread || c.unreadCount || 1;
+
+    push({
+      key: "msg_" + c.id,
+      cat: chLabel,
+      priority: isCritical ? "critical" : "warning",
+      title: unreadNum > 1 ? `${unreadNum} new messages from ${senderName}` : `New message from ${senderName}`,
+      body: lastMsg && lastMsg.length > 90 ? lastMsg.slice(0, 90) + "…" : (lastMsg || "New incoming message"),
+      at: lastTime,
+      go: "inbox",
+      convId: c.id,
+    });
+  });
+
   Object.entries(conns || {}).forEach(([id, c]) => {
     const h = connHealth(c);
     if (c && c.on && ["Error", "Token expired"].includes(h.state)) {
@@ -6839,19 +6860,27 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === "message:new" && data.payload) {
-            const { conversation: backendConv, message: backendMsg } = data.payload;
-            if (!backendConv || !backendMsg) return;
+          if ((data.type === "message:new" || data.type === "new_message") && (data.payload || data.data)) {
+            const payload = data.payload || data.data;
+            const backendConv = payload.conversation || payload;
+            const backendMsg = payload.message || payload;
+            if (!backendConv && !backendMsg) return;
 
             const channelKey = resolveChannelKey(backendMsg?.platform || backendConv?.platform, backendConv?.channel);
             const newMsgItem = {
-              id: backendMsg.id || `msg_${Date.now()}`,
-              from: (backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer") ? "customer" : "agent",
-              text: backendMsg.text,
-              time: backendMsg.timestamp || backendMsg.receivedAt || new Date().toISOString(),
-              at: backendMsg.timestamp || backendMsg.receivedAt || new Date().toISOString(),
+              id: backendMsg?.id || backendMsg?._id || `msg_${Date.now()}`,
+              from: (backendMsg?.sender === "customer" || backendMsg?.direction === "inbound" || backendMsg?.sender?.kind === "customer") ? "customer" : "agent",
+              text: backendMsg?.text || backendConv?.lastMessage || "New message",
+              time: backendMsg?.timestamp || backendMsg?.receivedAt || new Date().toISOString(),
+              at: backendMsg?.timestamp || backendMsg?.receivedAt || new Date().toISOString(),
               channel: channelKey,
             };
+
+            if (newMsgItem.from === "customer") {
+              const sender = backendConv?.customerName || backendMsg?.sender?.name || "Customer";
+              const snippet = (newMsgItem.text || "").slice(0, 45);
+              flash(`📩 New message from ${sender}: "${snippet}${snippet.length >= 45 ? "…" : ""}"`);
+            }
 
             setConvs((cs) => {
               const cleanPhone = backendConv.phone ? String(backendConv.phone).replace(/\D/g, "") : "";
@@ -6918,6 +6947,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         account: id === "gowhats" ? "+91 9047484484" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
         key: id === "gowhats" ? "EAAS9L0ST948BQUFPJxcHdsCHEfJSHfM8LGbUb1Sao05JTqjtaWmjW0aTo46yPAZAw4qF3avtzXjYSJLXDzR4L5ZBM45jWgYCwMOZCLYt7PtLwkNDC6LPJhZB1zgtBb52GmCtyLWGwttI0SQErdowM22aXXVlKO9mwlatSe8F763Uo0dpYpfaDv7nZBx6wUZB7c2wZDZD" : id === "linkedin" ? "li_live_connected" : "" };
     });
+    // ChannelBot.in / YouTube — starts as not-connected; real status fetched from backend on mount
+    o["youtube"] = { on: false, connectedAt: null, lastSync: null, expiresAt: null,
+      direction: "Two way", conflict: "Newest wins", freq: "Realtime", mapping: [], error: null, paused: false, syncing: false,
+      account: null, maskedKey: null, key: "" };
     return o;
   });
 
@@ -7013,6 +7046,47 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     }
   }, []);
 
+  /* Fetch real connected ChannelBot.in status from backend */
+  const syncChannelBotConnectionStatus = useCallback(async () => {
+    try {
+      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+        ? "http://localhost:5000"
+        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+      const res = await fetch(`${apiHost}/api/integrations/channelbot/status`);
+      const data = await res.json();
+      if (data && data.connected) {
+        setConns((prev) => ({
+          ...prev,
+          youtube: {
+            ...prev.youtube,
+            on: true,
+            status: "connected",
+            account: data.account || `ChannelBot.in (${data.maskedKey || data.keyPrefix})`,
+            maskedKey: data.maskedKey,
+            connectedAt: new Date().toISOString(),
+            lastSync: new Date().toISOString(),
+            error: null,
+          },
+        }));
+      } else {
+        setConns((prev) => ({
+          ...prev,
+          youtube: {
+            ...prev.youtube,
+            on: false,
+            status: data?.state === "Needs attention" ? "needs_attention" : "available",
+            account: null,
+            maskedKey: null,
+            error: data?.error || null,
+          },
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to sync ChannelBot.in connection status:", e);
+    }
+  }, []);
+
   /* Fetch real connected LinkedIn status from backend */
   const syncLinkedInConnectionStatus = useCallback(async () => {
     try {
@@ -7059,11 +7133,13 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     syncGoogleConnectionStatus();
     syncInstaxBotConnectionStatus();
     syncLinkedInConnectionStatus();
+    syncChannelBotConnectionStatus();
 
     const onFocus = () => {
       syncGoogleConnectionStatus();
       syncInstaxBotConnectionStatus();
       syncLinkedInConnectionStatus();
+      syncChannelBotConnectionStatus();
     };
     window.addEventListener("focus", onFocus);
 
@@ -7209,7 +7285,13 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
 
   const go = (v) => { setView(v); setSelContact(null); setSelAgent(null); setSelCall(null); setCmdOpen(false); };
   const openContact = (id) => { setView("crm"); setSelContact(id); setCmdOpen(false); };
-  const openConv = (id) => { setView("inbox"); setSelConv(id); setCmdOpen(false); };
+  const openConv = (id) => {
+    setView("inbox");
+    setSelConv(id);
+    setConvs((cs) => cs.map((c) => c.id === id ? { ...c, unread: 0 } : c));
+    setCmdOpen(false);
+    fetch(`/api/conversations/${encodeURIComponent(id)}/read`, { method: "PATCH" }).catch(() => {});
+  };
 
   const trail = (what, entity, from, to, source = "You") => {
     setAudit((a) => [{ id: Date.now() + Math.random(), at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), who: source, what, entity, from, to }, ...a].slice(0, 300));
@@ -8615,7 +8697,7 @@ function Sidebar() {
 }
 
 function TopBar({ notifOpen, setNotifOpen, setCmdOpen, dk, setDk }) {
-  const { T, setAiOpen, notifications, unread, notifRead, markRead, markAllRead, go, me, onSignOut } = useApp();
+  const { T, setAiOpen, notifications, unread, notifRead, markRead, markAllRead, go, openConv, me, onSignOut } = useApp();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   return (
@@ -8652,7 +8734,15 @@ function TopBar({ notifOpen, setNotifOpen, setCmdOpen, dk, setDk }) {
                 ) : notifications.map((n) => {
                   const isRead = notifRead.includes(n.id);
                   return (
-                    <button key={n.id} onClick={() => { markRead(n.id); setNotifOpen(false); go(n.go); }}
+                    <button key={n.id} onClick={() => {
+                      markRead(n.id);
+                      setNotifOpen(false);
+                      if (n.convId && typeof openConv === "function") {
+                        openConv(n.convId);
+                      } else {
+                        go(n.go);
+                      }
+                    }}
                       className={`w-full text-left px-4 py-3 flex items-start gap-2.5 border-b ${T.border} ${T.hover} ${isRead ? "opacity-55" : ""}`}>
                       {!isRead && <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: n.priority === "critical" ? "#dc2626" : n.priority === "warning" ? "#f59e0b" : BRAND }} />}
                       {isRead && <span className="w-1.5 shrink-0" />}
@@ -22255,6 +22345,38 @@ function ConnectModal({ provider, onClose }) {
       return;
     }
 
+    // ChannelBot.in (youtube provider) — verify key live against backend
+    if (provider.id === "youtube") {
+      if (!key.trim() || key.trim().length < 8) {
+        setErr("API key is too short or missing. Please enter your ChannelBot.in API key (starts with yt_…).");
+        return;
+      }
+      setErr(null); setStep("connecting");
+      try {
+        // Verify via the live status endpoint (key is already in server .env; just confirm it's reachable)
+        const res = await fetch(`${apiHost}/api/integrations/channelbot/status`);
+        const data = await res.json();
+        if (data && data.connected) {
+          connectProvider("youtube", {
+            key: data.maskedKey || key.slice(0, 6) + "…",
+            account: data.account || "ChannelBot.in",
+            maskedKey: data.maskedKey,
+            connectedAt: new Date().toISOString(),
+            lastSync: new Date().toISOString(),
+          });
+          flash("ChannelBot.in connected! YouTube comments will now appear in your inbox.");
+          onClose();
+        } else {
+          setStep("failed");
+          setErr(data.error || "ChannelBot.in API key could not be verified. Check your CHANNELBOT_IN_API_KEY in server/.env.");
+        }
+      } catch (e) {
+        setStep("failed");
+        setErr("Network error while verifying ChannelBot.in API key.");
+      }
+      return;
+    }
+
     if (provider.auth === "apikey" && key.trim().length < 8) {
       setErr("That key is too short to be valid. Copy the full key from your " + provider.name + " dashboard.");
       return;
@@ -22268,6 +22390,7 @@ function ConnectModal({ provider, onClose }) {
       onClose();
     }, 1200);
   };
+
   return (
     <Modal title={"Connect " + provider.name} onClose={onClose}>
       {step === "review" && (<>
@@ -22408,6 +22531,7 @@ function ProviderDetail({ provider, onClose }) {
         <div className="space-y-3">
           {provider.id === "linkedin" && <LinkedInShareWidget />}
           {provider.id === "gcontacts" && <GoogleContactsView />}
+          {provider.id === "youtube" && <ChannelBotBackfillWidget />}
           <div className={`rounded-xl p-3 ${T.softcard}`}>
             <div className={`text-[10px] font-medium uppercase tracking-widest mb-1.5 ${T.faint}`}>What it can do</div>
             <div className="flex flex-wrap gap-1.5">{(provider.caps.actions || []).map((a) => <Pill key={a} c={T.chip}>{a}</Pill>)}</div>
@@ -22522,6 +22646,102 @@ function ProviderDetail({ provider, onClose }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+function ChannelBotBackfillWidget() {
+  const { T, flash } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+    ? "http://localhost:5000"
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+  const pollStatus = async () => {
+    try {
+      const res = await fetch(`${apiHost}/api/channelbot/backfill/status`);
+      const data = await res.json();
+      if (data?.ok) setStatus(data.status);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    pollStatus();
+    const interval = setInterval(pollStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStartBackfill = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiHost}/api/channelbot/backfill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: "ws_default" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash("Historical comment backfill started in background.");
+        setStatus(data.status);
+      } else {
+        flash(data.error || "Could not start backfill", "err");
+      }
+    } catch (e) {
+      flash("Failed to trigger backfill", "err");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isRunning = status?.status === "running";
+
+  return (
+    <div className={`rounded-xl p-3.5 space-y-2.5 border ${T.border} ${T.softcard}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold">Historical Comments Backfill</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-medium">comments:read</span>
+        </div>
+        <button
+          onClick={handleStartBackfill}
+          disabled={loading || isRunning}
+          className={`h-7 px-3 rounded-lg text-xs font-semibold text-white transition flex items-center gap-1.5 ${isRunning ? "opacity-60 cursor-not-allowed bg-zinc-500" : "hover:opacity-90 active:scale-95"}`}
+          style={{ background: isRunning ? undefined : BRAND }}
+        >
+          {isRunning ? (
+            <>
+              <RefreshCw size={11} className="animate-spin" />
+              <span>Backfilling (Page {status?.currentPage || 1})…</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw size={11} />
+              <span>Fetch Old Comments</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      <p className={`text-[11px] leading-relaxed ${T.sub}`}>
+        Paginate through historical YouTube comments via ChannelBot.in gateway respecting the 5,000 req/hr rate limit. Deduplicated automatically.
+      </p>
+
+      {status && status.status !== "idle" && (
+        <div className={`rounded-lg p-2.5 text-[11px] space-y-1.5 ${status.status === "completed" ? "bg-emerald-50/70 border border-emerald-200 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-800" : status.status === "failed" ? "bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/20 dark:text-red-300" : "bg-blue-50/70 border border-blue-200 text-blue-900 dark:bg-blue-950/20 dark:text-blue-300"}`}>
+          <div className="flex items-center justify-between font-semibold">
+            <span>Status: {status.status === "running" ? "Backfilling in progress…" : status.status === "completed" ? "Sync Completed" : "Failed"}</span>
+            {status.completedAt && <span className="text-[10px] font-normal">{new Date(status.completedAt).toLocaleTimeString()}</span>}
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-[10px] pt-1">
+            <div>Processed: <span className="font-semibold">{status.recordsProcessed || 0}</span></div>
+            <div>New Added: <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{status.newlyInserted || 0}</span></div>
+            <div>Duplicates Skipped: <span className="font-semibold">{status.duplicatesSkipped || 0}</span></div>
+          </div>
+          {status.error && <p className="text-[10px] text-red-600 font-medium">{status.error}</p>}
+        </div>
+      )}
+    </div>
   );
 }
 

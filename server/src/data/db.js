@@ -106,6 +106,7 @@ const UnifiedMessageSchema = new mongoose.Schema(
     mediaUrl: { type: String, default: "" },
     status: { type: String, enum: ["received", "sent", "delivered", "read", "failed", "approved", "rejected", "pending", "flagged"], default: "received" },
     receivedAt: { type: Date, default: Date.now, index: true },
+    metadata: { type: Object, default: {} },
   },
   { timestamps: true }
 );
@@ -1056,6 +1057,7 @@ export const saveUnifiedMessage = async (data) => {
     mediaUrl: data.mediaUrl || "",
     status: data.status || "received",
     receivedAt: data.receivedAt ? new Date(data.receivedAt) : new Date(),
+    metadata: data.metadata || {},
   };
 
   if (isDbConnected && mongoose.connection.readyState === 1) {

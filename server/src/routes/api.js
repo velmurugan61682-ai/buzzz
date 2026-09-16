@@ -34,7 +34,7 @@ import {
 } from "../data/db.js";
 
 import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
-import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus } from "../services/channelbot.js";
+import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus, runChannelBotHistoricalBackfill, getChannelBotBackfillStatus } from "../services/channelbot.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
 import { fetchInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast } from "../services/instaxbot.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
@@ -553,6 +553,32 @@ apiRouter.get("/channelbot/status", (req, res) => {
   });
 });
 
+// GET /api/integrations/channelbot/status — Live connection verify (mirrors InstaxBot pattern)
+apiRouter.get("/integrations/channelbot/status", async (req, res) => {
+  try {
+    const configStatus = getChannelBotInConfigStatus();
+    if (!configStatus.configured) {
+      return res.json({ connected: false, state: "Not configured", error: "No ChannelBot.in API key configured in server/.env" });
+    }
+    const result = await verifyChannelBotInConnection();
+    const apiKey = (process.env.CHANNELBOT_IN_API_KEY || process.env.CHANNELBOT_API_KEY || "").trim();
+    const maskedKey = apiKey.length > 6 ? apiKey.slice(0, 6) + "…" + apiKey.slice(-4) : apiKey.slice(0, 3) + "…";
+    return res.json({
+      connected: result.connected,
+      state: result.connected ? "Connected" : "Needs attention",
+      account: result.connected ? `ChannelBot.in (${configStatus.keyPrefix}…)` : null,
+      maskedKey,
+      keyPrefix: configStatus.keyPrefix,
+      baseUrl: configStatus.baseUrl,
+      error: result.connected ? null : (result.error || result.message || "Connection failed"),
+      message: result.message,
+    });
+  } catch (err) {
+    return res.status(500).json({ connected: false, state: "Error", error: err.message });
+  }
+});
+
+
 // GET /api/channelbot/messages — Fetch external YouTube comments via channelbot.in (comments:read)
 apiRouter.get("/channelbot/messages", async (req, res) => {
   try {
@@ -575,6 +601,22 @@ apiRouter.patch("/channelbot/messages/:commentId", async (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+// POST /api/channelbot/backfill — Trigger historical backfill job (comments:read)
+apiRouter.post("/channelbot/backfill", async (req, res) => {
+  try {
+    const wsId = req.body?.workspaceId || getWorkspaceId(req);
+    const result = await runChannelBotHistoricalBackfill({ workspaceId: wsId, broadcastFn: req.app.get("broadcastSSE") });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/channelbot/backfill/status — Get progress of historical backfill job
+apiRouter.get("/channelbot/backfill/status", (req, res) => {
+  res.json({ ok: true, status: getChannelBotBackfillStatus() });
 });
 
 // Helper function to process incoming webhooks from channelbot.in / gowhats.in
@@ -2258,7 +2300,7 @@ const handleChannelBotInWebhook = async (req, res) => {
       workspaceId: wsId,
       conversationId: conv.id,
       integrationId: "channelbot",
-      platform: "youtube",
+      platform: "channelbot",
       externalMessageId: externalCommentId,
       sender: {
         name: contact?.name || authorHandle,

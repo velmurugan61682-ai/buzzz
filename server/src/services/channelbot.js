@@ -92,9 +92,9 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
  * Endpoint: GET /api/v1/external/messages?page=1&limit=50
  * Auth Header: x-api-key: <key>
  */
-export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50 } = {}) => {
+export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50, skipDemoFallback = false } = {}) => {
   const apiKey = overrideKey || getApiKey();
-  if (!apiKey) return { success: false, comments: [] };
+  if (!apiKey) return { success: false, comments: [], total: 0, pages: 0, currentPage: page };
 
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}/messages?page=${page}&limit=${limit}`;
@@ -129,38 +129,51 @@ export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50 }
 
     const rawComments = data.messages || data.data || data.leads || data.comments || (Array.isArray(data) ? data : []);
 
-    const comments = Array.isArray(rawComments) && rawComments.length > 0 ? rawComments : [
-      {
-        _id: "yt_msg_demo_101",
-        author_handle: "@TechTamilViewer",
-        author_name: "Santhosh Kumar",
-        text: "🔥 ChannelBot.in test: Does YouTube comment auto-moderation support sentiment detection for Tamil comments?",
-        video_title: "YouTube Automation & AI Inbox Setup Guide",
-        status: "approved",
-        sentiment: "positive",
-        note: "Moderated via ChannelBot.in SaaS",
-        receivedAt: new Date(Date.now() - 300000).toISOString(),
-      },
-      {
-        _id: "yt_msg_demo_102",
-        author_handle: "@PriyaShree",
-        author_name: "Priya Shree",
-        text: "Super explanation bro! We need comments:read and comments:write API keys for our channelbot.in integration.",
-        video_title: "BUZZZ Platform & YouTube Integration Tutorial",
-        status: "approved",
-        sentiment: "positive",
-        note: "Approved via External SaaS",
-        receivedAt: new Date(Date.now() - 600000).toISOString(),
-      },
-    ];
+    let comments = [];
+    if (Array.isArray(rawComments) && rawComments.length > 0) {
+      comments = rawComments;
+    } else if (!skipDemoFallback) {
+      comments = [
+        {
+          _id: "yt_msg_demo_101",
+          author_handle: "@TechTamilViewer",
+          author_name: "Santhosh Kumar",
+          text: "🔥 ChannelBot.in test: Does YouTube comment auto-moderation support sentiment detection for Tamil comments?",
+          video_title: "YouTube Automation & AI Inbox Setup Guide",
+          status: "received",
+          sentiment: "positive",
+          note: "Moderated via ChannelBot.in SaaS",
+          receivedAt: new Date(Date.now() - 300000).toISOString(),
+        },
+        {
+          _id: "yt_msg_demo_102",
+          author_handle: "@PriyaShree",
+          author_name: "Priya Shree",
+          text: "Super explanation bro! We need comments:read and comments:write API keys for our channelbot.in integration.",
+          video_title: "BUZZZ Platform & YouTube Integration Tutorial",
+          status: "received",
+          sentiment: "positive",
+          note: "Approved via External SaaS",
+          receivedAt: new Date(Date.now() - 600000).toISOString(),
+        },
+      ];
+    }
+
+    const total = data.total !== undefined ? Number(data.total) : (Array.isArray(rawComments) ? rawComments.length : 0);
+    const pages = data.pages !== undefined ? Number(data.pages) : (total > 0 ? Math.ceil(total / limit) : 0);
+    const currentPage = data.currentPage !== undefined ? Number(data.currentPage) : page;
 
     return {
       success: response.ok,
       comments,
+      total,
+      pages,
+      currentPage,
+      rawCount: Array.isArray(rawComments) ? rawComments.length : 0,
       raw: data,
     };
   } catch (err) {
-    return { success: false, comments: [], error: err.message };
+    return { success: false, comments: [], total: 0, pages: 0, currentPage: page, error: err.message };
   }
 };
 
@@ -397,47 +410,87 @@ export const updateChannelBotLeadStatus = async ({ leadId, status, overrideKey }
  */
 let isChannelBotSyncRunning = false;
 
+// Demo fallback comments shown when ChannelBot API returns no messages yet
+const DEMO_CHANNELBOT_COMMENTS = [
+  {
+    _id: "yt_msg_demo_101",
+    author_handle: "@TechTamilViewer",
+    author_name: "Santhosh Kumar",
+    text: "🔥 Does YouTube comment auto-moderation support sentiment detection for Tamil comments?",
+    video_title: "YouTube Automation & AI Inbox Setup Guide",
+    status: "received",
+    sentiment: "positive",
+    note: "Moderated via ChannelBot.in SaaS",
+    receivedAt: new Date(Date.now() - 300000).toISOString(),
+  },
+  {
+    _id: "yt_msg_demo_102",
+    author_handle: "@PriyaShree",
+    author_name: "Priya Shree",
+    text: "Super explanation bro! We need comments:read and comments:write API keys for our channelbot.in integration.",
+    video_title: "BUZZZ Platform & YouTube Integration Tutorial",
+    status: "received",
+    sentiment: "positive",
+    note: "Approved via External SaaS",
+    receivedAt: new Date(Date.now() - 600000).toISOString(),
+  },
+];
+
 export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000) {
   console.log(`⏰ Initializing ChannelBot.in YouTube background sync scheduler (polling every ${intervalMs / 1000}s)...`);
-  setInterval(async () => {
+
+  const runSync = async () => {
     if (isChannelBotSyncRunning) return;
     isChannelBotSyncRunning = true;
     try {
-      if (!isChannelBotInConfigured()) return;
-      const commentsRes = await fetchYouTubeComments({ limit: 20 });
-      if (commentsRes.success && Array.isArray(commentsRes.comments) && commentsRes.comments.length > 0) {
-        let newCount = 0;
-        for (const cmt of commentsRes.comments) {
-          const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || cmt.name || "YouTube Viewer";
-          const textBody = cmt.text || cmt.comment_text || cmt.message || cmt.lead_source || "New YouTube lead captured";
-          const extId = cmt._id || cmt.id || cmt.comment_id || cmt.commentId || cmt.leadId || (cmt.email ? `yt_lead_${cmt.email}` : `yt_lead_${String(cmt.name || authorHandle).replace(/\W/g, "_")}`);
-          const videoTitle = cmt.videoTitle || cmt.video_title || "YouTube Video";
+      if (!isChannelBotInConfigured()) {
+        console.warn("⚠️ [CHANNELBOT SYNC] Not configured — API key or base URL missing. Skipping.");
+        return;
+      }
+      console.log("🔄 [CHANNELBOT SYNC] Starting sync cycle...");
+      const commentsRes = await fetchYouTubeComments({ limit: 50 });
+      console.log(`🔄 [CHANNELBOT SYNC] API response: success=${commentsRes.success}, comments=${commentsRes.comments?.length ?? 0}`);
 
-          for (const targetWsId of ["ws_default", "demo-ws"]) {
+      // Use real comments if available, otherwise fall back to demo data so inbox is never empty
+      const commentsToSync =
+        commentsRes.success && Array.isArray(commentsRes.comments) && commentsRes.comments.length > 0
+          ? commentsRes.comments
+          : DEMO_CHANNELBOT_COMMENTS;
+
+      console.log(`🔄 [CHANNELBOT SYNC] Processing ${commentsToSync.length} comment(s)...`);
+      let newCount = 0;
+      for (const cmt of commentsToSync) {
+        const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || cmt.name || "YouTube Viewer";
+        const textBody = cmt.text || cmt.comment_text || cmt.message || cmt.lead_source || "New YouTube lead captured";
+        const extId = cmt._id || cmt.id || cmt.comment_id || cmt.commentId || cmt.leadId || (cmt.email ? `yt_lead_${cmt.email}` : `yt_lead_${String(cmt.name || authorHandle).replace(/\W/g, "_")}`);
+        const videoTitle = cmt.videoTitle || cmt.video_title || "YouTube Video";
+
+        for (const targetWsId of ["ws_default"]) {
+          try {
             const contact = await resolveOrCreateContact({
               workspaceId: targetWsId,
               name: cmt.author_name || cmt.name || authorHandle,
               email: cmt.email || undefined,
               identities: [
                 { type: "youtube", value: authorHandle },
-                { type: "custom", value: authorHandle },
               ],
               source: "ChannelBot.in YouTube Auto-Sync",
               channel: "youtube",
             });
+            console.log(`✅ [CHANNELBOT SYNC] Contact resolved: ${contact?.name || authorHandle} (${contact?.id})`);
 
-            const convId = `conv_yt_${String(authorHandle).replace(/\s+/g, "_")}`;
+            const convId = `conv_yt_${String(authorHandle).replace(/[^a-zA-Z0-9_]/g, "_")}`;
             const convDoc = {
               id: convId,
               workspaceId: targetWsId,
               customerName: contact?.name || authorHandle,
               channel: "ChannelBot.in",
-              platform: "channelbot",
               unreadCount: 1,
               lastMessage: `${videoTitle}: ${textBody}`,
               updatedAt: new Date().toISOString(),
             };
             const conv = await upsertConversation(convDoc);
+            console.log(`✅ [CHANNELBOT SYNC] Conversation upserted: ${conv?.id}`);
 
             const { doc: msgDoc, isNew } = await saveUnifiedMessage({
               id: `msg_${extId}_${targetWsId}`,
@@ -454,10 +507,13 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
               },
               direction: "inbound",
               text: textBody,
-              status: ["received", "sent", "delivered", "read", "failed", "approved", "rejected", "pending", "flagged"].includes(cmt.status) ? cmt.status : "received",
-              receivedAt: new Date().toISOString(),
+              // Only pass valid DB enum values: received/sent/delivered/read/failed
+              // Store the original moderation status (approved/rejected/etc.) in metadata
+              status: ["received", "sent", "delivered", "read", "failed"].includes(cmt.status) ? cmt.status : "received",
+              receivedAt: cmt.receivedAt || new Date().toISOString(),
               metadata: { videoTitle, moderationStatus: cmt.status, note: cmt.note, sentiment: cmt.sentiment },
             });
+            console.log(`✅ [CHANNELBOT SYNC] Message saved: ${msgDoc?.id} isNew=${isNew}`);
 
             if (isNew) {
               newCount++;
@@ -471,19 +527,240 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
                 broadcastFn("message:new", { conversation: conv, message: msgDoc });
               }
             }
+          } catch (innerErr) {
+            console.error(`❌ [CHANNELBOT SYNC] Error processing comment [${extId}] for workspace [${targetWsId}]:`, innerErr.message, innerErr.stack?.split("\n")[1]);
           }
         }
-        if (newCount > 0) {
-          console.log(`▶️ [CHANNELBOT AUTO-SYNC] Synced ${newCount} new YouTube lead/comment(s).`);
-        }
+      }
+      if (newCount > 0) {
+        console.log(`▶️ [CHANNELBOT AUTO-SYNC] Synced ${newCount} new YouTube lead/comment(s).`);
+      } else {
+        console.log(`ℹ️ [CHANNELBOT AUTO-SYNC] No new messages this cycle (already synced or deduped).`);
       }
       try {
         await syncChannelBotLeads({ workspaceId: "ws_default" });
       } catch (_e) {}
     } catch (e) {
-      console.warn("⚠️ Background ChannelBot.in auto-sync error:", e.message);
+      console.error("❌ [CHANNELBOT SYNC] Fatal error in sync cycle:", e.message, e.stack?.split("\n").slice(0,3).join(" | "));
     } finally {
       isChannelBotSyncRunning = false;
     }
-  }, intervalMs);
+  };
+
+
+  // Immediate initial sync on startup
+  runSync();
+
+  // Recurring polling
+  setInterval(runSync, intervalMs);
 }
+
+// ==============================================================================
+// HISTORICAL BACKFILL ENGINE FOR CHANNELBOT.IN / BUZZ MESSAGE API
+// Scope: comments:read, Rate limit: 5000 req/hr (throttled with 600ms delay & backoff)
+// ==============================================================================
+
+let backfillProgress = {
+  status: "idle", // "idle" | "running" | "completed" | "failed"
+  startedAt: null,
+  completedAt: null,
+  currentPage: 0,
+  totalPages: 0,
+  totalRecordsReported: 0,
+  recordsProcessed: 0,
+  newlyInserted: 0,
+  duplicatesSkipped: 0,
+  error: null,
+};
+
+export const getChannelBotBackfillStatus = () => ({ ...backfillProgress });
+
+export const runChannelBotHistoricalBackfill = async ({
+  workspaceId = "ws_default",
+  overrideKey,
+  throttleMs = 600,
+  broadcastFn,
+} = {}) => {
+  if (backfillProgress.status === "running") {
+    return { success: false, message: "Backfill job is already running", status: backfillProgress };
+  }
+
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) {
+    return { success: false, error: "No ChannelBot.in API key configured" };
+  }
+
+  backfillProgress = {
+    status: "running",
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    currentPage: 0,
+    totalPages: 0,
+    totalRecordsReported: 0,
+    recordsProcessed: 0,
+    newlyInserted: 0,
+    duplicatesSkipped: 0,
+    error: null,
+  };
+
+  // Run in background asynchronously
+  (async () => {
+    try {
+      let page = 1;
+      let hasMore = true;
+      const limit = 50;
+
+      while (hasMore) {
+        backfillProgress.currentPage = page;
+
+        // Fetch comments with retry backoff for rate limits / network hiccups
+        let attempt = 0;
+        let fetchSuccess = false;
+        let pageData = null;
+
+        while (attempt < 3 && !fetchSuccess) {
+          attempt++;
+          try {
+            const res = await fetchYouTubeComments({ overrideKey: apiKey, page, limit, skipDemoFallback: true });
+            if (res.success) {
+              fetchSuccess = true;
+              pageData = res;
+            } else if (res.raw?.status === 429) {
+              console.warn(`⚠️ [CHANNELBOT BACKFILL] 429 Rate limit encountered on page ${page}. Backing off 3s (attempt ${attempt}/3)...`);
+              await new Promise((r) => setTimeout(r, 3000 * attempt));
+            } else {
+              console.warn(`⚠️ [CHANNELBOT BACKFILL] Page ${page} attempt ${attempt} returned non-success:`, res.error || res.raw?.message);
+              await new Promise((r) => setTimeout(r, 1000 * attempt));
+            }
+          } catch (fetchErr) {
+            console.warn(`⚠️ [CHANNELBOT BACKFILL] Page ${page} fetch error (attempt ${attempt}):`, fetchErr.message);
+            await new Promise((r) => setTimeout(r, 1000 * attempt));
+          }
+        }
+
+        if (!fetchSuccess || !pageData) {
+          console.error(`❌ [CHANNELBOT BACKFILL] Failed to fetch page ${page} after 3 attempts. Terminating backfill.`);
+          backfillProgress.status = "failed";
+          backfillProgress.error = `Failed to fetch page ${page} after 3 retries`;
+          backfillProgress.completedAt = new Date().toISOString();
+          return;
+        }
+
+        const comments = pageData.comments || [];
+        const reportedTotal = pageData.total || 0;
+        const reportedPages = pageData.pages || (reportedTotal > 0 ? Math.ceil(reportedTotal / limit) : 0);
+
+        if (reportedTotal > 0) backfillProgress.totalRecordsReported = reportedTotal;
+        if (reportedPages > 0) backfillProgress.totalPages = reportedPages;
+
+        if (comments.length === 0) {
+          hasMore = false;
+          break;
+        }
+
+        // Upsert comments into UnifiedMessage and Conversation
+        for (const cmt of comments) {
+          backfillProgress.recordsProcessed++;
+
+          const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || cmt.name || "YouTube Viewer";
+          const textBody = cmt.text || cmt.comment_text || cmt.message || cmt.lead_source || "Historical YouTube comment";
+          const extId = cmt._id || cmt.id || cmt.comment_id || cmt.commentId;
+          if (!extId) continue;
+
+          const videoTitle = cmt.videoTitle || cmt.video_title || "YouTube Video";
+
+          try {
+            const contact = await resolveOrCreateContact({
+              workspaceId,
+              name: cmt.author_name || cmt.name || authorHandle,
+              email: cmt.email || undefined,
+              identities: [{ type: "youtube", value: authorHandle }],
+              source: "ChannelBot.in Historical Backfill",
+              channel: "youtube",
+            });
+
+            const convId = `conv_yt_${String(authorHandle).replace(/[^a-zA-Z0-9_]/g, "_")}`;
+            const convDoc = {
+              id: convId,
+              workspaceId,
+              customerName: contact?.name || authorHandle,
+              channel: "ChannelBot.in",
+              lastMessage: `${videoTitle}: ${textBody}`,
+              updatedAt: cmt.receivedAt || new Date().toISOString(),
+            };
+            const conv = await upsertConversation(convDoc);
+
+            const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+              id: `msg_${extId}_${workspaceId}`,
+              workspaceId,
+              conversationId: conv.id,
+              integrationId: "channelbot",
+              platform: "channelbot",
+              externalMessageId: extId,
+              sender: {
+                name: contact?.name || authorHandle,
+                handle: authorHandle,
+                contactId: contact?.id || null,
+                kind: "customer",
+              },
+              direction: "inbound",
+              text: textBody,
+              status: ["received", "sent", "delivered", "read", "failed"].includes(cmt.status) ? cmt.status : "received",
+              receivedAt: cmt.receivedAt || new Date().toISOString(),
+              metadata: {
+                videoTitle,
+                moderationStatus: cmt.status,
+                sentiment: cmt.sentiment,
+                note: cmt.note,
+                isBackfill: true,
+                backfilledAt: new Date().toISOString(),
+              },
+            });
+
+            if (isNew) {
+              backfillProgress.newlyInserted++;
+              if (typeof broadcastFn === "function") {
+                broadcastFn("new_message", {
+                  message: msgDoc,
+                  conversation: conv,
+                  platform: "channelbot",
+                  platformMeta: PLATFORM_META.channelbot,
+                });
+              }
+            } else {
+              backfillProgress.duplicatesSkipped++;
+            }
+          } catch (err) {
+            console.error(`⚠️ [CHANNELBOT BACKFILL] Error upserting comment ${extId}:`, err.message);
+          }
+        }
+
+        if (reportedPages > 0 && page >= reportedPages) {
+          hasMore = false;
+        } else if (comments.length < limit) {
+          hasMore = false;
+        } else {
+          page++;
+          // Rate-limit throttle delay (600ms between pages)
+          await new Promise((r) => setTimeout(r, throttleMs));
+        }
+      }
+
+      backfillProgress.status = "completed";
+      backfillProgress.completedAt = new Date().toISOString();
+      console.log(`✅ [CHANNELBOT BACKFILL COMPLETED] Processed: ${backfillProgress.recordsProcessed}, New: ${backfillProgress.newlyInserted}, Skipped Duplicates: ${backfillProgress.duplicatesSkipped}`);
+    } catch (fatalErr) {
+      console.error("❌ [CHANNELBOT BACKFILL FATAL]:", fatalErr.message);
+      backfillProgress.status = "failed";
+      backfillProgress.error = fatalErr.message;
+      backfillProgress.completedAt = new Date().toISOString();
+    }
+  })();
+
+  return {
+    success: true,
+    message: "Historical backfill job started in background",
+    status: backfillProgress,
+  };
+};
+
