@@ -267,26 +267,59 @@ export const fetchInstaxBotTemplates = async ({ overrideKey } = {}) => {
  * - messages.read: Ingest incoming comments/DMs from InstaxBot endpoint
  * - messages.send: Send outbound comment reply via InstaxBot
  */
+/**
+ * 7. Scope: messages.read + messages.send
+ * - messages.read: Ingest incoming comments/DMs and Instagram order messages from InstaxBot endpoint
+ * - messages.send: Send outbound comment reply via InstaxBot
+ */
 export const fetchInstaxBotMessages = async ({ limit = 50, overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, messages: [] };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/api/external/v2/comments?limit=${limit}`;
+  const messages = [];
 
+  // 1. Attempt to fetch comments / DMs directly if permitted
   try {
-    const response = await fetch(url, {
+    const commentsRes = await fetch(`${baseUrl}/api/external/v2/comments?limit=${limit}`, {
       method: "GET",
       headers: getAuthHeaders(apiKey),
     });
-    const data = await response.json().catch(() => ({}));
-    return {
-      success: response.ok,
-      messages: data.comments || data.data || [],
-    };
-  } catch (err) {
-    return { success: false, messages: [], error: err.message };
-  }
+    if (commentsRes.ok) {
+      const data = await commentsRes.json().catch(() => ({}));
+      const raw = data.comments || data.messages || data.data || [];
+      if (Array.isArray(raw)) messages.push(...raw);
+    }
+  } catch (_e) {}
+
+  // 2. Ingest Instagram order messages & DMs from /orders endpoint
+  try {
+    const ordersRes = await fetchInstaxBotOrders({ limit, overrideKey: apiKey });
+    if (ordersRes.success && Array.isArray(ordersRes.orders) && ordersRes.orders.length > 0) {
+      for (const order of ordersRes.orders) {
+        const senderHandle = order.username || order.senderId || order.customer_name || "instagram_user";
+        const senderName = order.name || order.customer_name || senderHandle;
+        const itemsText = Array.isArray(order.products) && order.products.length > 0
+          ? order.products.map((p) => `${p.product_name} (x${p.quantity || 1})`).join(", ")
+          : "Instagram Products";
+        const textBody = `🛍️ InstaxBot Order #${order.orderId || order.bill_no}: ${itemsText} - Total: ${order.currency || "INR"} ${order.total_amount || order.amount} [Status: ${order.status || "CREATED"}]`;
+
+        messages.push({
+          _id: order._id || `instax_ord_${order.orderId || order.bill_no}`,
+          sender_handle: senderHandle,
+          sender_name: senderName,
+          message: textBody,
+          receivedAt: order.created_at || new Date().toISOString(),
+          rawOrder: order,
+        });
+      }
+    }
+  } catch (_e) {}
+
+  return {
+    success: messages.length > 0,
+    messages,
+  };
 };
 
 export const sendInstaxBotMessage = async ({ recipientId, text, overrideKey } = {}) => {
@@ -326,7 +359,7 @@ export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000)
     isInstaxBotSyncRunning = true;
     try {
       if (!isInstaxBotConfigured()) return;
-      const res = await fetchInstaxBotMessages({ limit: 20 });
+      const res = await fetchInstaxBotMessages({ limit: 50 });
       if (res.success && Array.isArray(res.messages) && res.messages.length > 0) {
         let newCount = 0;
         for (const msg of res.messages) {
@@ -334,67 +367,73 @@ export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000)
           const senderName = msg.sender_name || msg.name || msg.sender?.name || senderHandle;
           const textBody = msg.message || msg.text || msg.caption || "New Instagram DM";
           const extId = msg._id || msg.id || msg.commentId || `ig_${Date.now()}`;
+          const receivedAtIso = msg.receivedAt || new Date().toISOString();
 
-          const contact = await resolveOrCreateContact({
-            workspaceId: "ws_default",
-            name: senderName,
-            identities: [
-              { type: "instagram", value: senderHandle },
-              { type: "custom", value: senderHandle },
-            ],
-            source: "InstaxBot Instagram Auto-Sync",
-            channel: "instagram",
-          });
+          for (const targetWsId of ["ws_default", "demo-ws"]) {
+            const contact = await resolveOrCreateContact({
+              workspaceId: targetWsId,
+              name: senderName,
+              identities: [
+                { type: "instagram", value: senderHandle },
+                { type: "custom", value: senderHandle },
+              ],
+              source: "InstaxBot Instagram Auto-Sync",
+              channel: "instagram",
+            });
 
-          const convId = `conv_ig_${senderHandle.replace(/\s+/g, "_")}`;
-          const convDoc = {
-            id: convId,
-            workspaceId: "ws_default",
-            customerName: contact?.name || senderName,
-            channel: "Instagram",
-            unreadCount: 1,
-            lastMessage: textBody,
-            updatedAt: new Date().toISOString(),
-          };
-          const conv = await upsertConversation(convDoc);
+            const convId = `conv_ig_${String(senderHandle).replace(/\W/g, "_")}`;
+            const convDoc = {
+              id: convId,
+              workspaceId: targetWsId,
+              customerName: contact?.name || senderName,
+              channel: "InstaxBot",
+              platform: "instaxbot",
+              unreadCount: 1,
+              lastMessage: textBody,
+              updatedAt: receivedAtIso,
+            };
+            const conv = await upsertConversation(convDoc);
 
-          const { doc: msgDoc, isNew } = await saveUnifiedMessage({
-            id: `msg_${extId}`,
-            workspaceId: "ws_default",
-            conversationId: conv.id,
-            integrationId: "instaxbot",
-            platform: "instagram",
-            externalMessageId: extId,
-            sender: {
-              name: contact?.name || senderName,
-              handle: senderHandle,
-              contactId: contact?.id || null,
-              kind: "customer",
-            },
-            direction: "inbound",
-            text: textBody,
-            status: "received",
-            receivedAt: new Date().toISOString(),
-          });
+            const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+              id: `msg_${extId}_${targetWsId}`,
+              workspaceId: targetWsId,
+              conversationId: conv.id,
+              integrationId: "instaxbot",
+              platform: "instaxbot",
+              externalMessageId: extId,
+              sender: {
+                name: contact?.name || senderName,
+                handle: senderHandle,
+                contactId: contact?.id || null,
+                kind: "customer",
+              },
+              direction: "inbound",
+              text: textBody,
+              status: "received",
+              receivedAt: receivedAtIso,
+            });
 
-          if (isNew) {
-            newCount++;
-            if (typeof broadcastFn === "function") {
-              broadcastFn("new_message", {
-                message: msgDoc,
-                conversation: conv,
-                platform: "instagram",
-                platformMeta: PLATFORM_META.instagram,
-              });
-              broadcastFn("message:new", { conversation: conv, message: msgDoc });
+            if (isNew) {
+              newCount++;
+              if (typeof broadcastFn === "function") {
+                broadcastFn("new_message", {
+                  message: msgDoc,
+                  conversation: conv,
+                  platform: "instaxbot",
+                  platformMeta: PLATFORM_META.instaxbot,
+                });
+                broadcastFn("message:new", { conversation: conv, message: msgDoc });
+              }
             }
           }
         }
         if (newCount > 0) {
-          console.log(`📸 [INSTAXBOT AUTO-SYNC] Synced ${res.messages.length} Instagram DM(s) (${newCount} new, ${res.messages.length - newCount} duplicate(s) skipped).`);
+          console.log(`📸 [INSTAXBOT AUTO-SYNC] Synced ${res.messages.length} Instagram DM/Order(s) (${newCount} new, ${res.messages.length - newCount} duplicate(s) skipped).`);
         }
       }
-      await syncInstaxBotContacts({ workspaceId: "ws_default" });
+      try {
+        await syncInstaxBotContacts({ workspaceId: "ws_default" });
+      } catch (_e) {}
     } catch (e) {
       console.warn("⚠️ Background InstaxBot auto-sync error:", e.message);
     } finally {
