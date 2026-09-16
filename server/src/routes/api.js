@@ -34,7 +34,7 @@ import {
 } from "../data/db.js";
 
 import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
-import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus } from "../services/channelbot.js";
+import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus } from "../services/channelbot.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
 import { fetchInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast } from "../services/instaxbot.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
@@ -551,6 +551,30 @@ apiRouter.get("/channelbot/status", (req, res) => {
     service: "ChannelBot.in API Gateway",
     ...getChannelBotInConfigStatus(),
   });
+});
+
+// GET /api/channelbot/messages — Fetch external YouTube comments via channelbot.in (comments:read)
+apiRouter.get("/channelbot/messages", async (req, res) => {
+  try {
+    const page = parseInt(req.query.page || "1", 10);
+    const limit = parseInt(req.query.limit || "50", 10);
+    const result = await fetchYouTubeComments({ page, limit });
+    res.json({ ok: true, success: result.success, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// PATCH /api/channelbot/messages/:commentId — Moderation status update via channelbot.in (comments:write)
+apiRouter.patch("/channelbot/messages/:commentId", async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { status, note, sentiment } = req.body || {};
+    const result = await updateYouTubeMessageStatus({ commentId, status, note, sentiment });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // Helper function to process incoming webhooks from channelbot.in / gowhats.in

@@ -191,9 +191,9 @@ export function UnifiedInbox() {
 
         {/* Platform Filters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          {["all", "gmail", "instagram", "whatsapp", "youtube", "linkedin", "telegram", "facebook", "custom_webhook"].map((pKey) => {
+          {["all", "gmail", "instagram", "whatsapp", "channelbot", "youtube", "linkedin", "telegram", "facebook", "custom_webhook"].map((pKey) => {
             const meta = pKey === "all" ? { name: "All Platforms", color: "#6366F1" } : getPlatformMeta(pKey);
-            const count = pKey === "all" ? messages.length : messages.filter((m) => m.platform === pKey).length;
+            const count = pKey === "all" ? messages.length : messages.filter((m) => m.platform === pKey || (pKey === "channelbot" && m.integrationId === "channelbot")).length;
             const isActive = activePlatform === pKey;
 
             return (

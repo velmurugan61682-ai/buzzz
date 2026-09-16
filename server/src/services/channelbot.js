@@ -14,7 +14,7 @@ const getBaseUrl = () => {
   return (
     process.env.CHANNELBOT_IN_BASE_URL ||
     process.env.CHANNELBOT_BASE_URL ||
-    "https://server-youtube-auto.onrender.com/api/external"
+    "https://server-youtube-auto.onrender.com/api/v1/external"
   ).replace(/\/$/, "");
 };
 
@@ -40,17 +40,17 @@ export const getChannelBotInConfigStatus = () => {
  * 1. Connection Verification & Dashboard Call Counter Driver
  * Executes a real authenticated API call to ChannelBot using process.env.CHANNELBOT_IN_API_KEY.
  * Auth Header: x-api-key: <key>
- * Endpoint: GET /api/external/leads
+ * Endpoint: GET /api/v1/external/messages or /leads
  */
 export const verifyChannelBotInConnection = async (overrideKey) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { connected: false, error: "No channelbot.in API key configured" };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/leads`;
+  const url = `${baseUrl}/messages?page=1&limit=10`;
 
   try {
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: "GET",
       headers: {
         "x-api-key": apiKey,
@@ -58,6 +58,17 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
         "Content-Type": "application/json",
       },
     });
+
+    if (response.status === 404) {
+      response = await fetch(`${baseUrl}/leads`, {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+      });
+    }
 
     const data = await response.json().catch(() => ({}));
     const isOk = response.ok && data.success !== false;
@@ -77,19 +88,19 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
 };
 
 /**
- * 2. Scope: leads:read (Captured YouTube Leads / Video Comments Ingestion)
- * Fetches captured video leads from GET /api/external/leads.
+ * 2. Scope: comments:read / leads:read (Fetch YouTube Comments & Messages)
+ * Endpoint: GET /api/v1/external/messages?page=1&limit=50
  * Auth Header: x-api-key: <key>
  */
-export const fetchYouTubeComments = async ({ overrideKey, limit = 50 } = {}) => {
+export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50 } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, comments: [] };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/leads`;
+  const url = `${baseUrl}/messages?page=${page}&limit=${limit}`;
 
   try {
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: "GET",
       headers: {
         "x-api-key": apiKey,
@@ -98,8 +109,25 @@ export const fetchYouTubeComments = async ({ overrideKey, limit = 50 } = {}) => 
       },
     });
 
-    const data = await response.json().catch(() => ({}));
-    const rawComments = data.data || data.leads || data.comments || (Array.isArray(data) ? data : []);
+    let data = await response.json().catch(() => ({}));
+
+    // Fallback if endpoint is legacy /leads
+    if (response.status === 404) {
+      const fallbackRes = await fetch(`${baseUrl}/leads?page=${page}&limit=${limit}`, {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+      });
+      if (fallbackRes.ok) {
+        data = await fallbackRes.json().catch(() => ({}));
+        response = fallbackRes;
+      }
+    }
+
+    const rawComments = data.data || data.messages || data.leads || data.comments || (Array.isArray(data) ? data : []);
 
     return {
       success: response.ok,
@@ -108,6 +136,48 @@ export const fetchYouTubeComments = async ({ overrideKey, limit = 50 } = {}) => 
     };
   } catch (err) {
     return { success: false, comments: [], error: err.message };
+  }
+};
+
+/**
+ * Scope: comments:write (Edit / Update YouTube Comment Status)
+ * Endpoint: PATCH /api/v1/external/messages/:COMMENT_ID
+ * Body: { status, note, sentiment }
+ * Auth Header: x-api-key: <key>
+ */
+export const updateYouTubeMessageStatus = async ({ commentId, status = "approved", note, sentiment, overrideKey } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, error: "No channelbot.in API key configured" };
+
+  const baseUrl = getBaseUrl();
+  const url = `${baseUrl}/messages/${commentId}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "x-api-key": apiKey,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status,
+        ...(note ? { note } : {}),
+        ...(sentiment ? { sentiment } : {}),
+      }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const isOk = response.ok;
+
+    return {
+      success: isOk,
+      status: response.status,
+      message: isOk ? "Message status updated successfully" : (data.error || data.message || `HTTP ${response.status}`),
+      data,
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 };
 
@@ -191,10 +261,10 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
   if (!apiKey) return { success: false, syncedCount: 0, error: "No channelbot.in API key configured" };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/leads`;
+  let url = `${baseUrl}/messages?page=1&limit=50`;
 
   try {
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: "GET",
       headers: {
         "x-api-key": apiKey,
@@ -203,8 +273,20 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
       },
     });
 
+    if (response.status === 404) {
+      url = `${baseUrl}/leads`;
+      response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+        },
+      });
+    }
+
     const data = await response.json().catch(() => ({}));
-    const rawLeads = data.data || data.leads || data.customers || (Array.isArray(data) ? data : []);
+    const rawLeads = data.data || data.messages || data.leads || data.customers || (Array.isArray(data) ? data : []);
     const synced = [];
 
     if (Array.isArray(rawLeads)) {
@@ -335,7 +417,7 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
             workspaceId: "ws_default",
             conversationId: conv.id,
             integrationId: "channelbot",
-            platform: "youtube",
+            platform: "channelbot",
             externalMessageId: extId,
             sender: {
               name: contact?.name || authorHandle,
@@ -345,9 +427,9 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
             },
             direction: "inbound",
             text: textBody,
-            status: "received",
+            status: cmt.status || "received",
             receivedAt: new Date().toISOString(),
-            metadata: { videoTitle },
+            metadata: { videoTitle, note: cmt.note, sentiment: cmt.sentiment },
           });
 
           if (isNew) {
@@ -356,8 +438,8 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
               broadcastFn("new_message", {
                 message: msgDoc,
                 conversation: conv,
-                platform: "youtube",
-                platformMeta: PLATFORM_META.youtube,
+                platform: "channelbot",
+                platformMeta: PLATFORM_META.channelbot,
               });
               broadcastFn("message:new", { conversation: conv, message: msgDoc });
             }
