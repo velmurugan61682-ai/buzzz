@@ -218,6 +218,8 @@ const CHANNEL_KEY_MAP = {
   youtube: "channelbot",
   YouTube: "channelbot",
   channelbot: "channelbot",
+  "channelbot.in": "channelbot",
+  "ChannelBot.in": "channelbot",
   missed_call: "missed_call",
   "missed call": "missed_call",
   "Missed Call": "missed_call",
@@ -12434,19 +12436,20 @@ function InboxView() {
         <div className={`flex-1 overflow-y-auto bz-scroll divide-y ${T.divide}`}>
           {list.length === 0 && <div className={`p-6 text-xs text-center ${T.faint}`}>Nothing matches. Clear the search or filters.</div>}
           {list.map((c) => {
-            const k = CONTACTS.find((x) => x.id === c.contactId) || {};
+            const k = CONTACTS.find((x) => x.id === c.contactId || (c.phone && x.phone === c.phone)) || {};
+            const displayName = k.name || c.customerName || c.name || c.phone || "YouTube User";
             const active = selConv === c.id;
             return (
               <button key={c.id} onClick={() => open(c.id)}
                 className={`w-full text-left h-16 px-4 transition-colors ${active ? (dk ? "bg-zinc-900" : "bg-zinc-50") : T.hover}`} style={active ? { boxShadow: `inset 2px 0 0 ${BRAND}` } : {}}>
                 <div className="h-full flex items-center gap-3">
                   <div className="relative shrink-0">
-                    <Avatar name={k.name || "?"} i={CONTACTS.indexOf(k)} size="w-8 h-8 text-[11px]" />
+                    <Avatar name={displayName} i={CONTACTS.indexOf(k) >= 0 ? CONTACTS.indexOf(k) : (c.id ? c.id.length : 0)} size="w-8 h-8 text-[11px]" />
                     <span className={`absolute -bottom-1 -right-1 rounded-[5px] ring-2 ${dk ? "ring-zinc-950" : "ring-white"}`}><Brand id={c.channel === "email" ? "gmail" : c.channel} size={16} /></span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[13px] leading-tight truncate ${c.unread ? "font-bold" : "font-semibold"}`}>{k.name}</span>
+                      <span className={`text-[13px] leading-tight truncate ${c.unread ? "font-bold" : "font-semibold"}`}>{displayName}</span>
                       {["high", "critical"].includes((c.priority || "").toLowerCase()) && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${PRI[(c.priority || "").toLowerCase()] || "bg-zinc-300"}`} />}
                       <span className={`ml-auto text-[10px] tabular-nums shrink-0 ${T.faint}`}>{(c.msgs || []).length ? timeAgo(msgAt(c.msgs[c.msgs.length - 1])) : ""}</span>
                     </div>
@@ -12608,7 +12611,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
     <div className={`absolute bottom-[52px] left-0 z-30 ${w} rounded-xl border shadow-xl overflow-hidden ${T.border} ${dk ? "bg-zinc-900" : "bg-white"}`}>{children}</div>
   );
 
-  const displayName = contact?.name || conv.customerName || "Customer";
+  const displayName = contact?.name || conv.customerName || conv.name || conv.phone || "YouTube User";
 
   return (
     <div className={`flex-1 min-w-0 flex flex-col ${T.shell}`}>
