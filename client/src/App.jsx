@@ -845,6 +845,20 @@ const atDay = (offset, h, m = 0) => { const d = new Date(D0); d.setDate(d.getDat
 /* same interface to support a second voice vendor.                      */
 /* ==================================================================== */
 
+export const safeFetchJson = async (url, opts) => {
+  try {
+    const res = await fetch(url, opts);
+    if (!res.ok) return null;
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      return await res.json();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const VOICE_PROXY = "/api/voice";          // our backend, not the provider
 const MRA_ENDPOINTS = {
   outboundCall:   { m: "POST", p: "/calls/outbound", body: ["agent_id", "to_number", "from_number", "context", "priority", "display_name", "ringing_timeout_seconds", "max_call_duration_seconds"] },
@@ -6961,8 +6975,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         ? "http://localhost:5000" 
         : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
 
-      const res = await fetch(`${apiHost}/api/google/status`);
-      const data = await res.json();
+      const data = await safeFetchJson(`${apiHost}/api/google/status`);
       if (data && data.connected && data.email) {
         setConns((prev) => ({
           ...prev,
@@ -6976,9 +6989,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       }
 
       // Verify Google Contacts People API status
-      const contactsRes = await fetch(`${apiHost}/api/google/contacts/status`);
-      const contactsData = await contactsRes.json();
-      if (contactsData.connected) {
+      const contactsData = await safeFetchJson(`${apiHost}/api/google/contacts/status`);
+      if (contactsData?.connected) {
         const realEmail = contactsData.email || data?.email || "";
         setConns((prev) => ({
           ...prev,
@@ -6990,7 +7002,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             lastSync: contactsData.syncedAt || new Date().toISOString(),
           },
         }));
-      } else if (contactsData.state === "Needs attention" || contactsData.error) {
+      } else if (contactsData?.state === "Needs attention" || contactsData?.error) {
         setConns((prev) => ({
           ...prev,
           gcontacts: {
@@ -7013,8 +7025,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         ? "http://localhost:5000" 
         : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
 
-      const res = await fetch(`${apiHost}/api/integrations/instaxbot/status`);
-      const data = await res.json();
+      const data = await safeFetchJson(`${apiHost}/api/integrations/instaxbot/status`);
       if (data && data.connected) {
         setConns((prev) => ({
           ...prev,
@@ -7053,8 +7064,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         ? "http://localhost:5000"
         : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
 
-      const res = await fetch(`${apiHost}/api/integrations/channelbot/status`);
-      const data = await res.json();
+      const data = await safeFetchJson(`${apiHost}/api/integrations/channelbot/status`);
       if (data && data.connected) {
         setConns((prev) => ({
           ...prev,
@@ -7094,8 +7104,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         ? "http://localhost:5000" 
         : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
 
-      const res = await fetch(`${apiHost}/api/linkedin/status`);
-      const data = await res.json();
+      const data = await safeFetchJson(`${apiHost}/api/linkedin/status`);
       if (data && data.connected) {
         setConns((prev) => ({
           ...prev,
@@ -12903,8 +12912,7 @@ function ContextPanel({ conv, close }) {
     let isMounted = true;
     setLoadingContact(true);
 
-    fetch(`/api/contacts/${encodeURIComponent(lookupKey)}`)
-      .then((res) => res.json())
+    safeFetchJson(`/api/contacts/${encodeURIComponent(lookupKey)}`)
       .then((data) => {
         if (isMounted && data && data.contact) {
           setFetchedContact(data.contact);
@@ -12936,8 +12944,7 @@ function ContextPanel({ conv, close }) {
     let active = true;
     setLoadingOrders(true);
     const cleanPhone = String(customerPhone).replace(/\D/g, "");
-    fetch(`/api/orders?phone=${encodeURIComponent(cleanPhone)}`)
-      .then((res) => res.json())
+    safeFetchJson(`/api/orders?phone=${encodeURIComponent(cleanPhone)}`)
       .then((data) => {
         if (active && data && Array.isArray(data.orders)) {
           setCustomerOrders(data.orders);
