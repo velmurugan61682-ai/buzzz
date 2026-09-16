@@ -454,9 +454,9 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
               },
               direction: "inbound",
               text: textBody,
-              status: cmt.status || "received",
+              status: ["received", "sent", "delivered", "read", "failed", "approved", "rejected", "pending", "flagged"].includes(cmt.status) ? cmt.status : "received",
               receivedAt: new Date().toISOString(),
-              metadata: { videoTitle, note: cmt.note, sentiment: cmt.sentiment },
+              metadata: { videoTitle, moderationStatus: cmt.status, note: cmt.note, sentiment: cmt.sentiment },
             });
 
             if (isNew) {

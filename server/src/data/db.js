@@ -104,7 +104,7 @@ const UnifiedMessageSchema = new mongoose.Schema(
     direction: { type: String, enum: ["inbound", "outbound"], default: "inbound" },
     text: { type: String, required: true },
     mediaUrl: { type: String, default: "" },
-    status: { type: String, enum: ["received", "sent", "delivered", "read", "failed"], default: "received" },
+    status: { type: String, enum: ["received", "sent", "delivered", "read", "failed", "approved", "rejected", "pending", "flagged"], default: "received" },
     receivedAt: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true }
