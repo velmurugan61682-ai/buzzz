@@ -86,7 +86,7 @@ const UnifiedMessageSchema = new mongoose.Schema(
     platform: {
       type: String,
       required: true,
-      enum: ["gmail", "instagram", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook", "missed_call", "youtube", "channelbot"],
+      enum: ["gmail", "instagram", "instaxbot", "linkedin", "whatsapp", "telegram", "facebook", "custom_webhook", "missed_call", "youtube", "channelbot"],
       index: true,
     },
     externalMessageId: { type: String, required: true, index: true },
