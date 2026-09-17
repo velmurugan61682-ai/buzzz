@@ -13417,7 +13417,7 @@ function ContextPanel({ conv, close }) {
 
         <PanelSection title="Customer" defaultOpen>
           <div className="space-y-2 text-[11px] leading-none">
-            {[["Phone", c.phone || conv.phone || "—"], ["Location", c.loc || c.location || "—"], ["Stage", c.stage || "New Lead"], ["Value", c.value || "₹0"], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "Just now"]].map(([k, v]) => (
+            {[["Phone", c.phone || conv.phone || "—"], ["Location", c.loc || c.location || "—"], ["Stage", c.stage || "New Lead"], ["Value", String(c.value || "₹0").replace(/^\$/, "₹")], ["Last contact", myConvs.length && (myConvs[0].msgs || []).length ? timeAgo(msgAt(myConvs[0].msgs[myConvs[0].msgs.length - 1])) : "Just now"]].map(([k, v]) => (
               <div key={k} className="flex items-baseline justify-between gap-3"><span className={`shrink-0 ${T.faint}`}>{k}</span><span className="font-medium text-right truncate min-w-0">{v}</span></div>
             ))}
           </div>
@@ -13928,7 +13928,7 @@ function ContactsView({ module }) {
                   <td className={`px-3 ${T.sub}`}>{c.source}</td>
                   <td className={`px-3 ${T.sub}`}>{c.owner}</td>
                   <td className="px-3"><Score v={c.score} /></td>
-                  <td className="px-3 font-medium tabular-nums">{c.value}</td>
+                  <td className="px-3 font-medium tabular-nums">{String(c.value || "₹0").replace(/^\$/, "₹")}</td>
                   <td className="px-3"><div className="flex gap-1 items-center">{(c.channels || []).slice(0, 3).map((ch) => <Brand key={ch} id={ch === "email" ? "gmail" : ch} size={13} />)}</div></td>
                   <td className={`px-3 tabular-nums ${(c.lastContact || 0) >= 30 ? "text-amber-600" : T.faint}`}>{c.lastContact === 0 ? "today" : c.lastContact + "d ago"}</td>
                   <td className="px-3"><RowMenu contact={c} onEdit={() => setForm(c)} archived={!!f.archived} /></td>
@@ -14704,7 +14704,7 @@ function Customer360({ id }) {
           <div className={`rounded-2xl p-4 ${T.card}`}>
             <SecTitle>Customer 360</SecTitle>
             <div className="space-y-2 text-xs">
-              {[["Lifecycle stage", c.stage], ["Estimated value", c.value], ["Lifetime value", c.ltv], ["Engagement", c.engagement + "/100"], ["Churn risk", c.churn], ["Intent", c.intent]].map(([k, v]) => (
+              {[["Lifecycle stage", c.stage], ["Estimated value", String(c.value || "₹0").replace(/^\$/, "₹")], ["Lifetime value", String(c.ltv || "₹0").replace(/^\$/, "₹")], ["Engagement", c.engagement + "/100"], ["Churn risk", c.churn], ["Intent", c.intent]].map(([k, v]) => (
                 <div key={k} className="flex justify-between"><span className={T.sub}>{k}</span><span className="font-medium">{v}</span></div>
               ))}
               <div className="flex justify-between items-center"><span className={T.sub}>Sentiment</span><SentPill s={c.sentiment} /></div>

@@ -55,7 +55,7 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "x-workspace-id", "Idempotency-Key", "x-gowhats-secret"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-workspace-id", "x-session-token", "Idempotency-Key", "x-gowhats-secret"],
   })
 );
 
