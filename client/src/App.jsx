@@ -1610,12 +1610,12 @@ const PLANS = ["Starter", "Growth", "Business", "Pro", "Enterprise"];
 
 /* commercially set per region, not FX converted. Annual is stored, not derived. */
 const PRICING_REGIONS = [
-  { id: "sg", label: "Singapore", cur: "SGD", sym: "S$", countries: ["SG"],
-    price: { Starter: [59, 588], Growth: [149, 1484], Business: [329, 3277], Pro: [649, 6464] } },
   { id: "in", label: "India", cur: "INR", sym: "₹", countries: ["IN"],
     price: { Starter: [2499, 24890], Growth: [6999, 69700], Business: [15999, 159350], Pro: [32999, 328650] } },
   { id: "us", label: "United States and Canada", cur: "USD", sym: "$", countries: ["US", "CA"],
     price: { Starter: [49, 488], Growth: [129, 1285], Business: [299, 2978], Pro: [599, 5966] } },
+  { id: "sg", label: "Singapore", cur: "SGD", sym: "S$", countries: ["SG"],
+    price: { Starter: [59, 588], Growth: [149, 1484], Business: [329, 3277], Pro: [649, 6464] } },
   { id: "eu", label: "Europe", cur: "EUR", sym: "€", countries: ["DE", "FR", "ES", "IT", "NL", "IE", "PT"],
     price: { Starter: [49, 488], Growth: [129, 1285], Business: [279, 2779], Pro: [579, 5767] } },
   { id: "uk", label: "United Kingdom", cur: "GBP", sym: "£", countries: ["GB"],
@@ -1635,7 +1635,7 @@ const ANNUAL_DISCOUNT = 0.17;
 /* resolve region from country, never from a client supplied price */
 function resolveRegion(countryCode) {
   const cc = (countryCode || "").toUpperCase();
-  return PRICING_REGIONS.find((r) => r.countries.includes(cc)) || PRICING_REGIONS.find((r) => r.id === "us");
+  return PRICING_REGIONS.find((r) => r.countries.includes(cc)) || PRICING_REGIONS.find((r) => r.id === "in");
 }
 function priceFor(regionId, plan, cycle = "monthly") {
   const r = PRICING_REGIONS.find((x) => x.id === regionId) || PRICING_REGIONS[0];
@@ -3370,8 +3370,8 @@ const PUBLIC_PLANS = [
 const PRICE_REGIONS = [
   /* Enterprise is priced on the same ladder rather than hidden behind a form:
      a buyer who cannot see a number assumes the worst. */
-  { id: "US", label: "United States", cur: "USD", loc: "en-US", p: [39, 129, 399, 1490] },
   { id: "IN", label: "India", cur: "INR", loc: "en-IN", p: [2900, 9900, 29900, 109000] },
+  { id: "US", label: "United States", cur: "USD", loc: "en-US", p: [39, 129, 399, 1490] },
   { id: "SG", label: "Singapore", cur: "SGD", loc: "en-SG", p: [52, 172, 532, 1990] },
   { id: "GB", label: "United Kingdom", cur: "GBP", loc: "en-GB", p: [32, 105, 325, 1190] },
   { id: "AE", label: "Middle East", cur: "AED", loc: "en-AE", p: [145, 475, 1465, 5470] },
@@ -5875,7 +5875,7 @@ function AdminConsole({ staff, onSignOut }) {
               <Metric label="Conversations" value={fmtInt(c.conversations)} sub={`${c.unread} unread`} />
               <Metric label="Handled by AI" value={fmtInt(c.aiHandled)} sub="conversations with an agent" />
               <Metric label="Agents" value={fmtInt(c.agents)} sub={`${c.agentsActive} active · ${c.agentsPaused} paused`} />
-              <Metric label="Deals" value={fmtInt(c.deals)} sub={`$${fmtInt(Math.round(c.pipelineValue / 1000))}k pipeline`} />
+              <Metric label="Deals" value={fmtInt(c.deals)} sub={`₹${fmtInt(Math.round(c.pipelineValue / 1000))}k pipeline`} />
               <Metric label="Calls" value={fmtInt(c.calls)} />
               <Metric label="Approvals waiting" value={fmtInt(c.approvalsPending)} sub={`${c.approvals} total`} />
               <Metric label="Open tickets" value={fmtInt(c.openTickets)} sub={`${c.tickets} total`} />
@@ -9440,7 +9440,7 @@ function BuzzzAI({ close }) {
     /* deals likely to close */
     if (/deals? (?:most )?likely to close|which deals.*close|closing this month/.test(s)) {
       const ranked = [...deals].filter((d) => d.stage !== "Won").sort((a, b) => (b.prob ?? 50) * b.value - (a.prob ?? 50) * a.value).slice(0, 4);
-      return { text: "Ranked by probability against value: " + ranked.map((d) => `${d.name} ($${(d.value / 1000).toFixed(0)}k, ${d.prob ?? 50}%)`).join("; ") + ".", nav: ["Open pipeline", "crm"] };
+      return { text: "Ranked by probability against value: " + ranked.map((d) => `${d.name} (₹${(d.value / 1000).toFixed(0)}k, ${d.prob ?? 50}%)`).join("; ") + ".", nav: ["Open pipeline", "crm"] };
     }
     /* highest value customers */
     if (/highest.?value|top customers|biggest customers|most valuable/.test(s)) {
@@ -9606,7 +9606,7 @@ function BuzzzAI({ close }) {
     }
     if (/high.?risk approvals|risky approvals/.test(s)) {
       const hr = approvals.filter((a) => ["High", "Critical"].includes(a.risk) && apState(a) === "Pending");
-      return { text: hr.length ? hr.map((a) => `${a.title} · ${a.to} · ${a.risk}${a.meta.amount ? " · $" + a.meta.amount.toLocaleString() : ""} · needs ${a.role}`).join("\n") : "No high risk items are pending.", nav: ["Open approvals", "approvals"] };
+      return { text: hr.length ? hr.map((a) => `${a.title} · ${a.to} · ${a.risk}${a.meta.amount ? " · ₹" + a.meta.amount.toLocaleString() : ""} · needs ${a.role}`).join("\n") : "No high risk items are pending.", nav: ["Open approvals", "approvals"] };
     }
     if (/overdue approvals/.test(s)) {
       const od = approvals.filter((a) => apState(a) === "Pending" && apDue(a) < 0);
@@ -10226,7 +10226,7 @@ function BuzzzAI({ close }) {
     }
     if (/what (?:is|are) (?:it |we )?cost|cost per|roi|return on/.test(s)) {
       const ec = economics({ convs, calls, camps, deals, contacts: CONTACTS }, COSTS_INIT);
-      return { text: `${ec.aiConvs} AI conversations, ${ec.humanConvs} human, ${ec.callMinutes} call minutes and ${ec.sends} campaign sends cost about ${money(ec.total)}. That is ${ec.costPerConversation !== null ? "$" + ec.costPerConversation.toFixed(2) + " per conversation" : "no per conversation figure yet"}${ec.costPerWonDeal ? " and " + money(ec.costPerWonDeal) + " per won deal" : ""}. Against ${money(ec.revenue)} of won revenue that is a ${ec.roi === null ? "n/a" : ec.roi + "%"} return, and roughly ${money(ec.saved)} saved versus handling everything with people.`, nav: ["Open revenue", "analytics"] };
+      return { text: `${ec.aiConvs} AI conversations, ${ec.humanConvs} human, ${ec.callMinutes} call minutes and ${ec.sends} campaign sends cost about ${money(ec.total)}. That is ${ec.costPerConversation !== null ? "₹" + ec.costPerConversation.toFixed(2) + " per conversation" : "no per conversation figure yet"}${ec.costPerWonDeal ? " and " + money(ec.costPerWonDeal) + " per won deal" : ""}. Against ${money(ec.revenue)} of won revenue that is a ${ec.roi === null ? "n/a" : ec.roi + "%"} return, and roughly ${money(ec.saved)} saved versus handling everything with people.`, nav: ["Open revenue", "analytics"] };
     }
     if (/attention|what.*today|to.?do/.test(s)) return { text: "Today: decide on the items in the Approval Center, assign a solutions engineer to Tom Okafor's deep dive, and prep Ken's 3pm retention call for Orchid. Everything else is being handled autonomously.", nav: ["Open approvals", "approvals"] };
 
@@ -21772,7 +21772,7 @@ function ApprovalsView() {
                       <ChevronRight size={12} className={T.faint} />
                     </button>
                     {deals.filter((d) => d.contactId === contact.id).map((d) => (
-                      <div key={d.id} className={`text-[11px] mt-1.5 flex items-center gap-2 ${T.sub}`}><Target size={11} /> {d.name} · ${(d.value / 1000).toFixed(0)}k · {d.stage}</div>
+                      <div key={d.id} className={`text-[11px] mt-1.5 flex items-center gap-2 ${T.sub}`}><Target size={11} /> {d.name} · ₹${(d.value / 1000).toFixed(0)}k · {d.stage}</div>
                     ))}
                     {conv && (
                       <div className="mt-2">
