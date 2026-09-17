@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" width="100%" height="100%">
+  <!-- Speech Bubble Icon -->
+  <g transform="translate(4, 2) scale(0.6)">
+    <path d="M 50 10 C 27.9 10 10 27.9 10 50 C 10 72.1 27.9 90 50 90 C 55.4 90 60.5 88.9 65.2 87 L 76 96 L 76 80.8 C 84.5 73.8 90 62.6 90 50 C 90 27.9 72.1 10 50 10 Z" fill="#BA3822" />
+    <path d="M 37 42 L 43.5 54.5 C 44.5 56.5 46.5 57.5 48.5 57.5 L 51.5 57.5 C 53.5 57.5 55.5 56.5 56.5 54.5 L 63 42" fill="none" stroke="#FFFFFF" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+  <!-- Text 'buzzz' in Brand Red -->
+  <text x="74" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Inter', 'Space Grotesk', system-ui, sans-serif" font-size="40" font-weight="700" letter-spacing="-1.5" fill="#BA3822">buzzz</text>
+</svg>

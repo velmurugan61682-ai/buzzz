@@ -2719,14 +2719,74 @@ const LOGO_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAAD
 const LOGO_RATIO = 220 / 58;
 
 function Logo({ height, white = false, mark = false, className = "", size }) {
-  const h = height || ({ "text-lg": 16, "text-xl": 18, "text-2xl": 22, "text-3xl": 28 }[size] || 22);
+  const h = height || ({ "text-lg": 18, "text-xl": 22, "text-2xl": 26, "text-3xl": 32 }[size] || 24);
+  const bubbleColor = "#BA3822";
+  const textColor = white ? "#FFFFFF" : bubbleColor;
+
   if (mark) {
-    return <img src={LOGO_ICON} alt="BUZZZ" className={className}
-      style={{ height: h, width: h, display: "block" }} />;
+    return (
+      <svg
+        width={h}
+        height={h}
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={className}
+        style={{ display: "block", flexShrink: 0 }}
+      >
+        <path
+          d="M 50 10 C 27.9 10 10 27.9 10 50 C 10 72.1 27.9 90 50 90 C 55.4 90 60.5 88.9 65.2 87 L 76 96 L 76 80.8 C 84.5 73.8 90 62.6 90 50 C 90 27.9 72.1 10 50 10 Z"
+          fill={white ? "#FFFFFF" : bubbleColor}
+        />
+        <path
+          d="M 37 42 L 43.5 54.5 C 44.5 56.5 46.5 57.5 48.5 57.5 L 51.5 57.5 C 53.5 57.5 55.5 56.5 56.5 54.5 L 63 42"
+          fill="none"
+          stroke={white ? bubbleColor : "#FFFFFF"}
+          strokeWidth="7.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
   }
-  /* width follows height, so no parent can stretch the mark */
-  return <img src={white ? LOGO_WHITE : LOGO_RED} alt="BUZZZ" className={className}
-    style={{ height: h, width: LOGO_RATIO * h, display: "block" }} />;
+
+  return (
+    <span className={`inline-flex items-center gap-2 select-none ${className}`} style={{ height: h, flexShrink: 0 }}>
+      <svg
+        width={h}
+        height={h}
+        viewBox="0 0 100 100"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: "block", flexShrink: 0 }}
+      >
+        <path
+          d="M 50 10 C 27.9 10 10 27.9 10 50 C 10 72.1 27.9 90 50 90 C 55.4 90 60.5 88.9 65.2 87 L 76 96 L 76 80.8 C 84.5 73.8 90 62.6 90 50 C 90 27.9 72.1 10 50 10 Z"
+          fill={bubbleColor}
+        />
+        <path
+          d="M 37 42 L 43.5 54.5 C 44.5 56.5 46.5 57.5 48.5 57.5 L 51.5 57.5 C 53.5 57.5 55.5 56.5 56.5 54.5 L 63 42"
+          fill="none"
+          stroke="#FFFFFF"
+          strokeWidth="7.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span
+        className="font-bold tracking-tight lowercase select-none"
+        style={{
+          fontSize: Math.round(h * 0.95),
+          lineHeight: 1,
+          color: textColor,
+          fontFamily: "'Inter', 'Space Grotesk', system-ui, -apple-system, sans-serif",
+          letterSpacing: "-0.035em",
+        }}
+      >
+        buzzz
+      </span>
+    </span>
+  );
 }
 
 const SecTitle = ({ children, right }) => {
@@ -7655,7 +7715,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       return null;
     }
   };
-  const syncCalls = async () => {
+  const syncCalls = async (silent = false) => {
     try {
       await fetch("/api/v1/gowhats/sync").catch(() => ({}));
       const apiRes = await fetch("/api/v1/calls").then((r) => r.json()).catch(() => null);
@@ -7694,13 +7754,94 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
           deduped.forEach((x) => prevMap.set(x.id, { ...prevMap.get(x.id), ...x }));
           return Array.from(prevMap.values());
         });
-        log("System", "Calls synced from GoWhats & Voice", deduped.length + " records");
-        flash(deduped.length + " calls synced");
+        if (!silent) {
+          log("System", "Calls synced from GoWhats & Voice", deduped.length + " records");
+          flash(deduped.length + " calls synced");
+        }
       } else {
-        flash("Calls synced");
+        if (!silent) flash("Calls synced");
       }
-    } catch (e) { flash("Could not sync calls.", "err"); }
+    } catch (e) {
+      if (!silent) flash("Could not sync calls.", "err");
+    }
   };
+
+  /* Automatic background sync for GoWhats calls and chat conversations */
+  useEffect(() => {
+    syncCalls(true);
+
+    const interval = setInterval(() => {
+      syncCalls(true);
+      const wsId = route?.workspaceId || "ws_default";
+      Promise.allSettled([
+        api.getConversations(wsId),
+        api.getInbox(wsId),
+      ]).then(([resConvs, resInbox]) => {
+        if (resConvs.status === "fulfilled" && resConvs.value) {
+          const rawConvData = Array.isArray(resConvs.value)
+            ? resConvs.value
+            : (resConvs.value?.data || resConvs.value?.conversations);
+          if (Array.isArray(rawConvData) && rawConvData.length > 0) {
+            let inboxMessages = [];
+            if (resInbox?.status === "fulfilled" && resInbox.value) {
+              inboxMessages = Array.isArray(resInbox.value)
+                ? resInbox.value
+                : (resInbox.value.messages || resInbox.value.data || []);
+            }
+            const msgsByConvId = {};
+            (inboxMessages || []).forEach((m) => {
+              const cid = m.conversationId;
+              if (!cid) return;
+              if (!msgsByConvId[cid]) msgsByConvId[cid] = [];
+              const channelKey = resolveChannelKey(m.platform, m.channel);
+              msgsByConvId[cid].push({
+                id: m.id || m._id || `msg_${Date.now()}`,
+                from: (m.sender === "customer" || m.direction === "inbound" || m.sender?.kind === "customer") ? "customer" : "agent",
+                text: m.text || "",
+                time: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
+                at: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
+                channel: channelKey,
+              });
+            });
+
+            setConvs((prevConvs) => {
+              const prevMap = new Map((prevConvs || []).map((c) => [c.id, c]));
+              rawConvData.forEach((c) => {
+                const prev = prevMap.get(c.id);
+                const attachedMsgs = msgsByConvId[c.id] || (prev?.msgs || []);
+                const channelKey = resolveChannelKey(c.platform, c.channel);
+                prevMap.set(c.id, {
+                  ...prev,
+                  ...c,
+                  channel: channelKey || c.channel || prev?.channel || "WhatsApp",
+                  msgs: attachedMsgs.length ? attachedMsgs : (prev?.msgs || []),
+                });
+              });
+              return Array.from(prevMap.values());
+            });
+          }
+        }
+      }).catch(() => {});
+    }, 10000);
+
+    let eventSource = null;
+    try {
+      eventSource = new EventSource("/api/events");
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (["call:new", "message:new", "new_message", "conversation:updated", "conversation:new"].includes(data.type)) {
+            syncCalls(true);
+          }
+        } catch {}
+      };
+    } catch (e) {}
+
+    return () => {
+      clearInterval(interval);
+      if (eventSource) eventSource.close();
+    };
+  }, []);
   /* call outcome writes straight back into the CRM */
   const applyCallOutcome = (callId, outcome) => {
     const k = calls.find((x) => x.id === callId);
@@ -8683,13 +8824,12 @@ const NAV_GROUPS = [
 ];
 
 function Sidebar() {
-  const { T, view, go, approvals, wsName } = useApp();
+  const { T, view, go, approvals, wsName, onSignOut } = useApp();
   const item = (id) => NAV.find((n) => n && n.id === id);
   return (
     <aside className={`w-56 shrink-0 flex flex-col ${T.sidebar}`}>
       <div className="px-5 pt-6 pb-5">
         <Logo size="text-2xl" />
-        <div className={`text-[11px] mt-1 ${T.faint}`}>{wsName}</div>
       </div>
       <nav className="flex-1 overflow-y-auto bz-scroll px-3 pb-4">
         {NAV_GROUPS.map((g, gi) => (
@@ -8713,12 +8853,17 @@ function Sidebar() {
           </div>
         ))}
       </nav>
-      <div className={`px-5 py-4 border-t ${T.border} flex items-center gap-2`}>
-        <span className="relative flex h-1.5 w-1.5">
-          <span className="bz-pulse absolute inline-flex h-full w-full rounded-full bg-emerald-500" />
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500" />
-        </span>
-        <span className={`text-[11px] ${T.sub}`}>7 agents live · 73% automated</span>
+      <div className={`p-3 border-t ${T.border}`}>
+        <button
+          onClick={() => {
+            if (typeof onSignOut === "function") onSignOut();
+          }}
+          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 dark:hover:text-red-400 transition`}
+          title="Logout"
+        >
+          <LogOut size={15} />
+          <span>Logout</span>
+        </button>
       </div>
     </aside>
   );
@@ -8729,108 +8874,97 @@ function TopBar({ notifOpen, setNotifOpen, setCmdOpen, dk, setDk }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   return (
-    <header className={`h-14 shrink-0 flex items-center gap-2 px-6 border-b ${T.border} ${T.panel}`}>
-      <button onClick={() => setCmdOpen(true)}
-        className={`flex items-center gap-2 px-3.5 py-2 rounded-full w-72 text-left ${T.input}`}>
-        <Search size={13} className={T.faint} />
-        <span className={`flex-1 text-xs ${T.faint}`}>Search or command</span>
-        <span className={`text-[10px] ${T.faint}`}>⌘K</span>
-      </button>
+    <header className={`h-14 shrink-0 relative flex items-center justify-between px-6 border-b ${T.border} ${T.panel}`}>
       <div className="flex-1" />
-      <button onClick={() => setAiOpen(true)} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold ${T.hover}`}>
-        <Sparkles size={13} style={{ color: BRAND }} /> BUZZZ AI
-      </button>
-      <div className="relative">
-        <button onClick={() => setNotifOpen(!notifOpen)} className={`p-2 rounded-full ${T.hover} relative`} aria-label={`Notifications, ${unread.length} unread`}>
-          <Bell size={15} strokeWidth={1.8} />
-          {unread.length > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full grid place-items-center text-[9px] font-bold text-white"
-              style={{ background: unread.some((n) => n.priority === "critical") ? "#dc2626" : BRAND }}>{unread.length > 9 ? "9+" : unread.length}</span>
-          )}
+      <div className="absolute left-1/2 -translate-x-1/2 w-80 sm:w-96 max-w-[50vw]">
+        <button onClick={() => setCmdOpen(true)}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full w-full text-left ${T.input}`}>
+          <Search size={13} className={T.faint} />
+          <span className={`flex-1 text-xs ${T.faint}`}>Search or command</span>
+          <span className={`text-[10px] ${T.faint}`}>⌘K</span>
         </button>
-        {notifOpen && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
-            <div className={`absolute right-0 top-11 w-88 max-w-[92vw] rounded-2xl shadow-xl z-50 overflow-hidden ${T.card}`} style={{ width: 352 }}>
-              <div className={`px-4 py-3 flex items-center gap-2 border-b ${T.border}`}>
-                <span className="text-xs font-semibold flex-1">Notifications</span>
-                {unread.length > 0 && <button onClick={markAllRead} className={`text-[11px] font-semibold ${T.sub}`}>Mark all read</button>}
-              </div>
-              <div className="max-h-96 overflow-y-auto bz-scroll">
-                {notifications.length === 0 ? (
-                  <div className={`p-8 text-center text-xs ${T.faint}`}>Nothing needs your attention.</div>
-                ) : notifications.map((n) => {
-                  const isRead = notifRead.includes(n.id);
-                  return (
-                    <button key={n.id} onClick={() => {
-                      markRead(n.id);
-                      setNotifOpen(false);
-                      if (n.convId && typeof openConv === "function") {
-                        openConv(n.convId);
-                      } else {
-                        go(n.go);
-                      }
-                    }}
-                      className={`w-full text-left px-4 py-3 flex items-start gap-2.5 border-b ${T.border} ${T.hover} ${isRead ? "opacity-55" : ""}`}>
-                      {!isRead && <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: n.priority === "critical" ? "#dc2626" : n.priority === "warning" ? "#f59e0b" : BRAND }} />}
-                      {isRead && <span className="w-1.5 shrink-0" />}
-                      <div className="min-w-0 flex-1">
-                        <div className={`text-xs font-semibold ${NOTIF_TINT[n.priority]}`}>{n.title}</div>
-                        <div className={`text-[11px] mt-0.5 leading-relaxed ${T.sub}`}>{n.body}</div>
-                        <div className={`text-[10px] mt-1 ${T.faint}`}>{n.cat}</div>
-                      </div>
-                      <ChevronRight size={12} className={`shrink-0 mt-0.5 ${T.faint}`} />
-                    </button>
-                  );
-                })}
-              </div>
-              {notifications.length > 0 && (
-                <button onClick={() => { setNotifOpen(false); go("settings"); }} className={`w-full px-4 py-2.5 text-[11px] font-semibold border-t ${T.border} ${T.hover} ${T.sub}`}>Notification preferences</button>
-              )}
-            </div>
-          </>
-        )}
       </div>
-      <button onClick={() => setDk(!dk)} className={`p-2 rounded-full ${T.hover}`}>{dk ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}</button>
-
-      {/* Direct Logout Button */}
-      <button
-        onClick={() => {
-          if (typeof onSignOut === "function") onSignOut();
-        }}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30 transition border border-zinc-200 dark:border-zinc-700 ml-1"
-        title="Logout to landing page"
-      >
-        <LogOut size={13} />
-        <span>Logout</span>
-      </button>
-
-      {/* User Profile Dropdown */}
-      <div className="relative ml-1">
-        <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="p-0.5 rounded-full hover:ring-2 hover:ring-zinc-400 transition" aria-label="User profile menu">
-          <Avatar name={me?.name || "User"} i={7} size="w-8 h-8 text-xs" />
-        </button>
-        {userMenuOpen && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-            <div className={`absolute right-0 top-11 w-56 rounded-2xl shadow-xl z-50 p-2 border ${T.card} ${T.border}`}>
-              <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
-                <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100">{me?.name || "User"}</div>
-                <div className="text-[11px] text-zinc-500 truncate">{me?.email || "owner@workspace"}</div>
+      <div className="flex items-center gap-2 relative z-10">
+        <div className="relative">
+          <button onClick={() => setNotifOpen(!notifOpen)} className={`p-2 rounded-full ${T.hover} relative`} aria-label={`Notifications, ${unread.length} unread`}>
+            <Bell size={15} strokeWidth={1.8} />
+            {unread.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full grid place-items-center text-[9px] font-bold text-white"
+                style={{ background: unread.some((n) => n.priority === "critical") ? "#dc2626" : BRAND }}>{unread.length > 9 ? "9+" : unread.length}</span>
+            )}
+          </button>
+          {notifOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setNotifOpen(false)} />
+              <div className={`absolute right-0 top-11 w-88 max-w-[92vw] rounded-2xl shadow-xl z-50 overflow-hidden ${T.card}`} style={{ width: 352 }}>
+                <div className={`px-4 py-3 flex items-center gap-2 border-b ${T.border}`}>
+                  <span className="text-xs font-semibold flex-1">Notifications</span>
+                  {unread.length > 0 && <button onClick={markAllRead} className={`text-[11px] font-semibold ${T.sub}`}>Mark all read</button>}
+                </div>
+                <div className="max-h-96 overflow-y-auto bz-scroll">
+                  {notifications.length === 0 ? (
+                    <div className={`p-8 text-center text-xs ${T.faint}`}>Nothing needs your attention.</div>
+                  ) : notifications.map((n) => {
+                    const isRead = notifRead.includes(n.id);
+                    return (
+                      <button key={n.id} onClick={() => {
+                        markRead(n.id);
+                        setNotifOpen(false);
+                        if (n.convId && typeof openConv === "function") {
+                          openConv(n.convId);
+                        } else {
+                          go(n.go);
+                        }
+                      }}
+                        className={`w-full text-left px-4 py-3 flex items-start gap-2.5 border-b ${T.border} ${T.hover} ${isRead ? "opacity-55" : ""}`}>
+                        {!isRead && <span className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={{ background: n.priority === "critical" ? "#dc2626" : n.priority === "warning" ? "#f59e0b" : BRAND }} />}
+                        {isRead && <span className="w-1.5 shrink-0" />}
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-xs font-semibold ${NOTIF_TINT[n.priority]}`}>{n.title}</div>
+                          <div className={`text-[11px] mt-0.5 leading-relaxed ${T.sub}`}>{n.body}</div>
+                          <div className={`text-[10px] mt-1 ${T.faint}`}>{n.cat}</div>
+                        </div>
+                        <ChevronRight size={12} className={`shrink-0 mt-0.5 ${T.faint}`} />
+                      </button>
+                    );
+                  })}
+                </div>
+                {notifications.length > 0 && (
+                  <button onClick={() => { setNotifOpen(false); go("settings"); }} className={`w-full px-4 py-2.5 text-[11px] font-semibold border-t ${T.border} ${T.hover} ${T.sub}`}>Notification preferences</button>
+                )}
               </div>
-              <button
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  if (typeof onSignOut === "function") onSignOut();
-                }}
-                className="w-full mt-1.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center justify-between transition"
-              >
-                <span>Sign out</span>
-                <LogOut size={13} />
-              </button>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
+        <button onClick={() => setDk(!dk)} className={`p-2 rounded-full ${T.hover}`}>{dk ? <Sun size={15} strokeWidth={1.8} /> : <Moon size={15} strokeWidth={1.8} />}</button>
+
+        {/* User Profile Dropdown */}
+        <div className="relative ml-1">
+          <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="p-0.5 rounded-full hover:ring-2 hover:ring-zinc-400 transition" aria-label="User profile menu">
+            <Avatar name={me?.name || "User"} i={7} size="w-8 h-8 text-xs" />
+          </button>
+          {userMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+              <div className={`absolute right-0 top-11 w-56 rounded-2xl shadow-xl z-50 p-2 border ${T.card} ${T.border}`}>
+                <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
+                  <div className="font-semibold text-xs text-zinc-900 dark:text-zinc-100">{me?.name || "User"}</div>
+                  <div className="text-[11px] text-zinc-500 truncate">{me?.email || "owner@workspace"}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false);
+                    if (typeof onSignOut === "function") onSignOut();
+                  }}
+                  className="w-full mt-1.5 px-3 py-2 rounded-xl text-left text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center justify-between transition"
+                >
+                  <span>Sign out</span>
+                  <LogOut size={13} />
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );
@@ -12597,12 +12731,45 @@ function InboxView() {
 }
 
 function Msg({ m, contact, first = true, last = true, mt = "" }) {
-  const { T, dk } = useApp();
+  const { T, dk, placeCall } = useApp();
   if (m.from === "system") return (
     <div className={`flex justify-center ${mt}`}>
       <span className={`text-[10px] px-3 py-1 rounded-full border text-center max-w-md leading-relaxed ${m.text.includes("handoff") || m.text.includes("Escalated") ? (dk ? "bg-amber-950 border-amber-900 text-amber-400" : "bg-amber-50 border-amber-200 text-amber-700") : `${T.chip}`}`}>{m.text}</span>
     </div>
   );
+
+  const isCall = m.type === "call" || m.type === "missed_call" || m.channel === "Missed Call" ||
+    /missed.*call|voice.*call|call.*missed|video.*call/i.test(m.text || "");
+  if (isCall) {
+    const isMissed = /missed/i.test(m.text || "") || m.type === "missed_call" || m.channel === "Missed Call";
+    const phone = contact?.phone || "";
+    return (
+      <div className={`flex justify-center my-2.5 ${mt}`}>
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border ${isMissed ? (dk ? "bg-red-950/40 border-red-900 text-red-300" : "bg-red-50 border-red-200 text-red-800") : (dk ? "bg-emerald-950/40 border-emerald-900 text-emerald-300" : "bg-emerald-50 border-emerald-200 text-emerald-800")} max-w-md shadow-xs`}>
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isMissed ? "bg-red-500 text-white" : "bg-emerald-500 text-white"}`}>
+            {isMissed ? <PhoneMissed size={14} /> : <PhoneIncoming size={14} />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-semibold flex items-center gap-1.5">
+              <span>{isMissed ? "WhatsApp Missed Call" : "WhatsApp Call"}</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-current font-medium opacity-80">GoWhats</span>
+            </div>
+            <div className="text-[11px] truncate opacity-85 mt-0.5">{m.text}</div>
+            <div className="text-[10px] opacity-60 mt-0.5">{timeAgo(msgAt(m))}</div>
+          </div>
+          {phone && (
+            <button
+              onClick={() => placeCall(phone, contact?.id)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-zinc-800 shadow-sm border border-zinc-200 dark:border-zinc-700 inline-flex items-center gap-1 hover:opacity-85 shrink-0"
+              style={{ color: BRAND }}>
+              <PhoneCall size={11} /> Call back
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const you = m.from !== "customer";
   return (
     <div className={`flex gap-2.5 ${mt} ${you ? "flex-row-reverse" : ""}`}>
@@ -12902,7 +13069,7 @@ function PanelSection({ title, defaultOpen, children }) {
 }
 
 function ContextPanel({ conv, close }) {
-  const { T, dk, deals, appts, convs, openContact, updateContact, addTask, bookAppointment, flash, log } = useApp();
+  const { T, dk, deals, appts, convs, calls, openContact, updateContact, addTask, bookAppointment, placeCall, go, flash, log } = useApp();
   const [fetchedContact, setFetchedContact] = useState(null);
   const [loadingContact, setLoadingContact] = useState(false);
   const [customerOrders, setCustomerOrders] = useState([]);
@@ -13081,6 +13248,12 @@ function ContextPanel({ conv, close }) {
   }
 
   const tagsList = c.tags ?? [];
+  const contactPhoneNorm = normPhone(c.phone || conv.phone || "");
+  const contactCalls = (calls || []).filter((k) => {
+    if (targetId && k.contactId === targetId) return true;
+    if (contactPhoneNorm && normPhone(k.number) === contactPhoneNorm) return true;
+    return false;
+  }).sort((a, b) => new Date(b.at) - new Date(a.at));
 
   return (
     <div className={`fixed inset-y-0 right-0 z-40 w-[300px] shadow-2xl lg:shadow-none lg:static lg:z-auto lg:w-64 xl:w-72 2xl:w-80 shrink-0 border-l flex flex-col min-h-0 ${T.border} ${T.panel}`}>
@@ -13194,6 +13367,50 @@ function ContextPanel({ conv, close }) {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </PanelSection>
+
+        {/* GOWHATS & VOICE CALL HISTORY PANEL SECTION */}
+        <PanelSection title={`Call History${contactCalls.length ? ` (${contactCalls.length})` : ""}`} defaultOpen>
+          {contactCalls.length === 0 ? (
+            <div className="text-[11px] text-zinc-400 py-1">No call records for this contact.</div>
+          ) : (
+            <div className="space-y-2">
+              {contactCalls.slice(0, 5).map((k, idx) => {
+                const isMissed = k.status === "missed" || k.outcome === "No Answer";
+                return (
+                  <div key={k.id || idx} className={`p-2 rounded-xl border ${T.border} ${T.softcard} flex items-center justify-between gap-2`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${isMissed ? "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"}`}>
+                        {isMissed ? <PhoneMissed size={12} /> : <Phone size={12} />}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold truncate leading-tight flex items-center gap-1">
+                          <span>{isMissed ? "Missed Call" : "Answered Call"}</span>
+                          <span className={`text-[9px] px-1 rounded ${T.chip}`}>{k.agent ? k.agent.split(" · ")[0] : "GoWhats"}</span>
+                        </div>
+                        <div className={`text-[10px] truncate ${T.faint}`}>
+                          {fmtD(new Date(k.at))} · {fmtT(new Date(k.at))} {k.durSec > 0 ? `· ${fmtDur(k.durSec)}` : ""}
+                        </div>
+                      </div>
+                    </div>
+                    {(k.number || c.phone) && (
+                      <button
+                        onClick={() => placeCall(k.number || c.phone, c.id || targetId)}
+                        title="Call back"
+                        className={`w-7 h-7 rounded-lg grid place-items-center border ${T.chip} ${T.hover} shrink-0`}>
+                        <PhoneCall size={11} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {contactCalls.length > 5 && (
+                <button onClick={() => go("calls")} className={`text-[10px] font-semibold ${T.sub} hover:underline block text-center w-full py-1`}>
+                  View all {contactCalls.length} calls in Calls →
+                </button>
+              )}
             </div>
           )}
         </PanelSection>

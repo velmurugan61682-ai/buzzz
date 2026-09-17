@@ -583,7 +583,7 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
 
     const isCallMsg = msg.type === "call" || msg.type === "missed_call" || msg.type === "voice" || /missed.*call|voice.*call|call.*missed|video.*call/i.test(textBody);
     if (isCallMsg) {
-      await saveMissedCall({
+      const callData = {
         id: `mc_${extId}`,
         userId: "usr_default",
         deviceId: "dev_gowhats",
@@ -594,7 +594,11 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
         externalCallId: `gw_call_${extId}`,
         contactId: contact?.id || "",
         type: "MISSED",
-      }).catch(() => null);
+      };
+      await saveMissedCall(callData).catch(() => null);
+      if (typeof broadcastFn === "function") {
+        broadcastFn("call:new", { call: callData });
+      }
     }
 
     const sender = isOutbound

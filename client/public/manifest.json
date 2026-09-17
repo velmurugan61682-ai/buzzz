@@ -1,0 +1,57 @@
+{
+  "name": "BUZZZ — AI CRM & Workforce Platform",
+  "short_name": "BUZZZ",
+  "description": "Agentic CRM, unified inbox and AI agent workforce with governed autonomy.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
+  "shortcuts": [
+    {
+      "name": "Inbox",
+      "short_name": "Inbox",
+      "description": "Open unified chat & messages",
+      "url": "/?view=inbox",
+      "icons": [{ "src": "/icon-180.png", "sizes": "180x180" }]
+    },
+    {
+      "name": "Calls",
+      "short_name": "Calls",
+      "description": "Open call records & voice history",
+      "url": "/?view=calls",
+      "icons": [{ "src": "/icon-180.png", "sizes": "180x180" }]
+    },
+    {
+      "name": "CRM",
+      "short_name": "CRM",
+      "description": "View CRM contacts & pipeline",
+      "url": "/?view=crm",
+      "icons": [{ "src": "/icon-180.png", "sizes": "180x180" }]
+    }
+  ]
+}
