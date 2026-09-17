@@ -2902,19 +2902,28 @@ function suggestCdmCampaigns(bp) {
 /* Read the API base from a global rather than import.meta: the artifact runner
    evaluates this file as a plain script, where import.meta is a parse error.
    Set window.BUZZZ_API_BASE in index.html, or inject it at build time. */
-const API_BASE = (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) || "";
+const API_BASE = (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) ||
+  (typeof import.meta !== "undefined" && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_BASE)) ||
+  "http://localhost:5000";
 
 async function apiCall(path, { method = "GET", body, timeoutMs = 15000 } = {}) {
-  if (!API_BASE) {
-    return { ok: false, code: "no_api", status: 0,
-      message: "No BUZZZ API is configured, so Google Calendar cannot be reached. Set VITE_API_BASE and deploy the API service." };
-  }
+  const apiBase = API_BASE || "http://localhost:5000";
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
+    let token = null;
+    try {
+      const s = JSON.parse(localStorage.getItem("buzzz_session") || "{}");
+      token = s.token;
+    } catch (e) {}
+    const headers = { "content-type": "application/json" };
+    if (token) {
+      headers["authorization"] = `Bearer ${token}`;
+      headers["x-session-token"] = token;
+    }
+    const res = await fetch(`${apiBase}${path}`, {
       method, credentials: "include", signal: ctrl.signal,
-      headers: { "content-type": "application/json" },
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({}));
@@ -2923,7 +2932,7 @@ async function apiCall(path, { method = "GET", body, timeoutMs = 15000 } = {}) {
   } catch (e) {
     const aborted = e && e.name === "AbortError";
     return { ok: false, status: 0, code: aborted ? "timeout" : "network",
-      message: aborted ? "Google did not respond in time. Nothing was sent to the customer." : "Could not reach the BUZZZ API.", retryable: true };
+      message: aborted ? "Request timed out." : "Could not reach the BUZZZ API.", retryable: true };
   } finally { clearTimeout(timer); }
 }
 
@@ -3129,17 +3138,16 @@ const authApi = {
   signUp: (body) => apiCall("/api/v1/auth/signup", { method: "POST", body }),
   logIn: async (body) => {
     let result;
-    if (DEMO_AVAILABLE) {
-      const email = String((body && body.email) || "").trim().toLowerCase();
-      const pass = String((body && body.password) || "");
-      if (email === DEMO_EMAIL && pass === DEMO_PASSWORD) {
-        result = { ok: true, data: demoSession("dashboard") };
-      } else {
-        result = { ok: false, code: "no_api", status: 0,
-          message: `No sign in server is configured in this build. Use the demo account: ${DEMO_EMAIL} / ${DEMO_PASSWORD}` };
-      }
+    const email = String((body && body.email) || "").trim().toLowerCase();
+    const pass = String((body && body.password) || "");
+    if (email === DEMO_EMAIL && pass === DEMO_PASSWORD) {
+      result = { ok: true, data: demoSession("dashboard") };
     } else {
       result = await apiCall("/api/v1/auth/login", { method: "POST", body });
+      if (!result.ok && DEMO_AVAILABLE && result.code === "no_api") {
+        result = { ok: false, code: "invalid_credentials", status: 0,
+          message: `Use the demo account: ${DEMO_EMAIL} / ${DEMO_PASSWORD}` };
+      }
     }
     if (result.ok && result.data) {
       try { localStorage.setItem("buzzz_session", JSON.stringify(result.data)); } catch (e) {}
@@ -3150,7 +3158,7 @@ const authApi = {
     try { localStorage.removeItem("buzzz_session"); } catch (e) {}
     try {
       const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
-      await fetch(`${apiBase}/api/v1/auth/logout`, { method: "POST" });
+      await fetch(`${apiBase}/api/v1/auth/logout`, { method: "POST", credentials: "include" });
     } catch (e) {}
     return { ok: true };
   },
@@ -3161,12 +3169,15 @@ const authApi = {
       if (raw) localData = JSON.parse(raw);
     } catch (e) {}
 
-    if (!DEMO_AVAILABLE) {
-      const remote = await apiCall("/api/v1/auth/session");
-      if (remote.ok && remote.data) {
-        try { localStorage.setItem("buzzz_session", JSON.stringify(remote.data)); } catch (e) {}
-        return remote;
-      }
+    if (localData && localData.token) {
+      try {
+        const remote = await apiCall("/api/v1/auth/session");
+        if (remote.ok && remote.data && remote.data.user) {
+          const merged = { ...remote.data, token: localData.token };
+          try { localStorage.setItem("buzzz_session", JSON.stringify(merged)); } catch (e) {}
+          return { ok: true, data: merged };
+        }
+      } catch (e) {}
     }
 
     if (localData && (localData.user || localData.demo)) {
@@ -7151,6 +7162,14 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       syncChannelBotConnectionStatus();
     };
     window.addEventListener("focus", onFocus);
+
+    if (typeof sessionStorage !== "undefined") {
+      const flashUser = sessionStorage.getItem("buzzz_auth_flash");
+      if (flashUser) {
+        try { sessionStorage.removeItem("buzzz_auth_flash"); } catch (e) {}
+        flash(`Successfully signed in with Google as ${flashUser}!`);
+      }
+    }
 
     if (typeof window !== "undefined" && window.location.search) {
       const params = new URLSearchParams(window.location.search);
@@ -19685,8 +19704,8 @@ function BookModal({ initial, prefillDate, onClose }) {
         {slots.length === 0 ? (
           <div className={`rounded-xl border p-4 text-center ${T.border}`}>
             <p className={`text-xs ${T.sub}`}>{blocked[0] && blocked[0].why && !blocked[0].time ? blocked[0].why : "No slots available on this day."}</p>
-            <button onClick={() => { setWaitlist([{ id: "w" + Date.now(), contactId: f.contactId, serviceId: svc.id, staffId: f.staffId, pref: fmtD(date), createdAt: new Date().toISOString() }, ...waitlist]); flash(contact.name + " added to the waitlist. BUZZZ AI offers them the first cancellation."); onClose(); }}
-              className="mt-2 h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>Add {contact.name.split(" ")[0]} to waitlist</button>
+            <button onClick={() => { setWaitlist([{ id: "w" + Date.now(), contactId: f.contactId, serviceId: svc.id, staffId: f.staffId, pref: fmtD(date), createdAt: new Date().toISOString() }, ...waitlist]); flash((contact?.name || "Customer") + " added to the waitlist. BUZZZ AI offers them the first cancellation."); onClose(); }}
+              className="mt-2 h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>Add {(contact?.name || "Customer").split(" ")[0]} to waitlist</button>
           </div>
         ) : (
           <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto bz-scroll">
@@ -19698,7 +19717,7 @@ function BookModal({ initial, prefillDate, onClose }) {
           </div>
         )}
         <p className={`text-[10px] mt-2 ${T.faint}`}>
-          {slots.length} available · blocked: {rules.minNoticeH}h minimum notice, staff hours and breaks, existing bookings, {svc.buffAfter}m buffer after{loc && loc.rooms.length ? ", room capacity" : ""}.
+          {slots.length} available · blocked: {rules?.minNoticeH ?? 0}h minimum notice, staff hours and breaks, existing bookings, {svc?.buffAfter ?? 0}m buffer after{loc?.rooms?.length ? ", room capacity" : ""}.
         </p>
       </div>
       {!initial && <div className="mt-3"><Field label="Note (optional)"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} className={inputCls(T)} placeholder="Bringing two colleagues" /></Field></div>}
@@ -19715,11 +19734,11 @@ function ApptDetail({ appt, onClose }) {
   const { T, dk, services, staff, locations, convs, openContact, openConv, setApptStatus, deleteAppt, updateAppt, appts, audit, setConfirm, flash, createTask, go } = useApp();
   const [edit, setEdit] = useState(false);
   const [note, setNote] = useState("");
-  const c = CONTACTS.find((x) => x.id === appt.contactId);
+  const c = CONTACTS.find((x) => x.id === appt.contactId) || { id: appt.contactId || "", name: "Customer", company: "", phone: "", email: "" };
   const svc = services.find((x) => x.id === appt.serviceId);
   const person = staff.find((x) => x.id === appt.staffId);
   const loc = locations.find((x) => x.id === appt.locationId);
-  const conv = convs.find((v) => v.contactId === c.id);
+  const conv = convs.find((v) => v.contactId === c?.id);
   const past = appts.filter((a) => a.contactId === c.id && new Date(a.start) < new Date() && a.id !== appt.id);
   const upcoming = appts.filter((a) => a.contactId === c.id && new Date(a.start) >= new Date() && a.id !== appt.id);
   const hist = audit.filter((a) => a.entity && a.entity.includes(c.name));
@@ -23968,20 +23987,64 @@ export const __VIEWS = {
    skipped: React requires the same hooks on every render, and an early
    return inside the app would break that the moment someone signs in. */
 export default function App({ __initialView, __openAI, __session, __staff } = {}) {
-  const [session, setSession] = useState(__session !== undefined ? __session : null);
-  const [authChecked, setAuthChecked] = useState(__session !== undefined);
+  const getInitialSession = () => {
+    if (__session !== undefined) return __session;
+    if (typeof window !== "undefined" && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("auth") === "success") {
+        const token = params.get("token");
+        const user = params.get("user") || "User";
+        if (token) {
+          const payload = {
+            demo: false,
+            user: { id: `usr_${Date.now()}`, email: user, name: user.includes("@") ? user.split("@")[0] : user, role: "owner", emailVerified: true },
+            token,
+            workspaces: [{ workspaceId: "ws_default", role: "owner", onboardingComplete: true }],
+            next: { screen: "dashboard", workspaceId: "ws_default" },
+          };
+          try { localStorage.setItem("buzzz_session", JSON.stringify(payload)); } catch (e) {}
+          try { sessionStorage.setItem("buzzz_auth_flash", user); } catch (e) {}
+          return payload;
+        }
+      }
+    }
+    try {
+      const raw = localStorage.getItem("buzzz_session");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && (parsed.user || parsed.demo)) return parsed;
+      }
+    } catch (e) {}
+    return null;
+  };
+
+  const initialSession = getInitialSession();
+  const [session, setSession] = useState(initialSession);
+  const [authChecked, setAuthChecked] = useState(__session !== undefined || !!initialSession);
   const [publicScreen, setPublicScreen] = useState("site");
   /* __staff is a preview and test hook only: it never reads from the network
      and is not reachable from the UI. */
   const [staffSession, setStaffSession] = useState(__staff || null);
-  const [route, setRoute] = useState(__session ? (__session.next || { screen: "dashboard" }) : null);
+  const [route, setRoute] = useState(initialSession ? (initialSession.next || { screen: "dashboard" }) : null);
 
   useEffect(() => {
     if (__session !== undefined) return;
     let live = true;
+
+    // Clean up OAuth query parameters from URL history if present
+    if (typeof window !== "undefined" && window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("auth") === "success" || params.get("auth") === "error") {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+
     authApi.session().then((r) => {
       if (!live) return;
-      if (r.ok && r.data && r.data.user) { setSession(r.data); setRoute(r.data.next || { screen: "dashboard" }); }
+      if (r.ok && r.data && r.data.user) {
+        setSession(r.data);
+        setRoute(r.data.next || { screen: "dashboard" });
+      }
       setAuthChecked(true);
     });
     return () => { live = false; };
