@@ -6,7 +6,7 @@
  * NEVER prints, logs, hardcodes, or exposes the raw API key anywhere.
  */
 
-import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage } from "../data/db.js";
+import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveOrderRecord, syncDealsFromOrders } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 const getBaseUrl = () => {
@@ -132,8 +132,58 @@ export const fetchInstaxBotOrders = async ({ page = 1, limit = 50, overrideKey }
 };
 
 /**
+ * Fetch ALL InstaxBot orders across all pages dynamically
+ */
+export const fetchAllInstaxBotOrders = async ({ overrideKey, limit = 50, throttleMs = 200 } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, orders: [], total: 0, pagesRead: 0 };
+
+  const allOrders = [];
+  let page = 1;
+  let hasMore = true;
+  let totalReported = 0;
+  let pagesReported = 0;
+
+  while (hasMore) {
+    try {
+      const res = await fetchInstaxBotOrders({ page, limit, overrideKey: apiKey });
+      if (!res.success && (!res.orders || res.orders.length === 0)) {
+        break;
+      }
+
+      const batch = res.orders || [];
+      allOrders.push(...batch);
+
+      const pagination = res.raw?.pagination || {};
+      if (pagination.totalRecords) totalReported = pagination.totalRecords;
+      if (pagination.totalPages) pagesReported = pagination.totalPages;
+
+      console.log(`📦 [fetchAllInstaxBotOrders] Page ${page}: fetched ${batch.length} order(s) (running total: ${allOrders.length}/${totalReported || "?"})`);
+
+      if (batch.length < limit || (pagesReported > 0 && page >= pagesReported)) {
+        hasMore = false;
+      } else {
+        page++;
+        if (throttleMs > 0) await new Promise((r) => setTimeout(r, throttleMs));
+      }
+    } catch (err) {
+      console.warn(`⚠️ [fetchAllInstaxBotOrders] Page ${page} fetch error:`, err.message);
+      break;
+    }
+  }
+
+  return {
+    success: allOrders.length > 0,
+    orders: allOrders,
+    total: totalReported || allOrders.length,
+    pagesRead: page,
+  };
+};
+
+/**
  * 3. Scope: contacts.read
  * Fetch InstaxBot customer/client contacts and sync them into BUZZZ Unified Contacts model.
+ * If /clients returns 403/empty, automatically extracts real customer contacts from InstaxBot orders!
  */
 export const syncInstaxBotContacts = async ({ workspaceId = "ws_default", overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
@@ -143,18 +193,27 @@ export const syncInstaxBotContacts = async ({ workspaceId = "ws_default", overri
   const url = `${baseUrl}/api/external/v2/clients?limit=100`;
 
   try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: getAuthHeaders(apiKey),
-    });
+    let rawClients = [];
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: getAuthHeaders(apiKey),
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        rawClients = data.clients || data.data || [];
+      }
+    } catch (_e) {}
 
-    const data = await response.json().catch(() => ({}));
-    const rawClients = data.clients || data.data || [];
     const synced = [];
+    const seenHandles = new Set();
 
+    // 1. Ingest from /clients if available
     for (const c of rawClients) {
       const name = c.name || c.username || c.email?.split("@")[0] || "Instagram Customer";
       const handle = c.username || c.name?.toLowerCase().replace(/\s+/g, "_") || c._id;
+      if (!handle || seenHandles.has(handle)) continue;
+      seenHandles.add(handle);
 
       const contact = await resolveOrCreateContact({
         workspaceId,
@@ -172,6 +231,43 @@ export const syncInstaxBotContacts = async ({ workspaceId = "ws_default", overri
         },
       });
       synced.push(contact);
+    }
+
+    // 2. If /clients returned 0 or 403, extract real customer contacts from orders!
+    if (synced.length === 0) {
+      const ordersRes = await fetchAllInstaxBotOrders({ overrideKey: apiKey, limit: 50 });
+      for (const order of ordersRes.orders || []) {
+        const handle = order.username || order.senderId || (order.orderId ? `guest_${order.orderId}` : (order.bill_no ? `guest_${order.bill_no}` : `guest_${order._id}`));
+        if (!handle || seenHandles.has(handle)) continue;
+        seenHandles.add(handle);
+
+        const name = order.name || order.customer_name || handle;
+        const phone = order.phone_number ? String(order.phone_number).replace(/\D/g, "") : null;
+        const identities = [{ type: "instagram", value: handle }];
+        if (phone) identities.push({ type: "phone", value: phone });
+
+        try {
+          const contact = await resolveOrCreateContact({
+            workspaceId,
+            name,
+            phone: phone || undefined,
+            identities,
+            source: "InstaxBot Order Sync",
+            channel: "instagram",
+            metadata: {
+              city: order.city,
+              state: order.state,
+              zipCode: order.zip_code,
+              address: order.address,
+              lastOrderId: order.orderId || order.bill_no,
+              totalAmount: order.total_amount || order.amount,
+            },
+          });
+          synced.push(contact);
+        } catch (innerErr) {
+          console.warn(`⚠️ Failed to upsert InstaxBot contact for ${handle}:`, innerErr.message);
+        }
+      }
     }
 
     return {
@@ -272,14 +368,18 @@ export const fetchInstaxBotTemplates = async ({ overrideKey } = {}) => {
  * - messages.read: Ingest incoming comments/DMs and Instagram order messages from InstaxBot endpoint
  * - messages.send: Send outbound comment reply via InstaxBot
  */
-export const fetchInstaxBotMessages = async ({ limit = 50, overrideKey } = {}) => {
+/**
+ * 7. Scope: messages.read + messages.send
+ * Ingest incoming Instagram order messages, comments and DMs from InstaxBot endpoint.
+ */
+export const fetchInstaxBotMessages = async ({ limit = 50, all = false, overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, messages: [] };
 
   const baseUrl = getBaseUrl();
   const messages = [];
 
-  // 1. Attempt to fetch comments / DMs directly if permitted
+  // 1. Attempt comments endpoint if accessible
   try {
     const commentsRes = await fetch(`${baseUrl}/api/external/v2/comments?limit=${limit}`, {
       method: "GET",
@@ -294,10 +394,13 @@ export const fetchInstaxBotMessages = async ({ limit = 50, overrideKey } = {}) =
 
   // 2. Ingest Instagram order messages & DMs from /orders endpoint
   try {
-    const ordersRes = await fetchInstaxBotOrders({ limit, overrideKey: apiKey });
+    const ordersRes = all
+      ? await fetchAllInstaxBotOrders({ overrideKey: apiKey, limit: 50 })
+      : await fetchInstaxBotOrders({ limit, overrideKey: apiKey });
+
     if (ordersRes.success && Array.isArray(ordersRes.orders) && ordersRes.orders.length > 0) {
       for (const order of ordersRes.orders) {
-        const senderHandle = order.username || order.senderId || order.customer_name || "instagram_user";
+        const senderHandle = order.username || order.senderId || `guest_${order.orderId}`;
         const senderName = order.name || order.customer_name || senderHandle;
         const itemsText = Array.isArray(order.products) && order.products.length > 0
           ? order.products.map((p) => `${p.product_name} (x${p.quantity || 1})`).join(", ")
@@ -308,6 +411,7 @@ export const fetchInstaxBotMessages = async ({ limit = 50, overrideKey } = {}) =
           _id: order._id || `instax_ord_${order.orderId || order.bill_no}`,
           sender_handle: senderHandle,
           sender_name: senderName,
+          phone: order.phone_number,
           message: textBody,
           receivedAt: order.created_at || new Date().toISOString(),
           rawOrder: order,
@@ -318,6 +422,7 @@ export const fetchInstaxBotMessages = async ({ limit = 50, overrideKey } = {}) =
 
   return {
     success: messages.length > 0,
+    total: messages.length,
     messages,
   };
 };
@@ -348,12 +453,257 @@ export const sendInstaxBotMessage = async ({ recipientId, text, overrideKey } = 
 };
 
 /**
- * 8. Background Polling Scheduler for InstaxBot Instagram
+ * 8. Historical Backfill Engine for InstaxBot (Paginates and Ingests ALL 150+ Orders)
+ */
+let instaxBotBackfillProgress = {
+  status: "idle",
+  startedAt: null,
+  completedAt: null,
+  currentPage: 0,
+  totalPages: 0,
+  totalRecordsReported: 0,
+  recordsProcessed: 0,
+  newlyInserted: 0,
+  duplicatesSkipped: 0,
+  error: null,
+};
+
+export const getInstaxBotBackfillStatus = () => ({ ...instaxBotBackfillProgress });
+
+export const runInstaxBotHistoricalBackfill = async ({
+  workspaceId = "ws_default",
+  broadcastFn,
+  overrideKey,
+  limit = 50,
+} = {}) => {
+  if (instaxBotBackfillProgress.status === "running") {
+    const runningForMs = instaxBotBackfillProgress.startedAt
+      ? Date.now() - new Date(instaxBotBackfillProgress.startedAt).getTime()
+      : 0;
+    if (runningForMs < 120000) {
+      return {
+        success: true,
+        message: "InstaxBot historical backfill already in progress",
+        status: getInstaxBotBackfillStatus(),
+      };
+    }
+  }
+
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) {
+    return { success: false, error: "No InstaxBot API key configured" };
+  }
+
+  instaxBotBackfillProgress = {
+    status: "running",
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    currentPage: 1,
+    totalPages: 1,
+    totalRecordsReported: 0,
+    recordsProcessed: 0,
+    newlyInserted: 0,
+    duplicatesSkipped: 0,
+    error: null,
+  };
+
+  (async () => {
+    try {
+      console.log("🚀 [INSTAXBOT BACKFILL] Fetching all orders via fetchAllInstaxBotOrders...");
+      const fetchResult = await fetchAllInstaxBotOrders({ overrideKey: apiKey, limit: 50 });
+      const orders = fetchResult.orders || [];
+      instaxBotBackfillProgress.totalRecordsReported = fetchResult.total || orders.length;
+      instaxBotBackfillProgress.totalPages = fetchResult.pagesRead || 1;
+
+      console.log(`📦 [INSTAXBOT BACKFILL] Ingesting ${orders.length} orders into BUZZZ CRM & Unified Inbox...`);
+
+      for (let i = 0; i < orders.length; i++) {
+        const order = orders[i];
+        instaxBotBackfillProgress.recordsProcessed = i + 1;
+        instaxBotBackfillProgress.currentPage = Math.floor(i / 50) + 1;
+
+        try {
+          const senderHandle = order.username || order.senderId || (order.orderId ? `guest_${order.orderId}` : (order.bill_no ? `guest_${order.bill_no}` : `guest_${order._id || i}`));
+          const senderName = order.name || order.customer_name || senderHandle;
+          const phone = order.phone_number ? String(order.phone_number).replace(/\D/g, "") : null;
+          const extId = order._id || `instax_ord_${order.orderId || order.bill_no || i}`;
+          const receivedAtIso = order.created_at || new Date().toISOString();
+
+          const itemsText = Array.isArray(order.products) && order.products.length > 0
+            ? order.products.map((p) => `${p.product_name || "Product"} (x${p.quantity || 1})`).join(", ")
+            : "Instagram Products";
+          const textBody = `🛍️ InstaxBot Order #${order.orderId || order.bill_no || extId}: ${itemsText} - Total: ${order.currency || "INR"} ${order.total_amount || order.amount || 0} [Status: ${order.status || "CREATED"}]`;
+
+          // 1. Upsert contact
+          let contact = null;
+          try {
+            contact = await resolveOrCreateContact({
+              workspaceId,
+              name: senderName,
+              phone: phone || undefined,
+              identities: [
+                { type: "instagram", value: senderHandle },
+                ...(phone ? [{ type: "phone", value: phone }] : []),
+              ],
+              source: "InstaxBot Historical Backfill",
+              channel: "instagram",
+              metadata: {
+                city: order.city,
+                state: order.state,
+                zipCode: order.zip_code,
+                address: order.address,
+                lastOrderId: order.orderId || order.bill_no,
+                totalAmount: order.total_amount || order.amount,
+              },
+            });
+          } catch (cErr) {
+            console.warn(`⚠️ Error upserting contact for order ${extId}:`, cErr.message);
+          }
+
+          // 2. Upsert conversation
+          const convId = `conv_ig_${String(senderHandle).replace(/\W/g, "_")}`;
+          const convDoc = {
+            id: convId,
+            workspaceId,
+            customerName: contact?.name || senderName,
+            channel: "InstaxBot",
+            platform: "instaxbot",
+            phone: phone || senderHandle,
+            unreadCount: 1,
+            lastMessage: textBody,
+            updatedAt: receivedAtIso,
+          };
+          const conv = await upsertConversation(convDoc);
+
+          // 3. Save Unified Message
+          const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+            id: `msg_${extId}_${workspaceId}`,
+            workspaceId,
+            conversationId: conv?.id || convId,
+            integrationId: "instaxbot",
+            platform: "instaxbot",
+            externalMessageId: extId,
+            sender: {
+              name: contact?.name || senderName,
+              handle: senderHandle,
+              phone: phone || "",
+              contactId: contact?.id || null,
+              kind: "customer",
+            },
+            direction: "inbound",
+            text: textBody,
+            status: "received",
+            receivedAt: receivedAtIso,
+            metadata: {
+              orderId: order.orderId,
+              billNo: order.bill_no,
+              amount: order.amount,
+              totalAmount: order.total_amount,
+              currency: order.currency,
+              orderStatus: order.status,
+              paymentStatus: order.paymentStatus,
+              products: order.products,
+              shippingPartner: order.shipping_partner,
+              trackingStatus: order.tracking_status,
+            },
+          });
+
+          // 4. Save into OrderModel
+          try {
+            await saveOrderRecord({
+              workspaceId,
+              conversationId: conv?.id || convId,
+              platform: "instaxbot",
+              externalOrderId: extId,
+              orderId: String(order.orderId || order.bill_no || extId),
+              customerPhone: phone || senderHandle,
+              customerName: senderName,
+              totalAmount: Number(order.total_amount || order.amount) || 0,
+              currency: order.currency || "INR",
+              status: (order.status || "pending").toLowerCase(),
+              paymentStatus: (order.paymentStatus || "pending").toLowerCase(),
+              items: (Array.isArray(order.products) ? order.products : []).map((p) => ({
+                name: p.product_name || "Product",
+                quantity: p.quantity || 1,
+                price: p.price || 0,
+                totalPrice: (p.price || 0) * (p.quantity || 1),
+              })),
+              metadata: {
+                address: order.address,
+                city: order.city,
+                state: order.state,
+                zipCode: order.zip_code,
+                trackingStatus: order.tracking_status,
+                shippingPartner: order.shipping_partner,
+              },
+              createdAt: order.created_at,
+            });
+          } catch (oErr) {
+            console.warn(`⚠️ Error saving order record for ${extId}:`, oErr.message);
+          }
+
+          if (isNew) {
+            instaxBotBackfillProgress.newlyInserted++;
+            if (typeof broadcastFn === "function") {
+              broadcastFn("new_message", {
+                message: msgDoc,
+                conversation: conv,
+                platform: "instaxbot",
+                platformMeta: PLATFORM_META.instaxbot,
+              });
+              broadcastFn("message:new", { conversation: conv, message: msgDoc });
+            }
+          } else {
+            instaxBotBackfillProgress.duplicatesSkipped++;
+          }
+        } catch (itemErr) {
+          console.warn(`⚠️ Error processing order index ${i}:`, itemErr.message);
+        }
+      }
+
+      // Sync Deals from all stored orders
+      try {
+        await syncDealsFromOrders(workspaceId);
+      } catch (dErr) {
+        console.warn("⚠️ syncDealsFromOrders error during backfill:", dErr.message);
+      }
+
+      instaxBotBackfillProgress.status = "completed";
+      instaxBotBackfillProgress.completedAt = new Date().toISOString();
+      console.log(`✅ [INSTAXBOT BACKFILL COMPLETED] Processed ${instaxBotBackfillProgress.recordsProcessed} orders (${instaxBotBackfillProgress.newlyInserted} new messages, ${instaxBotBackfillProgress.duplicatesSkipped} duplicates skipped).`);
+    } catch (err) {
+      console.error("❌ [INSTAXBOT BACKFILL ERROR]:", err.message);
+      instaxBotBackfillProgress.status = "failed";
+      instaxBotBackfillProgress.error = err.message;
+      instaxBotBackfillProgress.completedAt = new Date().toISOString();
+    }
+  })();
+
+  return {
+    success: true,
+    message: "InstaxBot historical backfill job started in background",
+    status: getInstaxBotBackfillStatus(),
+  };
+};
+
+/**
+ * 9. Background Polling Scheduler for InstaxBot Instagram
  */
 let isInstaxBotSyncRunning = false;
 
 export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000) {
   console.log(`⏰ Initializing InstaxBot Instagram background sync scheduler (polling every ${intervalMs / 1000}s)...`);
+
+  // Run an initial backfill 3 seconds after boot to populate all orders immediately
+  setTimeout(() => {
+    if (isInstaxBotConfigured()) {
+      console.log("🚀 [INSTAXBOT STARTUP] Initiating auto-backfill of InstaxBot orders...");
+      runInstaxBotHistoricalBackfill({ workspaceId: "ws_default", broadcastFn }).catch((e) =>
+        console.warn("⚠️ InstaxBot initial backfill warning:", e.message)
+      );
+    }
+  }, 3000);
+
   setInterval(async () => {
     if (isInstaxBotSyncRunning) return;
     isInstaxBotSyncRunning = true;
@@ -441,3 +791,4 @@ export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000)
     }
   }, intervalMs);
 }
+

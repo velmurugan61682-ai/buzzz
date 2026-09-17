@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, createContext, useContext } from "react";
 import { api, apiRequest } from "./lib/api-client.js";
 if (typeof api.getInbox !== "function") {
-  api.getInbox = (wsId) => apiRequest("/inbox", { workspaceId: wsId });
+  api.getInbox = (wsId) => apiRequest("/inbox?limit=500", { workspaceId: wsId });
 }
 import {
   Inbox, Users, Bot, Workflow, Megaphone, Phone, BookOpen, BarChart3, Plug, Settings,
@@ -84,7 +84,7 @@ function Brand({ id, size = 16 }) {
   const tile = (fill, children, extra) => (
     <svg {...S}>{typeof fill === "string" ? <rect width="24" height="24" rx="5.5" fill={fill} /> : fill}{children}{extra}</svg>
   );
-  switch (id) {
+  switch (String(id || "").toLowerCase()) {
     case "whatsapp":
       return tile("#25D366",
         <g fill="#fff"><path d="M12 4.6a7.3 7.3 0 0 0-6.3 11l-.9 3.3 3.4-.9A7.3 7.3 0 1 0 12 4.6Zm0 1.5a5.8 5.8 0 1 1-3 10.8l-.4-.2-2 .5.5-1.9-.2-.4A5.8 5.8 0 0 1 12 6.1Z"/><path d="M9.6 8.6c-.2 0-.4 0-.6.3-.2.2-.7.7-.7 1.7s.7 2 .9 2.2c.1.2 1.5 2.3 3.7 3.1 1.8.7 2.2.6 2.6.5.4 0 1.2-.5 1.4-1 .2-.5.2-.9.1-1 0-.1-.2-.2-.4-.3l-1.4-.7c-.2 0-.3-.1-.5.1l-.6.8c-.1.1-.2.2-.4.1-.2-.1-.9-.3-1.7-1-.6-.6-1-1.2-1.2-1.4-.1-.2 0-.3.1-.4l.3-.4c.1-.1.1-.2.2-.4v-.4L10.7 9c-.2-.4-.4-.4-.5-.4h-.6Z"/></g>);
@@ -192,6 +192,7 @@ const CH = {
   whatsapp:  { label: "WhatsApp (GoWhats)",  Icon: BIcon("gowhats"), dot: "bg-green-500",  l: "bg-green-50 text-green-700 border-green-200",   d: "bg-green-950 text-green-400 border-green-900" },
   gowhats:   { label: "WhatsApp (GoWhats)", Icon: BIcon("gowhats"), dot: "bg-teal-500", l: "bg-teal-50 text-teal-700 border-teal-200", d: "bg-teal-950 text-teal-400 border-teal-900" },
   instagram: { label: "Instagram", Icon: BIcon("instaxbot"), dot: "bg-pink-500",   l: "bg-pink-50 text-pink-700 border-pink-200",      d: "bg-pink-950 text-pink-400 border-pink-900" },
+  instaxbot: { label: "Instagram (InstaxBot)", Icon: BIcon("instaxbot"), dot: "bg-orange-500", l: "bg-orange-50 text-orange-700 border-orange-200", d: "bg-orange-950 text-orange-400 border-orange-900" },
   facebook:  { label: "Facebook",  Icon: BIcon("facebook"), dot: "bg-blue-600",   l: "bg-blue-50 text-blue-700 border-blue-200",      d: "bg-blue-950 text-blue-400 border-blue-900" },
   email:     { label: "Email",     Icon: BIcon("gmail"), dot: "bg-sky-500",    l: "bg-sky-50 text-sky-700 border-sky-200",         d: "bg-sky-950 text-sky-400 border-sky-900" },
   missed_call: { label: "Missed Call", Icon: BIcon("missed_call"), dot: "bg-red-500", l: "bg-rose-50 text-rose-700 border-rose-200", d: "bg-rose-950 text-rose-400 border-rose-900" },
@@ -203,6 +204,14 @@ const CH = {
   youtube:   { label: "YouTube",   Icon: BIcon("youtube"), dot: "bg-red-500",    l: "bg-red-50 text-red-700 border-red-200",         d: "bg-red-950 text-red-400 border-red-900" },
   google:    { label: "Google Business", Icon: BIcon("google"), dot: "bg-amber-500",  l: "bg-amber-50 text-amber-700 border-amber-200",   d: "bg-amber-950 text-amber-400 border-amber-900" },
   voice:     { label: "Voice",     Icon: BIcon("voice"), dot: "bg-orange-500", l: "bg-orange-50 text-orange-700 border-orange-200",d: "bg-orange-950 text-orange-400 border-orange-900" },
+  InstaxBot: { label: "Instagram (InstaxBot)", Icon: BIcon("instaxbot"), dot: "bg-orange-500", l: "bg-orange-50 text-orange-700 border-orange-200", d: "bg-orange-950 text-orange-400 border-orange-900" },
+  Instagram: { label: "Instagram", Icon: BIcon("instaxbot"), dot: "bg-pink-500", l: "bg-pink-50 text-pink-700 border-pink-200", d: "bg-pink-950 text-pink-400 border-pink-900" },
+  WhatsApp: { label: "WhatsApp (GoWhats)", Icon: BIcon("gowhats"), dot: "bg-green-500", l: "bg-green-50 text-green-700 border-green-200", d: "bg-green-950 text-green-400 border-green-900" },
+  YouTube: { label: "YouTube (ChannelBot.in)", Icon: BIcon("youtube"), dot: "bg-red-500", l: "bg-red-50 text-red-700 border-red-200", d: "bg-red-950 text-red-400 border-red-900" },
+  "ChannelBot.in": { label: "ChannelBot.in", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
+  ChannelBot: { label: "ChannelBot.in", Icon: BIcon("channelbot"), dot: "bg-emerald-500", l: "bg-emerald-50 text-emerald-700 border-emerald-200", d: "bg-emerald-950 text-emerald-400 border-emerald-900" },
+  Email: { label: "Email", Icon: BIcon("gmail"), dot: "bg-sky-500", l: "bg-sky-50 text-sky-700 border-sky-200", d: "bg-sky-950 text-sky-400 border-sky-900" },
+  Gmail: { label: "Gmail", Icon: BIcon("gmail"), dot: "bg-sky-500", l: "bg-sky-50 text-sky-700 border-sky-200", d: "bg-sky-950 text-sky-400 border-sky-900" },
 };
 
 const CHANNEL_KEY_MAP = {
@@ -212,6 +221,8 @@ const CHANNEL_KEY_MAP = {
   instagram: "instaxbot",
   Instagram: "instaxbot",
   instaxbot: "instaxbot",
+  InstaxBot: "instaxbot",
+  "instaxbot.com": "instaxbot",
   whatsapp: "gowhats",
   WhatsApp: "gowhats",
   gowhats: "gowhats",
@@ -1348,10 +1359,13 @@ function buildPriorities(d) {
   const unconfirmed = (appts || []).filter((a) => a.status === "Pending" && new Date(a.start) > Date.now());
   if (unconfirmed.length) add("high", `${unconfirmed.length} appointment${unconfirmed.length > 1 ? "s are" : " is"} unconfirmed`, "Unconfirmed slots are where no shows come from.", "appointments", unconfirmed.length);
 
-  const waiting = (convs || []).filter((v) => v.state === "Escalated" || (!v.ai && v.state !== "Resolved"));
-  if (waiting.length) add("high", `${waiting.length} conversation${waiting.length > 1 ? "s are" : " is"} waiting on a person`, "The AI has handed these over and nobody has replied yet.", "inbox", waiting.length);
+  const escalated = (convs || []).filter((v) => v.state === "Escalated" || v.escalated === true);
+  if (escalated.length) add("high", `${escalated.length} conversation${escalated.length > 1 ? "s" : ""} escalated to a human`, "AI handed over these customer conversations for human review.", "inbox", escalated.length);
 
-  const missed = (calls || []).filter((k) => k.status === "missed");
+  const unreadChats = (convs || []).filter((v) => (v.unread > 0 || v.unreadCount > 0) && v.state !== "Escalated" && v.state !== "Resolved");
+  if (unreadChats.length) add("medium", `${unreadChats.length} unread customer conversation${unreadChats.length > 1 ? "s" : ""}`, "New incoming customer messages awaiting review.", "inbox", unreadChats.length);
+
+  const missed = (calls || []).filter((k) => k.status === "missed" && !k.demo);
   if (missed.length) add("medium", `${missed.length} missed call${missed.length > 1 ? "s" : ""}`, "Nobody has called these people back.", "calls", missed.length);
 
   const failed = (wfRuns || []).filter((r) => r.status === "Failed");
@@ -1411,7 +1425,7 @@ function findOpportunities(d) {
   const lapsed = live.filter((c) => c.status === "Converted" && (c.lastContact || 0) >= 60);
   if (lapsed.length) out.push({ title: `${lapsed.length} customers have not heard from you in two months`, why: "Existing customers convert far more cheaply than new ones.", go: "crm", ask: `Create a win back campaign for the ${lapsed.length} lapsed customers` });
 
-  const noAppt = live.filter((c) => c.status === "Qualified" && !(appts || []).some((a) => a.contactId === c.id));
+  const noAppt = live.filter((c) => !c.demo && c.id !== "c1" && c.status === "Qualified" && !(appts || []).some((a) => a.contactId === c.id));
   if (noAppt.length) out.push({ title: `${noAppt.length} qualified leads have no appointment booked`, why: "Qualified without a meeting is where most pipelines leak.", go: "crm", ask: `Book appointments for the ${noAppt.length} qualified leads without one` });
 
   const best = (camps || []).map((c) => ({ c, m: campMetrics(c) })).filter((x) => x.m.sent > 0)
@@ -6713,7 +6727,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       api.getAgents(wsId),
       api.getWorkflows(wsId),
       api.getInbox(wsId),
-    ]).then(([resContacts, resConvs, resAgents, resWfs, resInbox]) => {
+      api.getDeals(wsId),
+    ]).then(([resContacts, resConvs, resAgents, resWfs, resInbox, resDeals]) => {
       if (!active) return;
       if (resContacts.status === "fulfilled" && resContacts.value) {
         const rawContacts = Array.isArray(resContacts.value)
@@ -6792,6 +6807,14 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       }
       if (resAgents.status === "fulfilled" && resAgents.value?.data?.length) setAgents(resAgents.value.data);
       if (resWfs.status === "fulfilled" && resWfs.value?.data?.length) setWfs(resWfs.value.data);
+      if (resDeals?.status === "fulfilled") {
+        const rawDeals = Array.isArray(resDeals.value)
+          ? resDeals.value
+          : (resDeals.value?.data || resDeals.value?.deals || []);
+        if (Array.isArray(rawDeals) && rawDeals.length > 0) {
+          setDeals(rawDeals);
+        }
+      }
     });
     return () => { active = false; };
   }, [route]);
@@ -6886,54 +6909,127 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return "New Lead";
   }, []);
 
-  /* Auto-convert synced contacts (GoWhats / WhatsApp / Web) into Deals pipeline stages based on chat messages */
+
+  /* Auto-populate pipeline from real conversations — smart content-based intent classification */
   useEffect(() => {
-    if (!Array.isArray(CONTACTS) || CONTACTS.length === 0) return;
+    if (!Array.isArray(convs) || convs.length === 0) return;
+
+    // Seed conversation contact IDs to exclude (demo / hardcoded data)
+    const SEED_CONTACT_IDS = new Set(["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11"]);
+
+    // Patterns that indicate this is NOT a real sales lead (newsletters, automated emails, system alerts)
+    const NON_SALES_PATTERNS = [
+      /unsubscribe/i, /newsletter/i, /noreply@/i, /no-reply@/i,
+      /automated message/i, /your application/i, /interview scheduled/i,
+      /offer letter/i, /hiring/i, /job alert/i, /google developer/i,
+      /atlassian/i, /github notification/i, /billing statement/i, /invoice #/i,
+      /password reset/i, /verification code/i, /otp/i, /deduplication test/i,
+      /missed call from/i, /voicemail/i,
+    ];
+
+    // Patterns that strongly indicate a SALES conversation from a real customer
+    const SALES_SIGNALS = [
+      /pricing/i, /price/i, /cost/i, /how much/i, /plan/i, /package/i,
+      /demo/i, /trial/i, /interested/i, /purchase/i, /buy/i, /order/i,
+      /integration/i, /enterprise/i, /quote/i, /proposal/i, /requirement/i,
+      /whatsapp/i, /crm/i, /platform/i, /software/i, /product/i,
+      /subscription/i, /features/i, /onboarding/i, /setup/i, /connect/i,
+    ];
+
+    // Channels that are inherently sales/customer channels
+    const SALES_CHANNELS = new Set(["whatsapp", "WhatsApp", "instagram", "Instagram",
+      "facebook", "Facebook", "telegram", "Telegram", "linkedin", "LinkedIn",
+      "channelbot", "ChannelBot", "webchat", "WebChat", "voice", "Voice"]);
 
     setDeals((prevDeals) => {
-      const existingMap = new Map((prevDeals || []).map((d) => [d.contactId, d]));
+      // Build a map keyed by contactId to avoid duplicate deals
+      const existingByContactId = new Map((prevDeals || []).map((d) => [d.contactId, d]));
       let changed = false;
       const updatedDeals = [...(prevDeals || [])];
 
-      CONTACTS.forEach((c, idx) => {
-        const contactId = c.id || (c._id ? String(c._id) : `c_${idx}`);
-        const targetStage = deriveStageFromConv(c, convs);
-        const rawVal = c.value ? parseFloat(String(c.value).replace(/[^0-9.]/g, "")) : 0;
-        const dealValue = rawVal > 0 ? rawVal : (c.score ? c.score * 100 : 5000);
+      convs.forEach((conv, idx) => {
+        // Skip seed/demo conversations
+        if (conv.contactId && SEED_CONTACT_IDS.has(conv.contactId)) return;
 
-        if (existingMap.has(contactId)) {
-          const existingDeal = existingMap.get(contactId);
-          if (existingDeal.stage !== targetStage) {
-            const dealIdx = updatedDeals.findIndex((d) => d.contactId === contactId);
-            if (dealIdx !== -1) {
-              updatedDeals[dealIdx] = {
-                ...updatedDeals[dealIdx],
-                stage: targetStage,
-                next: c.aiSummary || `Follow up on WhatsApp (+${c.phone || "GoWhats"})`,
-              };
+        const contactId = conv.contactId || conv.id;
+        if (!contactId) return;
+
+        const msgText = (conv.lastMessage || conv.last || conv.aiSummary || conv.summary || "").toLowerCase();
+        const customerName = (conv.customerName || conv.name || "").toLowerCase();
+        const channel = conv.channel || "";
+
+        // Check if this looks like a non-sales automated message
+        const isNonSales = NON_SALES_PATTERNS.some((p) => p.test(msgText) || p.test(customerName));
+        if (isNonSales) return;
+
+        // Determine if this is a real sales lead:
+        // (a) channel is a social/messaging channel (WhatsApp, Instagram etc.) — always qualify
+        // (b) or has explicit sales signals in the message text
+        const isSalesChannel = SALES_CHANNELS.has(channel);
+        const hasSalesSignal = SALES_SIGNALS.some((p) => p.test(msgText));
+
+        if (!isSalesChannel && !hasSalesSignal) return;
+
+        // If deal already exists for this contact, update stage only
+        if (existingByContactId.has(contactId)) {
+          const dealIdx = updatedDeals.findIndex((d) => d.contactId === contactId);
+          if (dealIdx !== -1) {
+            const contact = CONTACTS.find((c) => c.id === contactId || String(c._id) === String(contactId));
+            const newStage = deriveStageFromConv(
+              contact || { id: contactId, name: conv.customerName || "", phone: conv.phone || "", score: conv.score || 0, aiSummary: msgText },
+              convs
+            );
+            if (updatedDeals[dealIdx].stage !== newStage) {
+              updatedDeals[dealIdx] = { ...updatedDeals[dealIdx], stage: newStage };
               changed = true;
             }
           }
-        } else {
-          updatedDeals.push({
-            id: `d_auto_${contactId}_${idx}`,
-            name: `${c.name || "WhatsApp Lead"} - Opportunity`,
-            contactId,
-            pipelineId: "p1",
-            stage: targetStage,
-            value: dealValue,
-            prob: c.score || 60,
-            owner: c.owner || "Jordan Lee",
-            close: "2026-09-30",
-            next: c.aiSummary || `Follow up on WhatsApp (+${c.phone || "GoWhats"})`,
-          });
-          changed = true;
+          return;
         }
+
+        // Build a contact-like record for stage derivation
+        const score = conv.score || 0;
+        const contactRecord = CONTACTS.find((c) => c.id === contactId || String(c._id) === String(contactId)) || {
+          id: contactId,
+          name: conv.customerName || conv.name || conv.phone || "Customer",
+          phone: conv.phone || "",
+          score,
+          aiSummary: msgText,
+        };
+
+        const stage = deriveStageFromConv(contactRecord, convs);
+
+        // Estimate deal value from signals in the message
+        const dealValue =
+          /enterprise/i.test(msgText) ? 150000 :
+          /high intent|purchase|buy now|ready to buy/i.test(msgText) ? 75000 :
+          /integration|platform|software/i.test(msgText) ? 50000 :
+          /pricing|quote|proposal/i.test(msgText) ? 30000 :
+          /demo|trial|interested/i.test(msgText) ? 20000 :
+          isSalesChannel ? 10000 : 5000;
+
+        const contactName = contactRecord.name || conv.customerName || conv.phone || "Customer";
+
+        updatedDeals.push({
+          id: `d_conv_${contactId}_${idx}`,
+          name: `${contactName}${channel ? ` · ${channel}` : ""}`,
+          contactId,
+          pipelineId: "p1",
+          stage,
+          value: dealValue,
+          prob: score >= 70 ? 75 : score >= 50 ? 50 : 30,
+          owner: conv.assignee || conv.assigned || "Unassigned",
+          close: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+          next: conv.lastMessage || conv.last || conv.aiSummary || `Follow up via ${channel || "WhatsApp"}`,
+          source: "conversation",
+        });
+        existingByContactId.set(contactId, true);
+        changed = true;
       });
 
       return changed ? updatedDeals : prevDeals;
     });
-  }, [contactsV, CONTACTS.length, convs, deriveStageFromConv]);
+  }, [convs, contactsV, deriveStageFromConv]);
 
   /* Real-time SSE listener for multi-channel incoming messages (ChannelBot, InstaxBot, Gmail) */
   useEffect(() => {
@@ -7295,7 +7391,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [rules, setRules] = useState(BOOKING_RULES_INIT);
   const [waitlist, setWaitlist] = useState(WAITLIST_INIT);
   const [tickets, setTickets] = useState(TICKETS_INIT);
-  const [calls, setCalls] = useState(CALLS);
+  const [calls, setCalls] = useState(() => (Array.isArray(CALLS) ? CALLS.filter((k) => !k.demo) : []));
   const [voiceCfg, setVoiceCfg] = useState({ connected: false, workspace: "", agentId: "", fromNumber: "" });
   const voice = useMemo(() => makeVoiceProvider(voiceCfg), [voiceCfg]);
   const [customFields, setCustomFields] = useState([{ id: "cf1", name: "Preferred language", type: "Dropdown", opts: "English, Tamil, Hindi" }]);
@@ -7471,6 +7567,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     setDeals((ds) => [deal, ...ds]);
     trail("Deal created", deal.name, "", "₹" + (deal.value || 0).toLocaleString());
     log("You", "Deal created", deal.name);
+    const wsId = route?.workspaceId || "ws_default";
+    api.createDeal(wsId, deal).catch((e) => console.warn("⚠️ createDeal API:", e.message));
     return deal;
   };
   const updateDeal = (id, patch, label) => {
@@ -7480,8 +7578,16 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       trail(label || "Deal updated", x.name, String(x[k] ?? "—"), String(patch[k]));
       return { ...x, ...patch };
     }));
+    const wsId = route?.workspaceId || "ws_default";
+    api.updateDeal(wsId, id, patch).catch((e) => console.warn("⚠️ updateDeal API:", e.message));
   };
-  const deleteDeal = (id) => { const d = deals.find((x) => x.id === id); setDeals((ds) => ds.filter((x) => x.id !== id)); if (d) { trail("Deal deleted", d.name, "existed", "removed"); log("You", "Deal deleted", d.name); } };
+  const deleteDeal = (id) => {
+    const d = deals.find((x) => x.id === id);
+    setDeals((ds) => ds.filter((x) => x.id !== id));
+    if (d) { trail("Deal deleted", d.name, "existed", "removed"); log("You", "Deal deleted", d.name); }
+    const wsId = route?.workspaceId || "ws_default";
+    api.deleteDeal(wsId, id).catch((e) => console.warn("⚠️ deleteDeal API:", e.message));
+  };
 
   /* ---- tasks ---- */
   const createTask = (t) => {
@@ -8728,6 +8834,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     const d = deals.find((x) => x.id === dealId);
     if (d) { trail("Deal stage changed", d.name, d.stage, stage); log("You", "Deal stage changed", `${d.name} → ${stage}`); }
     flash(`Moved to ${stage}`);
+    const wsId = route?.workspaceId || "ws_default";
+    api.updateDeal(wsId, dealId, { stage }).catch((e) => console.warn("⚠️ moveDeal API:", e.message));
   };
 
   const ctx = { cdmCampaigns, setCdmCampaigns, cdmLog, setCdmLog, provisionCdm,
@@ -12406,7 +12514,7 @@ const PRI_TINT = { high: "bg-red-50 text-red-600 border-red-200", medium: "bg-am
 
 function Dashboard() {
   const { T, dk, go, openConv, openContact, approvals, ind, convs, deals, appts, calls, camps, wfs, wfRuns, agents,
-    activity, kb, conns, billing, usage, ent, setAiOpen, contactsV, wsName, setIndustry, notifications, flash } = useApp();
+    activity, kb, conns, billing, usage, ent, setAiOpen, contactsV, wsName, setIndustry, notifications, flash, me } = useApp();
   const [range, setRange] = useState(7);
   const [q, setQ] = useState("");
   const data = { contacts: CONTACTS, convs, deals, appts, calls, camps, wfs, wfRuns, agents, activity, kb, conns, approvals, usage, ent, billing };
@@ -12450,7 +12558,7 @@ function Dashboard() {
         {/* hero: greeting, live narrative, command bar */}
         <div>
           <div className="flex items-baseline gap-3 flex-wrap">
-            <h1 className="text-2xl font-semibold bz-display tracking-tight">{greeting()}, Jordan</h1>
+            <h1 className="text-2xl font-semibold bz-display tracking-tight">{greeting()}{me?.name && me.name !== "Jordan Lee" ? `, ${me.name.split(" ")[0]}` : ""}</h1>
             <div className="flex-1" />
             <div className={`flex rounded-full border p-0.5 ${T.border}`}>
               {[[1, "Today"], [7, "7 days"], [30, "30 days"]].map(([d, l]) => (
@@ -12555,7 +12663,7 @@ function Dashboard() {
             <div className={`rounded-2xl p-5 ${T.card}`}>
               {agents.filter((a) => a.status !== "Archived").slice(0, 5).map((a) => {
                 const h = agentHealth(a, 4);
-                const handled = convs.filter((v) => (v.agent || "").startsWith(a.name)).length + calls.filter((k) => (k.agent || "").startsWith(a.name)).length;
+                const handled = convs.filter((v) => (v.agent || "").startsWith(a.name)).length + calls.filter((k) => !k.demo && (k.agent || "").startsWith(a.name)).length;
                 return (
                   <button key={a.id} onClick={() => go("agents")} className={`w-full flex items-center gap-2.5 py-1.5 text-left ${T.hover} rounded-lg px-1`}>
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${a.status === "Active" ? (h.level === "Ready" ? "bg-emerald-500" : "bg-amber-500") : "bg-zinc-300"}`} />
@@ -12617,8 +12725,11 @@ function InboxView() {
   const FILTERS = ["All", "Unread", "Mine", "AI", "Human", "Priority", "Waiting", "Resolved"];
   const matches = (c) => {
     try {
-      const contact = CONTACTS.find((x) => x.id === c.contactId) || {};
-      if (chFilter && c.channel !== chFilter) return false;
+      if (chFilter) {
+        const cChanNorm = resolveChannelKey(c.platform, c.channel);
+        const fChanNorm = resolveChannelKey(chFilter, chFilter);
+        if (cChanNorm !== fChanNorm && c.channel !== chFilter) return false;
+      }
       if (filter === "Unread" && !c.unread) return false;
       if (filter === "Mine" && (c.assignee || "") !== "Jordan Lee") return false;
       if (filter === "AI" && !c.ai) return false;
@@ -12629,9 +12740,7 @@ function InboxView() {
       if (qy.trim()) {
         const t = qy.toLowerCase();
         const chLabel = (CH[c.channel] || {}).label || c.channel || "";
-        const prevText = typeof previewOf === "function" ? previewOf(c) : c.lastMessage || "";
-        const msgTexts = Array.isArray(c.msgs) ? c.msgs.map((m) => m?.text || "") : [c.lastMessage || ""];
-        const hay = [contact.name, contact.company, contact.phone, c.channel, chLabel, prevText, (contact.tags || []).join(" "), ...msgTexts].join(" ").toLowerCase();
+        const hay = [c.customerName || c.name || "", c.phone || "", c.channel, chLabel, prevText, ...msgTexts].join(" ").toLowerCase();
         if (!hay.includes(t)) return false;
       }
       return true;
@@ -17104,14 +17213,131 @@ function CampaignsView() {
     fetch("/api/v1/gowhats/sync").catch(() => ({}));
     if (msgTemplates.length === 0) {
       setMsgTemplates([
-        { id: "mt1", name: "WhatsApp Welcome & Lead Nudge", channel: "whatsapp", body: "Hi {{first_name}}, thank you for contacting us! How can we assist you today?", fav: true },
-        { id: "mt2", name: "WhatsApp Appointment Confirmation", channel: "whatsapp", body: "Hello {{first_name}}, your appointment is confirmed for {{time}}. Reply 1 to confirm or 2 to reschedule.", fav: true },
-        { id: "mt3", name: "WhatsApp Order Confirmation", channel: "whatsapp", body: "Hi {{first_name}}, your order #{{order_id}} has been received and is being processed.", fav: false },
-        { id: "mt4", name: "WhatsApp Special Offer Broadcast", channel: "whatsapp", body: "Hi {{first_name}}, check out our latest offers available this week! Let us know if you have questions.", fav: false },
-        { id: "mt5", name: "WhatsApp Quotation Follow-up", channel: "whatsapp", body: "Hi {{first_name}}, following up on your recent inquiry. Please let us know if you need any additional details.", fav: false },
+        {
+
+          id: "mt1",
+          name: "Welcome & Lead Nudge",
+          channel: "whatsapp",
+          category: "MARKETING",
+          status: "APPROVED",
+          language: "en",
+          header: "👋 Welcome to {{business_name}}!",
+          body: "Hi {{first_name}}, thanks for reaching out to *{{business_name}}*! 🎉\n\nWe help businesses like yours grow faster with AI-powered customer engagement.\n\n✅ Instant replies 24/7\n✅ WhatsApp, Instagram & Email — all in one inbox\n✅ Smart CRM that updates itself\n\nWould you like to see a quick demo? Reply *YES* and we'll set it up in minutes.",
+          footer: "Reply STOP to opt out.",
+          fav: true,
+        },
+        {
+          id: "mt2",
+          name: "Appointment Confirmation",
+          channel: "whatsapp",
+          category: "UTILITY",
+          status: "APPROVED",
+          language: "en",
+          header: "📅 Appointment Confirmed",
+          body: "Hello {{first_name}},\n\nYour appointment with *{{business_name}}* is confirmed! Here are your details:\n\n🗓 Date: *{{date}}*\n⏰ Time: *{{time}}*\n📍 Location: {{location}}\n\nNeed to reschedule?\nReply *1* to Confirm ✅\nReply *2* to Reschedule 🔄\nReply *3* to Cancel ❌\n\nWe look forward to seeing you!",
+          footer: "{{business_name}} · Powered by Buzzz",
+          fav: true,
+        },
+        {
+          id: "mt3",
+          name: "Order Confirmation & Tracking",
+          channel: "whatsapp",
+          category: "UTILITY",
+          status: "APPROVED",
+          language: "en",
+          header: "🛍️ Order #{{order_id}} Confirmed!",
+          body: "Hi {{first_name}}, your order has been received and is being processed. 🎉\n\n📦 Order ID: *#{{order_id}}*\n💰 Amount: *{{amount}}*\n🚚 Estimated Delivery: *{{delivery_date}}*\n\nYou can track your order here:\n{{tracking_url}}\n\nQuestions? Just reply to this message — we're here 24/7.",
+          footer: "Thank you for shopping with {{business_name}}!",
+          fav: false,
+        },
+        {
+          id: "mt4",
+          name: "Demo / Trial Invite",
+          channel: "whatsapp",
+          category: "MARKETING",
+          status: "APPROVED",
+          language: "en",
+          header: "🚀 Your Free Demo is Ready, {{first_name}}!",
+          body: "Hi {{first_name}},\n\nWe noticed you were checking out *{{product_name}}* — great choice! 👏\n\nBook your *free 30-minute live demo* and see exactly how it works for your business:\n\n🔗 {{demo_link}}\n\nIn the demo, we'll cover:\n• Setting up your AI agents in minutes\n• Automating your WhatsApp & Instagram replies\n• Live CRM integration walkthrough\n\nSpots are limited — grab yours today!",
+          footer: "Questions? Reply anytime. {{business_name}}",
+          fav: true,
+        },
+        {
+          id: "mt5",
+          name: "Quotation Follow-up",
+          channel: "whatsapp",
+          category: "MARKETING",
+          status: "APPROVED",
+          language: "en",
+          header: "📋 Following up on Your Quotation",
+          body: "Hi {{first_name}},\n\nI wanted to follow up on the quotation we sent you for *{{product_or_service}}*.\n\n💼 Quote Ref: *{{quote_ref}}*\n💰 Amount: *{{quote_amount}}*\n📅 Valid Until: *{{expiry_date}}*\n\nDo you have any questions or need adjustments? We're happy to tailor the proposal to fit your exact needs.\n\nReply here or call us directly — we're just a message away! 😊",
+          footer: "{{business_name}} · Reply STOP to opt out",
+          fav: false,
+        },
+        {
+          id: "mt6",
+          name: "Special Offer Broadcast",
+          channel: "whatsapp",
+          category: "MARKETING",
+          status: "APPROVED",
+          language: "en",
+          header: "🎁 Exclusive Offer for You, {{first_name}}!",
+          body: "Hi {{first_name}},\n\nAs one of our valued customers, we have a *special offer* just for you! 🌟\n\n🔥 *{{offer_title}}*\n💰 Save *{{discount_percent}}%* — only until *{{offer_expiry}}*\n\nUse code: *{{promo_code}}*\n\n👉 Shop now: {{offer_url}}\n\nDon't miss out — this offer expires in {{hours_left}} hours!",
+          footer: "{{business_name}} · Reply STOP to unsubscribe",
+          fav: false,
+        },
+        {
+          id: "mt7",
+          name: "Payment Reminder",
+          channel: "whatsapp",
+          category: "UTILITY",
+          status: "APPROVED",
+          language: "en",
+          header: "💳 Payment Due — Invoice #{{invoice_id}}",
+          body: "Hi {{first_name}},\n\nThis is a friendly reminder that your payment for *Invoice #{{invoice_id}}* is due.\n\n💰 Amount Due: *{{amount}}*\n📅 Due Date: *{{due_date}}*\n\nPay securely using this link:\n🔗 {{payment_link}}\n\nIf you've already made the payment, please ignore this message. For any questions, just reply here.",
+          footer: "{{business_name}} · Automated Payment Reminder",
+          fav: false,
+        },
+        {
+          id: "mt8",
+          name: "Customer Feedback Request",
+          channel: "whatsapp",
+          category: "MARKETING",
+          status: "APPROVED",
+          language: "en",
+          header: "⭐ How was your experience, {{first_name}}?",
+          body: "Hi {{first_name}},\n\nThank you for choosing *{{business_name}}*! We hope you had a great experience. 🙏\n\nWould you take 30 seconds to rate us?\n\n⭐ Reply *1* — Poor\n⭐⭐ Reply *2* — Average\n⭐⭐⭐ Reply *3* — Good\n⭐⭐⭐⭐ Reply *4* — Very Good\n⭐⭐⭐⭐⭐ Reply *5* — Excellent\n\nYour feedback helps us serve you better! 💙",
+          footer: "{{business_name}} · Reply STOP to opt out",
+          fav: false,
+        },
+        {
+          id: "mt9",
+          name: "Re-engagement / Win-Back",
+          channel: "whatsapp",
+          category: "MARKETING",
+          status: "APPROVED",
+          language: "en",
+          header: "💬 We miss you, {{first_name}}!",
+          body: "Hi {{first_name}},\n\nIt's been a while since we last connected, and we wanted to check in! 👋\n\nA lot has changed at *{{business_name}}* since your last visit:\n\n✨ New features you'll love\n🚀 Faster, smarter AI agents\n📊 Better analytics & CRM tools\n\nWe'd love to show you what's new. Book a free 15-min catch-up:\n🔗 {{meeting_link}}\n\nOr just reply here — we're always happy to chat! 😊",
+          footer: "{{business_name}} · Reply STOP to unsubscribe",
+          fav: false,
+        },
+        {
+          id: "mt10",
+          name: "Onboarding Welcome Series",
+          channel: "whatsapp",
+          category: "UTILITY",
+          status: "APPROVED",
+          language: "en",
+          header: "🎉 Welcome aboard, {{first_name}}!",
+          body: "Hi {{first_name}}, welcome to *{{business_name}}*! We're so excited to have you. 🚀\n\nHere's how to get started in 3 easy steps:\n\n*Step 1:* Connect your WhatsApp → {{step1_link}}\n*Step 2:* Set up your AI agent → {{step2_link}}\n*Step 3:* Import your contacts → {{step3_link}}\n\nYour dedicated onboarding specialist is *{{specialist_name}}* — feel free to message us anytime!\n\nNeed help? Reply *HELP* and we'll jump in. 🙌",
+          footer: "{{business_name}} · Onboarding Team",
+          fav: true,
+        },
       ]);
     }
   }, []);
+
 
   useEffect(() => {
     if (camps.length === 0 && Array.isArray(convs)) {
@@ -17212,24 +17438,98 @@ function CampaignsView() {
 
       {tab === "Templates" && (
         <div className="flex-1 overflow-y-auto bz-scroll p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {msgTemplates.map((t) => (
-              <div key={t.id} className={`rounded-2xl p-4 ${T.card} group`}>
-                <div className="flex items-center gap-2">
-                  <Brand id={t.channel === "email" ? "gmail" : t.channel} size={15} />
-                  <input value={t.name} onChange={(e) => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, name: e.target.value } : x))} className="flex-1 bg-transparent text-xs font-semibold outline-none" />
-                  <button onClick={() => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, fav: !x.fav } : x))}><Star size={13} className={t.fav ? "text-amber-400 fill-amber-400" : T.faint} /></button>
-                  <button onClick={() => { setMsgTemplates([{ ...t, id: "mt" + Date.now(), name: t.name + " (copy)", fav: false }, ...msgTemplates]); flash("Duplicated"); }} className={`opacity-0 group-hover:opacity-100 ${T.faint}`}><Layers size={12} /></button>
-                  <button onClick={() => { setMsgTemplates(msgTemplates.filter((x) => x.id !== t.id)); flash("Template deleted"); }} className={`opacity-0 group-hover:opacity-100 ${T.faint}`}><X size={12} /></button>
-                </div>
-                <textarea rows={3} value={t.body} onChange={(e) => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, body: e.target.value } : x))} className={`w-full mt-2 bg-transparent text-[11px] leading-relaxed outline-none resize-none ${T.sub}`} />
-              </div>
-            ))}
+          {/* Header row */}
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className={`text-[11px] ${T.faint}`}>{msgTemplates.length} templates · {msgTemplates.filter(t => t.fav).length} favourited · All WhatsApp Business API format</p>
+            </div>
+            <button onClick={() => setMsgTemplates([{ id: "mt" + Date.now(), name: "New template", channel: "whatsapp", category: "MARKETING", status: "DRAFT", language: "en", header: "", body: "Hi {{first_name}}, ", footer: "Reply STOP to opt out.", fav: false }, ...msgTemplates])}
+              className={`h-9 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 ${T.chip} ${T.hover}`}><Plus size={13} /> New template</button>
           </div>
-          <button onClick={() => setMsgTemplates([{ id: "mt" + Date.now(), name: "New template", channel: "whatsapp", body: "Hi {{first_name}}, ", fav: false }, ...msgTemplates])}
-            className={`mt-3 h-9 px-3.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 ${T.chip} ${T.hover}`}><Plus size={13} /> New template</button>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {msgTemplates.map((t) => {
+              // Extract all {{variable}} tokens from all fields
+              const allText = [t.header || "", t.body || "", t.footer || ""].join(" ");
+              const vars = [...new Set((allText.match(/\{\{(\w+)\}\}/g) || []))];
+              const catColor = t.category === "UTILITY" ? "bg-sky-100 text-sky-700" : t.category === "AUTHENTICATION" ? "bg-purple-100 text-purple-700" : "bg-orange-100 text-orange-700";
+              const statusColor = t.status === "APPROVED" ? "bg-emerald-100 text-emerald-700" : t.status === "REJECTED" ? "bg-red-100 text-red-600" : "bg-zinc-100 text-zinc-500";
+              return (
+                <div key={t.id} className={`rounded-2xl border ${T.border} ${T.panel} group flex flex-col overflow-hidden`}>
+                  {/* Card header bar */}
+                  <div className={`px-4 pt-3 pb-2 border-b ${T.border} flex items-center gap-2`}>
+                    <Brand id={t.channel === "email" ? "gmail" : t.channel} size={14} />
+                    <input
+                      value={t.name}
+                      onChange={(e) => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, name: e.target.value } : x))}
+                      className="flex-1 bg-transparent text-[12px] font-semibold outline-none truncate"
+                    />
+                    <button onClick={() => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, fav: !x.fav } : x))}>
+                      <Star size={13} className={t.fav ? "text-amber-400 fill-amber-400" : T.faint} />
+                    </button>
+                    <button onClick={() => { setMsgTemplates([{ ...t, id: "mt" + Date.now(), name: t.name + " (copy)", fav: false }, ...msgTemplates]); flash("Duplicated"); }} className={`opacity-0 group-hover:opacity-100 ${T.faint}`}><Layers size={12} /></button>
+                    <button onClick={() => { setMsgTemplates(msgTemplates.filter((x) => x.id !== t.id)); flash("Template deleted"); }} className={`opacity-0 group-hover:opacity-100 ${T.faint}`}><X size={12} /></button>
+                  </div>
+
+                  {/* Badges row */}
+                  <div className="px-4 pt-2 flex items-center gap-1.5 flex-wrap">
+                    {t.category && <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md ${catColor}`}>{t.category}</span>}
+                    {t.status && <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md ${statusColor}`}>{t.status}</span>}
+                    {t.language && <span className={`text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded-md bg-zinc-100 text-zinc-500`}>{t.language.toUpperCase()}</span>}
+                  </div>
+
+                  {/* WhatsApp message preview */}
+                  <div className="flex-1 px-4 py-3 space-y-2">
+                    {/* HEADER */}
+                    {t.header && (
+                      <div>
+                        <p className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${T.faint}`}>Header</p>
+                        <input
+                          value={t.header}
+                          onChange={(e) => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, header: e.target.value } : x))}
+                          className={`w-full bg-transparent text-[11px] font-semibold outline-none ${T.text}`}
+                          placeholder="Header text…"
+                        />
+                      </div>
+                    )}
+                    {/* BODY */}
+                    <div>
+                      <p className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${T.faint}`}>Body</p>
+                      <textarea
+                        rows={4}
+                        value={t.body}
+                        onChange={(e) => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, body: e.target.value } : x))}
+                        className={`w-full bg-transparent text-[11px] leading-relaxed outline-none resize-none ${T.sub}`}
+                      />
+                    </div>
+                    {/* FOOTER */}
+                    {(t.footer !== undefined) && (
+                      <div>
+                        <p className={`text-[9px] font-bold uppercase tracking-wider mb-1 ${T.faint}`}>Footer</p>
+                        <input
+                          value={t.footer || ""}
+                          onChange={(e) => setMsgTemplates(msgTemplates.map((x) => x.id === t.id ? { ...x, footer: e.target.value } : x))}
+                          className={`w-full bg-transparent text-[10px] outline-none ${T.faint} italic`}
+                          placeholder="Footer text…"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Variables footer */}
+                  {vars.length > 0 && (
+                    <div className={`px-4 py-2 border-t ${T.border} flex flex-wrap gap-1`}>
+                      {vars.map((v) => (
+                        <span key={v} className={`text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700`}>{v}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
+
 
       {tab === "Suppression" && (
         <div className="flex-1 overflow-y-auto bz-scroll p-6">
@@ -22775,6 +23075,7 @@ function ProviderDetail({ provider, onClose }) {
           {provider.id === "linkedin" && <LinkedInShareWidget />}
           {provider.id === "gcontacts" && <GoogleContactsView />}
           {provider.id === "youtube" && <ChannelBotBackfillWidget />}
+          {provider.id === "instaxbot" && <InstaxBotBackfillWidget />}
           <div className={`rounded-xl p-3 ${T.softcard}`}>
             <div className={`text-[10px] font-medium uppercase tracking-widest mb-1.5 ${T.faint}`}>What it can do</div>
             <div className="flex flex-wrap gap-1.5">{(provider.caps.actions || []).map((a) => <Pill key={a} c={T.chip}>{a}</Pill>)}</div>
@@ -22979,6 +23280,102 @@ function ChannelBotBackfillWidget() {
           <div className="grid grid-cols-3 gap-2 text-[10px] pt-1">
             <div>Processed: <span className="font-semibold">{status.recordsProcessed || 0}</span></div>
             <div>New Added: <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{status.newlyInserted || 0}</span></div>
+            <div>Duplicates Skipped: <span className="font-semibold">{status.duplicatesSkipped || 0}</span></div>
+          </div>
+          {status.error && <p className="text-[10px] text-red-600 font-medium">{status.error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InstaxBotBackfillWidget() {
+  const { T, flash } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
+    ? "http://localhost:5000"
+    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+
+  const pollStatus = async () => {
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/backfill/status`);
+      const data = await res.json();
+      if (data?.ok) setStatus(data.status);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    pollStatus();
+    const interval = setInterval(pollStatus, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStartBackfill = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/backfill`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: "ws_default" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash("InstaxBot Instagram sync started in background.");
+        setStatus(data.status);
+      } else {
+        flash(data.error || "Could not start InstaxBot sync", "err");
+      }
+    } catch (e) {
+      flash("Failed to trigger InstaxBot sync", "err");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isRunning = status?.status === "running";
+
+  return (
+    <div className={`rounded-xl p-3.5 space-y-2.5 border ${T.border} ${T.softcard}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold">InstaxBot Orders & DMs Sync</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 font-medium">orders:read</span>
+        </div>
+        <button
+          onClick={handleStartBackfill}
+          disabled={loading || isRunning}
+          className={`h-7 px-3 rounded-lg text-xs font-semibold text-white transition flex items-center gap-1.5 ${isRunning ? "opacity-60 cursor-not-allowed bg-zinc-500" : "hover:opacity-90 active:scale-95"}`}
+          style={{ background: isRunning ? undefined : "#E63800" }}
+        >
+          {isRunning ? (
+            <>
+              <RefreshCw size={11} className="animate-spin" />
+              <span>Syncing (Page {status?.currentPage || 1})…</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw size={11} />
+              <span>Sync All 150+ Orders</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      <p className={`text-[11px] leading-relaxed ${T.sub}`}>
+        Fetch and paginate through all 150+ live Instagram orders and customer DMs via InstaxBot API. Automatically creates contacts, conversations, inbox messages, and pipeline deals.
+      </p>
+
+      {status && status.status !== "idle" && (
+        <div className={`rounded-lg p-2.5 text-[11px] space-y-1.5 ${status.status === "completed" ? "bg-emerald-50/70 border border-emerald-200 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-800" : status.status === "failed" ? "bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/20 dark:text-red-300" : "bg-orange-50/70 border border-orange-200 text-orange-900 dark:bg-orange-950/20 dark:text-orange-300"}`}>
+          <div className="flex items-center justify-between font-semibold">
+            <span>Status: {status.status === "running" ? "Backfill in progress…" : status.status === "completed" ? "Orders & Contacts Synced" : "Failed"}</span>
+            {status.completedAt && <span className="text-[10px] font-normal">{new Date(status.completedAt).toLocaleTimeString()}</span>}
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-[10px] pt-1">
+            <div>Orders Read: <span className="font-semibold">{status.recordsProcessed || 0}</span></div>
+            <div>New Ingested: <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{status.newlyInserted || 0}</span></div>
             <div>Duplicates Skipped: <span className="font-semibold">{status.duplicatesSkipped || 0}</span></div>
           </div>
           {status.error && <p className="text-[10px] text-red-600 font-medium">{status.error}</p>}

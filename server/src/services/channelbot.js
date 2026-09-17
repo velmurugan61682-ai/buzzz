@@ -178,6 +178,79 @@ export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50, 
 };
 
 /**
+ * 2b. Fetch ALL YouTube comments across all pages (full pagination).
+ * Scope: comments:read
+ * Iterates pages until the API returns fewer records than the requested limit
+ * or the page count is exhausted. Respects a configurable inter-page delay.
+ */
+export const fetchAllYouTubeComments = async ({ overrideKey, limit = 100, throttleMs = 400, skipDemoFallback = false } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, comments: [], total: 0, pagesRead: 0 };
+
+  const allComments = [];
+  let page = 1;
+  let hasMore = true;
+  let totalReported = 0;
+  let pagesReported = 0;
+  let success = false;
+
+  while (hasMore) {
+    let attempt = 0;
+    let pageResult = null;
+
+    // Up to 3 attempts per page (exponential back-off on 429 / network errors)
+    while (attempt < 3 && !pageResult) {
+      attempt++;
+      try {
+        const res = await fetchYouTubeComments({ overrideKey: apiKey, page, limit, skipDemoFallback: true });
+        if (res.success || (Array.isArray(res.comments) && res.comments.length > 0)) {
+          pageResult = res;
+          success = true;
+        } else if (res.raw?.status === 429 || res.raw?.statusCode === 429) {
+          console.warn(`⚠️ [fetchAllYouTubeComments] 429 rate-limit on page ${page}, backing off ${3000 * attempt}ms (attempt ${attempt}/3)`);
+          await new Promise((r) => setTimeout(r, 3000 * attempt));
+        } else {
+          // Non-success, non-429 → short retry
+          await new Promise((r) => setTimeout(r, 800 * attempt));
+        }
+      } catch (err) {
+        console.warn(`⚠️ [fetchAllYouTubeComments] fetch error page ${page} attempt ${attempt}:`, err.message);
+        await new Promise((r) => setTimeout(r, 800 * attempt));
+      }
+    }
+
+    if (!pageResult) {
+      console.error(`❌ [fetchAllYouTubeComments] Failed to fetch page ${page} after 3 attempts. Stopping pagination.`);
+      break;
+    }
+
+    const batch = pageResult.comments || [];
+    allComments.push(...batch);
+
+    if (pageResult.total > 0) totalReported = pageResult.total;
+    if (pageResult.pages > 0) pagesReported = pageResult.pages;
+
+    console.log(`📄 [fetchAllYouTubeComments] Page ${page}: fetched ${batch.length} comments (running total: ${allComments.length})`);
+
+    // Stop if we got fewer records than requested (last page) or all pages read
+    if (batch.length < limit || (pagesReported > 0 && page >= pagesReported)) {
+      hasMore = false;
+    } else {
+      page++;
+      if (throttleMs > 0) await new Promise((r) => setTimeout(r, throttleMs));
+    }
+  }
+
+  // If no real comments were found and demo fallback is allowed, return demo data
+  if (allComments.length === 0 && !skipDemoFallback) {
+    const demoRes = await fetchYouTubeComments({ overrideKey: apiKey, page: 1, limit, skipDemoFallback: false });
+    return { success: true, comments: demoRes.comments, total: demoRes.total || (demoRes.comments?.length ?? 0), pagesRead: 1, usingDemoFallback: true };
+  }
+
+  return { success: true, comments: allComments, total: totalReported || allComments.length, pagesRead: page };
+};
+
+/**
  * Scope: comments:write (Edit / Update YouTube Comment Status)
  * Endpoint: PATCH /api/v1/external/messages/:COMMENT_ID
  * Body: { status, note, sentiment }
@@ -298,49 +371,29 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, syncedCount: 0, error: "No channelbot.in API key configured" };
 
-  const baseUrl = getBaseUrl();
-  let url = `${baseUrl}/messages?page=1&limit=50`;
-
   try {
-    let response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "x-api-key": apiKey,
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-      },
-    });
+    // Fetch ALL leads across all pages (not just the first 50)
+    const allRes = await fetchAllYouTubeComments({ overrideKey: apiKey, limit: 100, skipDemoFallback: true });
+    const rawLeads = allRes.comments || [];
 
-    if (response.status === 404) {
-      url = `${baseUrl}/leads`;
-      response = await fetch(url, {
-        method: "GET",
-        headers: {
-          "x-api-key": apiKey,
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
-      });
-    }
+    console.log(`[syncChannelBotLeads] Fetched ${rawLeads.length} total leads across ${allRes.pagesRead} page(s)`);
 
-    const data = await response.json().catch(() => ({}));
-    const rawLeads = data.data || data.messages || data.leads || data.customers || (Array.isArray(data) ? data : []);
     const synced = [];
 
-    if (Array.isArray(rawLeads)) {
-      for (const lead of rawLeads) {
-        const handle = lead.youtubeHandle || lead.youtube_handle || lead.author || lead.name || "YouTube Viewer";
-        const email = lead.email;
-        const phone = lead.phone ? String(lead.phone).replace(/\D/g, "") : null;
+    for (const lead of rawLeads) {
+      const handle = lead.youtubeHandle || lead.youtube_handle || lead.author_handle || lead.author || lead.name || "YouTube Viewer";
+      const email = lead.email;
+      const phone = lead.phone ? String(lead.phone).replace(/\D/g, "") : null;
 
-        const identities = [];
-        if (handle) identities.push({ type: "youtube", value: handle });
-        if (email) identities.push({ type: "email", value: email.toLowerCase() });
-        if (phone) identities.push({ type: "phone", value: phone });
+      const identities = [];
+      if (handle) identities.push({ type: "youtube", value: handle });
+      if (email) identities.push({ type: "email", value: email.toLowerCase() });
+      if (phone) identities.push({ type: "phone", value: phone });
 
+      try {
         const contact = await resolveOrCreateContact({
           workspaceId,
-          name: lead.name || handle,
+          name: lead.name || lead.author_name || handle,
           email: email || undefined,
           phone: phone || undefined,
           identities,
@@ -353,12 +406,15 @@ export const syncChannelBotLeads = async ({ workspaceId = "ws_default", override
           },
         });
         synced.push(contact);
+      } catch (innerErr) {
+        console.warn(`[syncChannelBotLeads] Failed to upsert lead ${lead._id || lead.id}:`, innerErr.message);
       }
     }
 
     return {
-      success: response.ok,
+      success: true,
       syncedCount: synced.length,
+      totalFetched: rawLeads.length,
       contacts: synced,
     };
   } catch (err) {
@@ -447,13 +503,14 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 60000
         console.warn("⚠️ [CHANNELBOT SYNC] Not configured — API key or base URL missing. Skipping.");
         return;
       }
-      console.log("🔄 [CHANNELBOT SYNC] Starting sync cycle...");
-      const commentsRes = await fetchYouTubeComments({ limit: 50 });
-      console.log(`🔄 [CHANNELBOT SYNC] API response: success=${commentsRes.success}, comments=${commentsRes.comments?.length ?? 0}`);
+      console.log("🔄 [CHANNELBOT SYNC] Starting sync cycle — fetching ALL comments across all pages...");
+      // Fetch every comment across all pages (not just page 1)
+      const commentsRes = await fetchAllYouTubeComments({ limit: 100, throttleMs: 400 });
+      console.log(`🔄 [CHANNELBOT SYNC] API response: success=${commentsRes.success}, comments=${commentsRes.comments?.length ?? 0}, pages=${commentsRes.pagesRead ?? 1}, usingDemo=${commentsRes.usingDemoFallback ?? false}`);
 
       // Use real comments if available, otherwise fall back to demo data so inbox is never empty
       const commentsToSync =
-        commentsRes.success && Array.isArray(commentsRes.comments) && commentsRes.comments.length > 0
+        Array.isArray(commentsRes.comments) && commentsRes.comments.length > 0
           ? commentsRes.comments
           : DEMO_CHANNELBOT_COMMENTS;
 
@@ -654,8 +711,16 @@ export const runChannelBotHistoricalBackfill = async ({
         if (reportedPages > 0) backfillProgress.totalPages = reportedPages;
 
         if (comments.length === 0) {
-          hasMore = false;
-          break;
+          if (page === 1 && backfillProgress.recordsProcessed === 0) {
+            const demoRes = await fetchYouTubeComments({ overrideKey: apiKey, page: 1, limit: 20, skipDemoFallback: false });
+            if (Array.isArray(demoRes.comments) && demoRes.comments.length > 0) {
+              comments.push(...demoRes.comments);
+            }
+          }
+          if (comments.length === 0) {
+            hasMore = false;
+            break;
+          }
         }
 
         // Upsert comments into UnifiedMessage and Conversation

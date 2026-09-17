@@ -135,8 +135,18 @@ const startServer = async () => {
   process.once("SIGINT", () => gracefulShutdown("SIGINT"));
   process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
+  let retries = 0;
   server.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
+      if (retries < 4) {
+        retries++;
+        console.warn(`⚠️ Port ${PORT} busy, retrying bind in 1.5s (attempt ${retries}/4)...`);
+        setTimeout(() => {
+          try { server.close(); } catch (_) {}
+          server.listen(PORT);
+        }, 1500);
+        return;
+      }
       console.error(`\n🚨 PORT COLLISION ERROR (EADDRINUSE):`);
       console.error(`Port ${PORT} is already in use by another running process!`);
       console.error(`To resolve this port conflict:`);

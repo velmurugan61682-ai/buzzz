@@ -94,6 +94,8 @@ export const api = {
 
   getDeals: (wsId) => apiRequest("/deals", { workspaceId: wsId }),
   createDeal: (wsId, payload) => apiRequest("/deals", { method: "POST", body: payload, workspaceId: wsId }),
+  updateDeal: (wsId, id, payload) => apiRequest(`/deals/${id}`, { method: "PATCH", body: payload, workspaceId: wsId }),
+  deleteDeal: (wsId, id) => apiRequest(`/deals/${id}`, { method: "DELETE", workspaceId: wsId }),
 
   getTasks: (wsId) => apiRequest("/tasks", { workspaceId: wsId }),
   createTask: (wsId, payload) => apiRequest("/tasks", { method: "POST", body: payload, workspaceId: wsId }),

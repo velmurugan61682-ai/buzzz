@@ -287,6 +287,28 @@ const SystemSettingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const DealSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    workspaceId: { type: String, default: "ws_default", index: true },
+    name: { type: String, required: true },
+    contactId: { type: String, default: "", index: true },
+    pipelineId: { type: String, default: "p1" },
+    stage: { type: String, default: "New Lead", index: true },
+    value: { type: Number, default: 0 },
+    prob: { type: Number, default: 50 },
+    owner: { type: String, default: "Jordan Lee" },
+    close: { type: String, default: "" },
+    next: { type: String, default: "" },
+    source: { type: String, default: "manual" },
+    orderId: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+
+DealSchema.index({ workspaceId: 1, stage: 1 });
+DealSchema.index({ workspaceId: 1, contactId: 1 });
+
 export const ConversationModel = mongoose.models.Conversation || mongoose.model("Conversation", ConversationSchema);
 export const MessageModel = mongoose.models.Message || mongoose.model("Message", MessageSchema);
 export const UnifiedMessageModel = mongoose.models.UnifiedMessage || mongoose.model("UnifiedMessage", UnifiedMessageSchema);
@@ -294,6 +316,7 @@ export const LinkedInAccountModel = mongoose.models.LinkedInAccount || mongoose.
 export const GoogleAccountModel = mongoose.models.GoogleAccount || mongoose.model("GoogleAccount", GoogleAccountSchema);
 export const InstaxBotAccountModel = mongoose.models.InstaxBotAccount || mongoose.model("InstaxBotAccount", InstaxBotAccountSchema);
 export const ContactModel = mongoose.models.Contact || mongoose.model("Contact", ContactSchema);
+export const DealModel = mongoose.models.Deal || mongoose.model("Deal", DealSchema);
 export const MissedCallModel = mongoose.models.MissedCall || mongoose.model("MissedCall", MissedCallSchema);
 export const UserModel = mongoose.models.User || mongoose.model("User", UserSchema);
 export const OrderModel = mongoose.models.Order || mongoose.model("Order", OrderSchema);
@@ -962,12 +985,76 @@ export const upsertContact = async (data) => {
   };
 
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    const doc = await ContactModel.findOneAndUpdate(
-      { id: payload.id },
-      { $set: payload },
-      { upsert: true, new: true }
-    ).lean();
-    return doc;
+    try {
+      const doc = await ContactModel.findOneAndUpdate(
+        { id: payload.id },
+        { $set: payload },
+        { upsert: true, new: true }
+      ).lean();
+      return normalizeMongoDoc(doc);
+    } catch (err) {
+      if (err.code === 11000) {
+        // Handle duplicate key error e.g. on workspaceId + phone or workspaceId + identities.value
+        const conflictQueries = [];
+        if (Array.isArray(payload.identities) && payload.identities.length > 0) {
+          for (const idObj of payload.identities) {
+            if (idObj && idObj.value) {
+              conflictQueries.push({ "identities.value": idObj.value });
+            }
+          }
+        }
+        if (payload.phone) {
+          conflictQueries.push({ phone: payload.phone });
+          conflictQueries.push({ "identities.value": payload.phone });
+        }
+        if (payload.email) {
+          conflictQueries.push({ email: payload.email });
+        }
+
+        let existing = null;
+        if (conflictQueries.length > 0) {
+          existing = await ContactModel.findOne({
+            workspaceId: payload.workspaceId,
+            $or: conflictQueries,
+          });
+        }
+
+        if (existing) {
+          let changed = false;
+          if (
+            (!existing.name || existing.name.toLowerCase().includes("unknown") || existing.name === existing.phone) &&
+            payload.name &&
+            !payload.name.toLowerCase().includes("unknown")
+          ) {
+            existing.name = payload.name;
+            changed = true;
+          }
+          if (payload.channels && Array.isArray(payload.channels)) {
+            for (const ch of payload.channels) {
+              if (!existing.channels.includes(ch)) {
+                existing.channels.push(ch);
+                changed = true;
+              }
+            }
+          }
+          if (payload.phone && !existing.phone) {
+            existing.phone = payload.phone;
+            changed = true;
+          }
+          if (payload.email && !existing.email) {
+            existing.email = payload.email;
+            changed = true;
+          }
+          if (changed) {
+            try {
+              await existing.save();
+            } catch (_sErr) {}
+          }
+          return normalizeMongoDoc(typeof existing.toObject === "function" ? existing.toObject() : existing);
+        }
+      }
+      throw err;
+    }
   }
 
   const idx = db.contacts.findIndex((c) => c.id === payload.id);
@@ -986,6 +1073,145 @@ export const deleteContactById = async (id) => {
   }
   db.contacts = db.contacts.filter((c) => c.id !== id);
   return { deletedCount: 1 };
+};
+
+// ==============================================================================
+// DEALS DATA ACCESS FUNCTIONS (MONGO DB WITH IN-MEMORY FALLBACK)
+// ==============================================================================
+export const fetchDeals = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const filter = workspaceId ? { $or: [{ workspaceId }, { workspaceId: "ws_default" }] } : {};
+    let deals = await DealModel.find(filter).sort({ createdAt: -1 }).lean();
+    return deals.map(normalizeMongoDoc);
+  }
+  if (!db.deals) db.deals = [];
+  return db.deals.filter((d) => !d.workspaceId || d.workspaceId === workspaceId || workspaceId === "ws_default").map(normalizeMongoDoc);
+};
+
+export const createDealRecord = async (dealData) => {
+  const id = dealData.id || `deal_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const payload = {
+    ...dealData,
+    id,
+    workspaceId: dealData.workspaceId || "ws_default",
+    name: dealData.name || "Opportunity",
+    contactId: dealData.contactId || "",
+    pipelineId: dealData.pipelineId || "p1",
+    stage: dealData.stage || "New Lead",
+    value: Number(dealData.value) || 0,
+    prob: Number(dealData.prob) !== undefined ? Number(dealData.prob) : 50,
+    owner: dealData.owner || "Jordan Lee",
+    close: dealData.close || "",
+    next: dealData.next || "",
+    source: dealData.source || "manual",
+    orderId: dealData.orderId || "",
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const created = await DealModel.findOneAndUpdate(
+      { id },
+      { $set: payload },
+      { upsert: true, new: true }
+    ).lean();
+    return normalizeMongoDoc(created);
+  }
+
+  if (!db.deals) db.deals = [];
+  const idx = db.deals.findIndex((d) => d.id === id);
+  if (idx !== -1) {
+    db.deals[idx] = { ...db.deals[idx], ...payload };
+    return db.deals[idx];
+  }
+  db.deals.unshift(payload);
+  return payload;
+};
+
+export const updateDealRecord = async (id, updates, workspaceId = "ws_default") => {
+  if (!id) return null;
+  const cleanUpdates = { ...updates };
+  if (cleanUpdates.value !== undefined) cleanUpdates.value = Number(cleanUpdates.value) || 0;
+  if (cleanUpdates.prob !== undefined) cleanUpdates.prob = Number(cleanUpdates.prob) || 0;
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const updated = await DealModel.findOneAndUpdate(
+      { id },
+      { $set: cleanUpdates },
+      { new: true }
+    ).lean();
+    return updated ? normalizeMongoDoc(updated) : null;
+  }
+
+  if (!db.deals) db.deals = [];
+  const idx = db.deals.findIndex((d) => d.id === id);
+  if (idx !== -1) {
+    db.deals[idx] = { ...db.deals[idx], ...cleanUpdates };
+    return db.deals[idx];
+  }
+  return null;
+};
+
+export const deleteDealRecord = async (id, workspaceId = "ws_default") => {
+  if (!id) return false;
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const res = await DealModel.deleteOne({ id });
+    return res.deletedCount > 0;
+  }
+  if (!db.deals) db.deals = [];
+  const initialLen = db.deals.length;
+  db.deals = db.deals.filter((d) => d.id !== id);
+  return db.deals.length < initialLen;
+};
+
+export const syncDealsFromOrders = async (workspaceId = "ws_default") => {
+  try {
+    let orders = [];
+    if (isDbConnected && mongoose.connection.readyState === 1) {
+      orders = await OrderModel.find({ workspaceId: { $in: [workspaceId, "ws_default"] } }).lean();
+    } else {
+      orders = (db.orders || []).filter((o) => !o.workspaceId || o.workspaceId === workspaceId || workspaceId === "ws_default");
+    }
+
+    if (!orders || orders.length === 0) return [];
+
+    const existingDeals = await fetchDeals(workspaceId);
+    const existingOrderIds = new Set(existingDeals.map((d) => d.orderId).filter(Boolean));
+
+    const createdDeals = [];
+    for (const order of orders) {
+      const extId = order.externalOrderId || order.id;
+      if (existingOrderIds.has(extId)) continue;
+
+      const isWon = order.paymentStatus === "paid" || order.status === "delivered" || order.status === "completed";
+      const isNegotiation = order.status === "confirmed" || order.status === "processing";
+      const stage = isWon ? "Won" : isNegotiation ? "Negotiation" : "Proposal Sent";
+
+      const dealName = `${order.customerName || "Customer"} - Order #${order.orderId || extId.slice(-6)}`;
+      const orderPlatform = order.platform || "order";
+      const contactId = order.conversationId || (order.customerPhone ? `conv_wa_${String(order.customerPhone).replace(/\D/g, "")}` : "");
+      const dealData = {
+        id: `deal_order_${extId}`,
+        workspaceId,
+        name: dealName,
+        contactId,
+        pipelineId: "p1",
+        stage,
+        value: Number(order.totalAmount) || 0,
+        prob: isWon ? 100 : 70,
+        owner: "Sales Agent",
+        close: order.createdAt ? new Date(order.createdAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+        next: `${orderPlatform === "instaxbot" ? "InstaxBot Instagram" : "WhatsApp"} Order status: ${order.status || "pending"}`,
+        source: orderPlatform,
+        orderId: extId,
+      };
+
+      const created = await createDealRecord(dealData);
+      createdDeals.push(created);
+    }
+    return createdDeals;
+  } catch (err) {
+    console.warn("⚠️ syncDealsFromOrders warning:", err.message);
+    return [];
+  }
 };
 
 // ==============================================================================
@@ -1243,11 +1469,20 @@ export const resolveOrCreateContact = async ({
 
     if (updated) {
       if (isDbConnected && mongoose.connection.readyState === 1 && typeof existingContact.save === "function") {
-        await existingContact.save();
-        return existingContact.toObject();
+        try {
+          await existingContact.save();
+          return normalizeMongoDoc(existingContact.toObject ? existingContact.toObject() : existingContact);
+        } catch (saveErr) {
+          if (saveErr.code === 11000) {
+            const fresh = await ContactModel.findOne({ id: existingContact.id }).lean();
+            if (fresh) return normalizeMongoDoc(fresh);
+          } else {
+            console.warn("⚠️ [resolveOrCreateContact] existingContact.save error:", saveErr.message);
+          }
+        }
       }
     }
-    return typeof existingContact.toObject === "function" ? existingContact.toObject() : existingContact;
+    return normalizeMongoDoc(typeof existingContact.toObject === "function" ? existingContact.toObject() : existingContact);
   }
 
   // Create new contact if no existing record matched
@@ -1371,11 +1606,11 @@ export const saveGoWhatsOrder = async (data) => {
     id: data.id || `ord_${extId}`,
     workspaceId: data.workspaceId || "ws_default",
     conversationId: convId,
-    platform: "whatsapp",
+    platform: data.platform || "whatsapp",
     externalOrderId: extId,
     orderId: data.orderId || extId,
     customerPhone: cleanPhone,
-    customerName: data.customerName || data.customerDetails?.name || `WhatsApp User (+${cleanPhone})`,
+    customerName: data.customerName || data.customerDetails?.name || `Customer (+${cleanPhone})`,
     totalAmount: typeof data.totalAmount === "number" ? data.totalAmount : parseFloat(data.totalAmount || 0),
     currency: data.currency || "INR",
     status: data.status || "pending",
@@ -1402,10 +1637,12 @@ export const saveGoWhatsOrder = async (data) => {
     return JSON.stringify(normA) === JSON.stringify(normB);
   };
 
+  const orderPlatform = payload.platform || "whatsapp";
+
   if (isDbConnected && mongoose.connection.readyState === 1) {
     try {
       const existing = await OrderModel.findOne({
-        platform: "whatsapp",
+        platform: orderPlatform,
         externalOrderId: extId,
       }).lean();
 
@@ -1418,7 +1655,7 @@ export const saveGoWhatsOrder = async (data) => {
 
         if (isChanged) {
           const updatedDoc = await OrderModel.findOneAndUpdate(
-            { platform: "whatsapp", externalOrderId: extId },
+            { platform: orderPlatform, externalOrderId: extId },
             { $set: { ...payload, updatedAt: new Date() } },
             { new: true }
           ).lean();
@@ -1435,7 +1672,7 @@ export const saveGoWhatsOrder = async (data) => {
     } catch (err) {
       if (err.code === 11000) {
         const existing = await OrderModel.findOne({
-          platform: "whatsapp",
+          platform: orderPlatform,
           externalOrderId: extId,
         }).lean();
         return { doc: normalizeMongoDoc(existing || payload), isNew: false, isUpdated: false };
@@ -1447,7 +1684,7 @@ export const saveGoWhatsOrder = async (data) => {
   // Fallback in-memory deduplication
   if (!db.orders) db.orders = [];
   const existingIdx = db.orders.findIndex(
-    (o) => o.platform === "whatsapp" && o.externalOrderId === extId
+    (o) => o.platform === orderPlatform && o.externalOrderId === extId
   );
 
   if (existingIdx !== -1) {
@@ -1469,6 +1706,8 @@ export const saveGoWhatsOrder = async (data) => {
     return { doc: newDoc, isNew: true, isUpdated: false };
   }
 };
+
+export const saveOrderRecord = saveGoWhatsOrder;
 
 /**
  * Fetch stored orders by customer phone number or conversation ID

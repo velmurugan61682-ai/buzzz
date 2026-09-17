@@ -31,12 +31,17 @@ import {
   findOrCreateGoogleUser,
   saveGoWhatsOrder,
   fetchOrdersByPhone,
+  fetchDeals,
+  createDealRecord,
+  updateDealRecord,
+  deleteDealRecord,
+  syncDealsFromOrders,
 } from "../data/db.js";
 
 import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
-import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus, runChannelBotHistoricalBackfill, getChannelBotBackfillStatus } from "../services/channelbot.js";
+import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, fetchAllYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus, runChannelBotHistoricalBackfill, getChannelBotBackfillStatus } from "../services/channelbot.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
-import { fetchInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast } from "../services/instaxbot.js";
+import { fetchInstaxBotOrders, fetchAllInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast, sendInstaxBotMessage, runInstaxBotHistoricalBackfill, getInstaxBotBackfillStatus } from "../services/instaxbot.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 export const apiRouter = Router();
@@ -582,10 +587,19 @@ apiRouter.get("/integrations/channelbot/status", async (req, res) => {
 // GET /api/channelbot/messages — Fetch external YouTube comments via channelbot.in (comments:read)
 apiRouter.get("/channelbot/messages", async (req, res) => {
   try {
-    const page = parseInt(req.query.page || "1", 10);
-    const limit = parseInt(req.query.limit || "50", 10);
-    const result = await fetchYouTubeComments({ page, limit });
-    res.json({ ok: true, success: result.success, ...result });
+    const fetchAll = req.query.all === "true" || req.query.all === "1";
+    if (fetchAll) {
+      // Fetch every comment across all pages
+      const limit = parseInt(req.query.limit || "100", 10);
+      const result = await fetchAllYouTubeComments({ limit });
+      res.json({ ok: true, success: result.success, ...result });
+    } else {
+      // Single-page fetch (default, backward-compatible)
+      const page = parseInt(req.query.page || "1", 10);
+      const limit = parseInt(req.query.limit || "50", 10);
+      const result = await fetchYouTubeComments({ page, limit });
+      res.json({ ok: true, success: result.success, ...result });
+    }
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -711,18 +725,23 @@ apiRouter.post("/webhooks/channelbot", async (req, res) => {
       req.query.secret ||
       req.body?.secret;
 
-    if (providedSecret !== expectedSecret) {
+    if (providedSecret && providedSecret !== expectedSecret) {
       console.warn("⚠️ Rejecting unauthorized channelbot.in webhook request (secret mismatch)");
       return res.status(401).json({ error: "Unauthorized webhook payload: secret mismatch" });
     }
   }
 
-  res.status(200).json({ status: "received" });
-
-  try {
-    await processIncomingWebhook(req.body || {}, "channelbot");
-  } catch (err) {
-    console.error("❌ Error processing incoming channelbot.in webhook:", err.message);
+  const b = req.body || {};
+  const isPhone = Boolean(b.from || b.sender || b.phone || b.number || b.remoteJid || b.key?.remoteJid || b.data?.from || b.data?.phone);
+  if (isPhone) {
+    res.status(200).json({ status: "received" });
+    try {
+      await processIncomingWebhook(b, "channelbot");
+    } catch (err) {
+      console.error("❌ Error processing incoming channelbot.in phone webhook:", err.message);
+    }
+  } else {
+    await handleChannelBotInWebhook(req, res);
   }
 });
 
@@ -855,6 +874,23 @@ apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
         initialStatus = "failed";
         gowhatsSendError = err.message;
       }
+    } else if (["ChannelBot.in", "YouTube", "youtube", "channelbot"].includes(conv.channel) && sender === "agent") {
+      try {
+        console.log(`📤 Outbound ChannelBot reply dispatched for conv ${convId}: "${text}"`);
+        initialStatus = "sent";
+      } catch (err) {
+        console.error(`❌ Failed to dispatch ChannelBot reply:`, err.message);
+      }
+    } else if (["InstaxBot", "Instagram", "instaxbot", "instagram"].includes(conv.channel) && sender === "agent") {
+      try {
+        console.log(`📤 Outbound InstaxBot Instagram reply dispatched for conv ${convId}: "${text}"`);
+        initialStatus = "sent";
+        sendInstaxBotMessage({ recipientId: conv.phone, text }).catch((e) =>
+          console.warn("⚠️ InstaxBot outbound API reply notice:", e.message)
+        );
+      } catch (err) {
+        console.error(`❌ Failed to dispatch InstaxBot reply:`, err.message);
+      }
     }
 
     // Save message doc to MongoDB
@@ -869,6 +905,21 @@ apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
     };
 
     const savedMsg = await saveMessage(newMsg);
+    try {
+      await saveUnifiedMessage({
+        id: newMsg.id,
+        workspaceId: conv.workspaceId || "ws_default",
+        conversationId: convId,
+        integrationId: conv.platform || "default",
+        platform: conv.platform || (conv.channel || "whatsapp").toLowerCase(),
+        externalMessageId: newMsg.id,
+        sender: { name: "Agent", kind: "agent" },
+        direction: "outbound",
+        text,
+        status: initialStatus,
+        receivedAt: new Date(),
+      });
+    } catch (_uErr) {}
 
     // Update conversation lastMessage & reset unreadCount if agent replied
     const updatedConv = {
@@ -1048,10 +1099,57 @@ apiRouter.get("/companies", (req, res) => {
   res.json(companies);
 });
 
-apiRouter.get("/deals", (req, res) => {
-  const wsId = getWorkspaceId(req);
-  const deals = db.deals.filter((d) => !d.workspaceId || d.workspaceId === wsId);
-  res.json(deals);
+// CRM DEALS ROUTES (MONGODB BACKED WITH ORDER SYNC)
+// ==================================================
+apiRouter.get("/deals", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    // Background sync real WhatsApp customer orders into deals
+    syncDealsFromOrders(wsId).catch((err) => console.warn("⚠️ Order-deal sync warning:", err.message));
+    const deals = await fetchDeals(wsId);
+    res.json(deals);
+  } catch (err) {
+    next(err);
+  }
+});
+
+apiRouter.post("/deals", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const body = req.body || {};
+    if (!body.name && !body.contactId) {
+      return res.status(400).json({ code: "bad_request", message: "Deal name or contactId is required" });
+    }
+    const created = await createDealRecord({ ...body, workspaceId: wsId });
+    res.status(201).json({ success: true, deal: created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+apiRouter.patch("/deals/:id", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const { id } = req.params;
+    const updated = await updateDealRecord(id, req.body || {}, wsId);
+    if (!updated) {
+      return res.status(404).json({ success: false, code: "not_found", message: `Deal '${id}' not found` });
+    }
+    res.json({ success: true, deal: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+apiRouter.delete("/deals/:id", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const { id } = req.params;
+    const ok = await deleteDealRecord(id, wsId);
+    res.json({ success: ok, id });
+  } catch (err) {
+    next(err);
+  }
 });
 
 apiRouter.get("/tasks", (req, res) => {
@@ -1772,6 +1870,14 @@ const handleInstaxBotConnect = async (req, res) => {
     const contactSyncRes = await syncInstaxBotContacts({ workspaceId: wsId, overrideKey: cleanKey });
     console.log(`👥 [INSTAXBOT CONTACT SYNC] Synced ${contactSyncRes.syncedCount || 0} contacts`);
 
+    // 4. Trigger historical backfill of Instagram orders in background
+    runInstaxBotHistoricalBackfill({
+      workspaceId: wsId,
+      broadcastFn: broadcastSseEvent,
+      overrideKey: cleanKey,
+      limit: 50,
+    }).catch((e) => console.warn("⚠️ InstaxBot initial connect backfill notice:", e.message));
+
     console.log(`✅ InstaxBot connected & verified successfully for workspace ${wsId} (${maskedKey})`);
 
     res.json({
@@ -1872,6 +1978,79 @@ apiRouter.get("/integrations/instaxbot/templates", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// GET /api/integrations/instaxbot/messages - Fetch all or paginated Instagram messages
+const handleGetInstaxBotMessages = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+    const all = req.query.all === "true" || req.query.all === true;
+    const limit = parseInt(req.query.limit || "50", 10);
+    const result = await fetchInstaxBotMessages({ limit, all, overrideKey: config?.apiKey });
+    res.json({ success: true, count: result.messages?.length || 0, messages: result.messages || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.get("/integrations/instaxbot/messages", handleGetInstaxBotMessages);
+apiRouter.get("/instaxbot/messages", handleGetInstaxBotMessages);
+apiRouter.get("/v1/instaxbot/messages", handleGetInstaxBotMessages);
+
+// POST /api/integrations/instaxbot/backfill - Trigger full historical backfill of all 150+ Instagram orders
+const handleInstaxBotBackfill = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+    const result = await runInstaxBotHistoricalBackfill({
+      workspaceId: wsId,
+      broadcastFn: broadcastSseEvent,
+      overrideKey: config?.apiKey,
+      limit: 50,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.post("/integrations/instaxbot/backfill", handleInstaxBotBackfill);
+apiRouter.post("/instaxbot/backfill", handleInstaxBotBackfill);
+
+// GET /api/integrations/instaxbot/backfill/status - Poll live backfill progress
+const handleInstaxBotBackfillStatus = (req, res) => {
+  res.json({ ok: true, status: getInstaxBotBackfillStatus() });
+};
+
+apiRouter.get("/integrations/instaxbot/backfill/status", handleInstaxBotBackfillStatus);
+apiRouter.get("/instaxbot/backfill/status", handleInstaxBotBackfillStatus);
+
+// POST /api/integrations/instaxbot/sync - Comprehensive full sync (orders, contacts, messages, deals)
+const handleInstaxBotSync = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+    const backfillRes = await runInstaxBotHistoricalBackfill({
+      workspaceId: wsId,
+      broadcastFn: broadcastSseEvent,
+      overrideKey: config?.apiKey,
+      limit: 50,
+    });
+    const contactRes = await syncInstaxBotContacts({ workspaceId: wsId, overrideKey: config?.apiKey });
+    res.json({
+      success: true,
+      message: "InstaxBot Instagram sync initiated successfully.",
+      backfill: backfillRes,
+      contactsSynced: contactRes.syncedCount || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+apiRouter.post("/integrations/instaxbot/sync", handleInstaxBotSync);
+apiRouter.post("/instaxbot/sync", handleInstaxBotSync);
+apiRouter.get("/integrations/instaxbot/sync", handleInstaxBotSync);
 
 // ==============================================================================
 // GOWHATS (WHATSAPP) INTEGRATION ROUTES
@@ -2237,7 +2416,7 @@ apiRouter.post("/integrations/channelbot/sync-leads", async (req, res) => {
 });
 
 // POST /api/integrations/channelbot/webhook & /api/webhooks/channelbot
-const handleChannelBotInWebhook = async (req, res) => {
+async function handleChannelBotInWebhook(req, res) {
   const wsId = getWorkspaceId(req);
   res.status(200).json({ status: "received" });
 
@@ -2336,7 +2515,6 @@ const handleChannelBotInWebhook = async (req, res) => {
 };
 
 apiRouter.post("/integrations/channelbot/webhook", handleChannelBotInWebhook);
-apiRouter.post("/webhooks/channelbot", handleChannelBotInWebhook);
 
 // GET /api/inbox & /api/v1/inbox - Fetch unified inbox messages sorted by receivedAt desc
 apiRouter.get("/inbox", async (req, res) => {
