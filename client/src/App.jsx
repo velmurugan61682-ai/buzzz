@@ -28,6 +28,41 @@ const BRAND = "#EF2B13"; // derived from the buzzz logo red
 const Ctx = createContext(null);
 const useApp = () => useContext(Ctx);
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.warn("ErrorBoundary caught error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl border border-zinc-200">
+            <div className="w-10 h-10 rounded-full bg-red-100 text-red-500 mx-auto flex items-center justify-center mb-3">
+              <Sparkles size={20} />
+            </div>
+            <h3 className="font-semibold text-sm mb-1 text-zinc-900">AI Assistant Notice</h3>
+            <p className="text-xs text-zinc-500 mb-4">The assistant encountered a temporary display issue.</p>
+            <button
+              onClick={() => { this.setState({ hasError: false }); if (this.props.onClose) this.props.onClose(); }}
+              className="w-full py-2 bg-red-600 text-white font-medium text-xs rounded-xl hover:bg-red-700 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const themes = {
   light: {
     app: "bg-white text-zinc-900",
@@ -8868,7 +8903,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         {route && route.screen === "onboarding" && industry === null && <Onboarding />}
         {confirm && <ConfirmDialog {...confirm} close={() => setConfirm(null)} />}
         {cmdOpen && <CommandPalette />}
-        {aiOpen && <BuzzzAI close={() => setAiOpen(false)} />}
+        {aiOpen && (
+          <ErrorBoundary onClose={() => setAiOpen(false)}>
+            <BuzzzAI close={() => setAiOpen(false)} />
+          </ErrorBoundary>
+        )}
         {toast && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-full text-white text-[13px] font-medium shadow-xl flex items-center gap-2" style={{ background: "#18181b" }}>
             {toast.kind === "err" ? <XCircle size={15} className="text-red-400" /> : <CheckCircle2 size={15} className="text-emerald-400" />} {toast.msg}
@@ -9043,7 +9082,11 @@ function CommandPalette() {
   const { T, go, openContact, openConv, flash, log, setCmdOpen } = useApp();
   const [q, setQ] = useState("");
   const ref = useRef(null);
-  useEffect(() => ref.current?.focus(), []);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.focus();
+    }
+  }, []);
 
   const commands = [
     { k: "Go to Unified Inbox", run: () => go("inbox"), Icon: Inbox },
@@ -9425,7 +9468,11 @@ function BuzzzAI({ close }) {
   const [q, setQ] = useState("");
   const [lastContact, setLastContact] = useState(null);
   const endRef = useRef(null);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
+  useEffect(() => {
+    if (endRef.current) {
+      endRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [msgs]);
 
   const findContact = (text) => {
     const t = text.toLowerCase();
@@ -10379,7 +10426,14 @@ function BuzzzAI({ close }) {
   const recRef = useRef(null);
   const fileRef = useRef(null);
   const ctxBits = assistantContext({ view, selContact, selConv, convs, selAgent, agents });
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+      if (recRef.current) {
+        try { recRef.current.stop(); } catch (e) {}
+      }
+    };
+  }, []);
 
   const chips = ["Who should I contact first today?", "Who is at risk?", "What do we know about Anita Sharma?", "Are there any duplicate contacts?", "I need a receptionist agent", "What did the AI do on its own?"];
 
