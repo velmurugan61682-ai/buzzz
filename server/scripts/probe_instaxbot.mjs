@@ -12,30 +12,23 @@ console.log("Base URL:", baseUrl);
 console.log("Key length:", key.length, "Prefix:", key.slice(0, 5));
 
 const endpoints = [
-  "/api/external/v2/orders",
-  "/api/external/v2/orders?page=1&limit=5",
-  "/api/external/v2/data?resource=orders",
-  "/api/external/v2/clients",
-  "/api/external/v2/comments",
-  "/api/external/v2/templates",
-  "/api/external/v2/broadcasts",
-  "/api/external/v2/messages",
-  "/api/v1/external/messages",
-  "/api/v1/messages",
-  "/api/v1/orders",
-  "/api/messages",
-  "/api/orders",
-  "/api/comments",
-  "/api/v2/orders",
-  "/api/v2/comments",
-  "/api/external/orders"
+  "/api/external/v2/me",
+  "/api/external/v2/account",
+  "/api/external/v2/profile",
+  "/api/external/v2/keys",
+  "/api/external/v2/webhooks",
+  "/api/external/v2/threads",
+  "/api/external/v2/conversations",
+  "/api/external/v2/livechat",
+  "/api/external/v2/instagram",
+  "/api/external/v2/bot",
 ];
 
 for (const ep of endpoints) {
   const url = `${baseUrl}${ep}`;
   try {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 3500);
+    const t = setTimeout(() => controller.abort(), 2000);
     const res = await fetch(url, {
       method: "GET",
       headers: {
@@ -48,8 +41,18 @@ for (const ep of endpoints) {
     clearTimeout(t);
     const ct = res.headers.get("content-type") || "";
     const text = await res.text();
-    console.log(`[${res.status}] (${ct.split(";")[0]}) ${ep} -> ${text.slice(0, 100).replace(/\n/g, " ")}`);
+    console.log(`[${res.status}] (${ct.split(";")[0]}) ${ep} -> ${text.slice(0, 160).replace(/\n/g, " ")}`);
+    if (ep.includes("orders") && res.status === 200) {
+      try {
+        const json = JSON.parse(text);
+        const sample = (json.orders && json.orders[0]) || (json.data && json.data[0]);
+        if (sample) {
+          console.log("SAMPLE ORDER FIELDS:", Object.keys(sample));
+          console.log("SAMPLE ORDER RAW:", JSON.stringify(sample, null, 2).slice(0, 500));
+        }
+      } catch (e) {}
+    }
   } catch (err) {
-    console.log(`[ERROR/TIMEOUT] ${ep} -> ${err.message}`);
+    console.log(`[TIMEOUT/FAIL] ${ep} -> ${err.message}`);
   }
 }

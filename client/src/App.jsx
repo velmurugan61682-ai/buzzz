@@ -294,30 +294,7 @@ const PIPELINES_INIT = [
 ];
 const TICKETS_INIT = []; // TODO_BACKEND
 
-const CONTACTS = [
-  {
-    id: "c1", name: "Arun Kumar", company: "Vertex Retail Group", title: "Head of Operations",
-    location: "Chennai, IN", email: "arun.kumar@vertexretail.in", phone: "+91 98407 22110",
-    stage: "Opportunity", score: 87, value: "₹18,400", ltv: "₹18,400", churn: "Low",
-    sentiment: "Positive", intent: "Purchase", channels: ["whatsapp", "voice", "email"],
-    tags: ["High Intent", "Enterprise", "Pricing"],
-    memory: [
-      "Prefers WhatsApp over email",
-      "Asked about Enterprise annual pricing twice",
-      "Company has around 120 employees across 14 stores",
-      "Wants onboarding completed before Diwali season",
-    ],
-    aiSummary: "Contacted 3 times in the last 7 days about the Enterprise plan. High purchase intent. Recommended follow up within 24 hours.",
-    engagement: 92,
-    owner: "Rina Sato",
-    source: "Website",
-    archived: false,
-    notes: [],
-    cf: {},
-    created: "2026-07-10",
-    lastContact: 2,
-  },
-];
+const CONTACTS = [];
 CONTACTS.forEach((c, i) => {
   c.owner = c.owner || TEAM_USERS[i % 4];
   c.source = c.source || LEAD_SOURCES[i % LEAD_SOURCES.length];
@@ -336,20 +313,6 @@ const now = Date.now();
 const t = (m) => new Date(now - m * 60000).toISOString();
 
 const CONVS = [
-  {
-    id: "v1", contactId: "c1", channel: "whatsapp", state: "AI Handling", priority: "High",
-    intent: "Purchase", sentiment: "Positive", assigned: "Sales Agent (AI)", team: "Sales",
-    ai: true, unread: 2, tags: ["High Intent", "Pricing"],
-    msgs: [
-      { id: 1, from: "customer", channel: "whatsapp", time: t(160), text: "Hi, I want to know if the Enterprise plan supports 14 store locations and how much it costs." },
-      { id: 2, from: "ai", agent: "Sales Agent", channel: "whatsapp", time: t(158), text: "Hi Arun, yes. Enterprise supports unlimited locations with a shared knowledge base per brand. For 14 stores you would be on the Enterprise tier at ₹95,000 per month billed annually. Want me to send the full breakdown?" },
-      { id: 3, from: "system", time: t(158), text: "AI queried knowledge base: pricing.pdf, plans.md · Lead score 74 → 81" },
-      { id: 4, from: "customer", channel: "whatsapp", time: t(90), text: "Yes please. Also, can we get onboarding done before October?" },
-      { id: 5, from: "ai", agent: "Sales Agent", channel: "whatsapp", time: t(89), text: "Sent the breakdown to your email as well. Onboarding for your size typically takes 3 weeks, so an early September start comfortably lands before October. I can book a scoping call with our team this week." },
-      { id: 6, from: "system", time: t(89), text: "AI created opportunity: Vertex Retail · Enterprise (₹15,000,000) · Stage: Demo Booked" },
-      { id: 7, from: "customer", channel: "whatsapp", time: t(4), text: "Yes, I would like to book the scoping call. Thursday works." },
-    ],
-  },
   {
     id: "v2", contactId: "c2", channel: "instagram", state: "AI Handling", priority: "Medium",
     intent: "Product inquiry", sentiment: "Positive", assigned: "Sales Agent (AI)", team: "Sales",
@@ -969,18 +932,6 @@ const CALLS = [
       { who: "agent", t: 19, text: "We do. The premium package supports multiple brands under one workspace, each with its own channels, agents and knowledge base. I can send exact pricing for three brands. Would WhatsApp work?" },
       { who: "customer", t: 38, text: "WhatsApp is perfect. Send it there." },
       { who: "agent", t: 44, text: "Sent. I have also noted a follow up with your account manager for Thursday." },
-    ] },
-  { id: "k2", demo: true, sessionId: "sess_k2", contactId: "c1", dir: "outbound", number: "+91 98407 22110", durSec: 250, at: atDay(0, 9, 22), status: "ended",
-    agent: "Voz · Voice Agent", outcome: "Appointment Booked", sentiment: "Positive", intent: "Sales", reason: "Quotation follow up",
-    nextAction: "Prepare enterprise scoping deck", tags: ["Sales", "Appointment"], assignee: "Rina Sato", notes: [], recordingUrl: null,
-    summary: "Arun confirmed budget approval for 40 locations and booked an enterprise scoping call. He asked for the security whitepaper before the meeting.",
-    actions: ["Appointment booked", "Task created for security whitepaper", "Deal stage moved to Negotiation"],
-    transcript: [
-      { who: "agent", t: 0, text: "Hi Arun, this is the Buzzz assistant following up on the quotation for your 40 locations." },
-      { who: "customer", t: 9, text: "Yes, budget is approved. I want a proper scoping call with your team." },
-      { who: "agent", t: 18, text: "I can book that. Thursday at 11:00 works for your account manager. Shall I confirm?" },
-      { who: "customer", t: 31, text: "Thursday works. Also send me the security whitepaper before then." },
-      { who: "agent", t: 40, text: "Booked for Thursday 11:00, and I have raised a task for the whitepaper today." },
     ] },
   { id: "k3", demo: true, sessionId: "sess_k3", contactId: "c7", dir: "inbound", number: "+234 802 991 4410", durSec: 0, at: atDay(0, 8, 12), status: "missed",
     agent: "Voz · Voice Agent", outcome: "No Answer", sentiment: "Neutral", intent: "Unknown", reason: "Missed while out of hours",
@@ -9088,7 +9039,7 @@ function CommandPalette() {
     { k: "Go to Unified Inbox", run: () => go("inbox"), Icon: Inbox },
     { k: "Show unresolved WhatsApp conversations", run: () => go("inbox"), Icon: MessageCircle },
     { k: "Find all leads from Instagram", run: () => go("crm"), Icon: Instagram },
-    { k: "Create a follow up task for Arun", run: () => { flash("Task created: follow up with Arun Kumar"); log("You", "Task created", "Follow up with Arun Kumar · due tomorrow"); }, Icon: ListChecks },
+    { k: "Create a follow up task for Anita", run: () => { flash("Task created: follow up with Anita Sharma"); log("You", "Task created", "Follow up with Anita Sharma · due tomorrow"); }, Icon: ListChecks },
     { k: "Call all high intent leads (MrAssistant.ai)", run: () => { go("calls"); flash("Queued 3 outbound calls for approval"); }, Icon: PhoneCall },
     { k: "Create an automation", run: () => go("automations"), Icon: Workflow },
     { k: "Create a sales agent", run: () => go("agents"), Icon: Bot },
@@ -10420,7 +10371,7 @@ function BuzzzAI({ close }) {
   const ctxBits = assistantContext({ view, selContact, selConv, convs, selAgent, agents });
   useEffect(() => () => stopSpeaking(), []);
 
-  const chips = ["Who should I contact first today?", "Who is at risk?", "What do we know about Arun Kumar?", "Are there any duplicate contacts?", "I need a receptionist agent", "What did the AI do on its own?"];
+  const chips = ["Who should I contact first today?", "Who is at risk?", "What do we know about Anita Sharma?", "Are there any duplicate contacts?", "I need a receptionist agent", "What did the AI do on its own?"];
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={close}>
@@ -13775,7 +13726,7 @@ function ContactForm({ initial, onClose }) {
 function ImportModal({ onClose }) {
   const { T, dk, createContact, flash } = useApp();
   const [step, setStep] = useState(1);
-  const [raw, setRaw] = useState("name,company,email,phone,source\nAnita Sharma,Kite Ventures,anita@kite.vc,+91 98111 20034,Website\nDavid Meyer,Northbridge Logistics,david@northbridge.co,+65 8123 4499,Referral\nArun Kumar,Vertex Retail Group,arun.kumar@vertexretail.in,+91 98407 22110,Website");
+  const [raw, setRaw] = useState("name,company,email,phone,source\nAnita Sharma,Kite Ventures,anita@kite.vc,+91 98111 20034,Website\nDavid Meyer,Northbridge Logistics,david@northbridge.co,+65 8123 4499,Referral\nRohan Verma,Vertex Retail Group,rohan.verma@vertexretail.in,+91 98401 11223,Website");
   const [map, setMap] = useState({});
   const [result, setResult] = useState(null);
   const rows = raw.trim().split("\n").map((r) => r.split(",").map((x) => x.trim()));

@@ -383,45 +383,9 @@ export const findOrCreateGoogleUser = async ({ googleId, email, name, picture })
   }
 };
 
-// Initial seed contact record (c1) to keep existing CONVS references valid
-export const seedContact = {
-  id: "c1",
-  workspaceId: "ws_default",
-  name: "Arun Kumar",
-  company: "Vertex Retail Group",
-  title: "Head of Operations",
-  location: "Chennai, IN",
-  email: "arun.kumar@vertexretail.in",
-  phone: "+91 98407 22110",
-  stage: "Opportunity",
-  status: "Qualified",
-  score: 87,
-  value: "₹18,400",
-  ltv: "₹18,400",
-  churn: "Low",
-  sentiment: "Positive",
-  intent: "Purchase",
-  channels: ["whatsapp", "voice", "email"],
-  tags: ["High Intent", "Enterprise", "Pricing"],
-  memory: [
-    "Prefers WhatsApp over email",
-    "Asked about Enterprise annual pricing twice",
-    "Company has around 120 employees across 14 stores",
-    "Wants onboarding completed before Diwali season",
-  ],
-  aiSummary: "Contacted 3 times in the last 7 days about the Enterprise plan. High purchase intent. Asked about annual pricing and implementation timeline.",
-  engagement: 92,
-  owner: "Rina Sato",
-  source: "Website",
-  archived: false,
-  notes: [],
-  cf: {},
-  created: "2026-07-10",
-  lastContact: 2,
-};
-
-// Also put seed contact in in-memory fallback array db.contacts
-db.contacts = [seedContact];
+// Initial contacts array
+export const seedContact = null;
+db.contacts = [];
 
 // ==============================================================================
 // 3. MONGODB CONNECTION SETUP & SEEDING
@@ -547,13 +511,6 @@ export const connectDB = async () => {
           await MessageModel.create(msg);
         }
       }
-    }
-
-    // Seed initial demo contact (c1) into MongoDB if empty
-    const contactCount = await ContactModel.countDocuments();
-    if (contactCount === 0) {
-      console.log("🌱 Seeding initial demo contact (c1) into MongoDB...");
-      await ContactModel.create(seedContact);
     }
 
     // Merge any duplicate WhatsApp conversations created by legacy WABA ID bug
@@ -899,16 +856,7 @@ export const deleteInstaxBotConfig = async (workspaceId = "ws_default") => {
 export const fetchContacts = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const filter = workspaceId ? { $or: [{ workspaceId }, { workspaceId: "ws_default" }] } : {};
-    let contacts = await ContactModel.find(filter).sort({ createdAt: -1 }).lean();
-    const hasSeed = contacts.some((c) => c.id === "c1" || String(c._id) === "c1");
-    if (!hasSeed) {
-      try {
-        await ContactModel.findOneAndUpdate({ id: "c1" }, { $set: seedContact }, { upsert: true });
-        contacts = await ContactModel.find(filter).sort({ createdAt: -1 }).lean();
-      } catch (err) {
-        console.warn("⚠️ Contact seed warning:", err.message);
-      }
-    }
+    const contacts = await ContactModel.find(filter).sort({ createdAt: -1 }).lean();
     return contacts.map(normalizeMongoDoc);
   }
   return db.contacts.filter((c) => !c.workspaceId || c.workspaceId === workspaceId || workspaceId === "ws_default").map(normalizeMongoDoc);

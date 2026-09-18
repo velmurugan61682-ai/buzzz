@@ -975,6 +975,16 @@ apiRouter.get("/contacts/:id", async (req, res, next) => {
   }
 });
 
+apiRouter.delete("/contacts/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await deleteContactById(id);
+    res.json({ success: true, deleted: (result?.deletedCount || 0) > 0, id });
+  } catch (err) {
+    next(err);
+  }
+});
+
 apiRouter.post("/contacts", async (req, res, next) => {
   try {
     const wsId = getWorkspaceId(req);
