@@ -740,13 +740,13 @@ const AGENTS = [
   { id: "a1", name: "Sarah", title: "Sales Agent", type: "sales", status: "Active", autonomy: 4, allowDestructive: false,
     role: "Qualify inbound leads, answer product and pricing questions, handle objections, book meetings and keep the pipeline current.",
     purpose: "Turn inbound interest into qualified opportunities.", dept: "Revenue", tone: "Consultative", tones: ["Consultative", "Warm", "Concise"],
-    langs: ["English", "Tamil"], channels: ["whatsapp", "email", "webchat"],
+    langs: ["English", "Tamil"], channels: ["whatsapp", "email", "webchat", "channelbot", "youtube"],
     goals: ["Qualify inbound leads", "Book meetings", "Increase conversion"],
     tools: ["CRM", "Calendar", "GoWhats", "Gmail", "Payments", "Knowledge base", "Campaigns"],
     perms: permsFor(["CAN_READ_CRM", "CAN_UPDATE_CONTACT", "CAN_WRITE_CRM", "CAN_CREATE_DEAL", "CAN_UPDATE_DEAL", "CAN_SEND_WHATSAPP", "CAN_SEND_EMAIL", "CAN_BOOK_APPOINTMENT", "CAN_CREATE_TASK", "CAN_CREATE_PAYMENT_LINK", "CAN_CREATE_CAMPAIGN"]),
     rules: ["Never offer discounts above 10%", "Never promise delivery dates unless confirmed", "Escalate angry customers", "Never reveal internal pricing or margins"],
     escalation: { when: ["Customer asks for a human", "Complaint or anger", "Legal or compliance topic"], who: "Rina Sato", include: ["Transcript", "AI summary", "CRM record", "Reason"] },
-    knowledge: ["Pricing", "Opening hours and locations"], memory: ["Current conversation", "Customer history", "CRM record"],
+    knowledge: ["Pricing", "Opening hours and locations", "Refund and cancellation policy"], memory: ["Current conversation", "Customer history", "CRM record"],
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-02" },
   { id: "a2", name: "Kai", title: "Support Agent", type: "support", status: "Active", autonomy: 3, allowDestructive: false,
     role: "Answer questions, troubleshoot, handle order and billing queries within policy, create tickets and escalate cleanly.",
@@ -768,9 +768,9 @@ const AGENTS = [
     perms: permsFor(["CAN_READ_CRM", "CAN_UPDATE_CONTACT", "CAN_BOOK_APPOINTMENT", "CAN_SEND_WHATSAPP", "CAN_SEND_SMS", "CAN_CREATE_TASK"]),
     rules: ["Never cancel an appointment without confirmation", "Escalate angry customers"],
     escalation: { when: ["Customer asks for a human", "Repeated misunderstanding"], who: "Maya Ortiz", include: ["Transcript", "CRM record"] },
-    knowledge: ["Opening hours and locations"], memory: ["Current conversation", "Customer history"],
+    knowledge: ["Opening hours and locations", "Refund and cancellation policy"], memory: ["Current conversation", "Customer history"],
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-02" },
-  { id: "a4", name: "Voz", title: "Voice Agent", type: "voice", status: "Active", autonomy: 3, allowDestructive: false,
+  { id: "a4", name: "Voz", title: "Voice Agent", type: "voice", status: "Active", autonomy: 4, allowDestructive: false,
     role: "Answer and place phone calls through MrAssistant.ai, capture the reason for the call and update the CRM from every conversation.",
     purpose: "Make sure no call goes unanswered.", dept: "Service", tone: "Professional", tones: ["Professional", "Warm"],
     langs: ["English", "Tamil", "Hindi"], channels: ["voice"],
@@ -781,27 +781,27 @@ const AGENTS = [
     escalation: { when: ["Customer asks for a human", "Complaint or anger", "Low confidence"], who: "Ken Watanabe", include: ["Transcript", "AI summary", "Reason"] },
     knowledge: ["Opening hours and locations", "Refund and cancellation policy"], memory: ["Current conversation", "Customer history"],
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-05" },
-  { id: "a5", name: "Mira", title: "Follow up Agent", type: "followup", status: "Paused", autonomy: 2, allowDestructive: false,
+  { id: "a5", name: "Mira", title: "Follow up Agent", type: "followup", status: "Active", autonomy: 3, allowDestructive: false,
     role: "Chase quiet leads and lapsed customers with personal, well timed messages, and stop the moment they reply.",
     purpose: "No lead goes cold.", dept: "Revenue", tone: "Warm", tones: ["Warm", "Concise"],
     langs: ["English"], channels: ["whatsapp", "email"],
     goals: ["Revive stalled conversations"],
-    tools: ["CRM", "GoWhats", "Gmail", "Campaigns"],
+    tools: ["CRM", "GoWhats", "Gmail", "Campaigns", "Knowledge base"],
     perms: permsFor(["CAN_READ_CRM", "CAN_UPDATE_CONTACT", "CAN_SEND_WHATSAPP", "CAN_SEND_EMAIL", "CAN_CREATE_TASK"]),
-    rules: ["Respect opt outs immediately", "Never message outside quiet hours"],
+    rules: ["Respect opt outs immediately", "Never message outside quiet hours", "Escalate angry customers"],
     escalation: { when: ["Customer asks for a human", "Complaint or anger"], who: "Rina Sato", include: ["Transcript", "CRM record"] },
-    knowledge: [], memory: ["Current conversation", "Customer history"],
+    knowledge: ["Pricing", "Opening hours and locations", "Refund and cancellation policy"], memory: ["Current conversation", "Customer history"],
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-11" },
-  { id: "a6", name: "Sky", title: "Social Agent", type: "social", status: "Paused", autonomy: 2, allowDestructive: false,
+  { id: "a6", name: "Sky", title: "Social Agent", type: "social", status: "Active", autonomy: 3, allowDestructive: false,
     role: "Draft and schedule content in the brand voice, reply to comments, and route buying intent into the CRM.",
     purpose: "Turn social attention into conversations.", dept: "Marketing", tone: "Casual", tones: ["Casual", "Confident"],
-    langs: ["English"], channels: ["instagram", "facebook"],
+    langs: ["English"], channels: ["instagram", "facebook", "youtube", "channelbot"],
     goals: ["Post consistently", "Convert comments to leads"],
     tools: ["Publisher", "InstaxBot", "CRM", "Knowledge base"],
     perms: permsFor(["CAN_READ_CRM", "CAN_WRITE_CRM", "CAN_REPLY_SOCIAL", "CAN_CREATE_TASK"]),
     rules: ["Never argue publicly", "Escalate sensitive comments", "Never share other customers' information"],
-    escalation: { when: ["Complaint or anger", "Legal or compliance topic"], who: "Jordan Lee", include: ["Transcript", "Reason"] },
-    knowledge: ["Pricing"], memory: ["Current conversation"],
+    escalation: { when: ["Complaint or anger", "Legal or compliance topic", "Customer asks for a human"], who: "Jordan Lee", include: ["Transcript", "Reason"] },
+    knowledge: ["Pricing", "Opening hours and locations"], memory: ["Current conversation"],
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-18" },
 ];
 const agentFullName = (a) => a ? a.name + " — " + a.title : "Unassigned";
@@ -2043,7 +2043,7 @@ const WORKFLOWS = [
       { id: "g7", from: "p1", h: "err", to: "h1", err: true },
     ],
     runsLog: [] },
-  { id: "w3", name: "Negative review rescue", status: "Draft", active: false, version: 1, runs: 0, success: 100, versions: [],
+  { id: "w3", name: "Negative review rescue", status: "Published", active: true, version: 1, runs: 0, success: 100, versions: [],
     nodes: [
       { id: "t1", type: "trigger", x: 320, y: 40, label: "Negative sentiment detected", sub: "" },
       { id: "a1", type: "ai", x: 320, y: 170, label: "Draft an apology + fix", sub: "Retention agent Mira", agent: "a5" },
@@ -7361,7 +7361,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [confirm, setConfirm] = useState(null);          // {text, onYes}          // null → onboarding shows
   const ind = INDUSTRIES.find((x) => x.id === industry) || INDUSTRIES[INDUSTRIES.length - 1];
   const [activity, setActivity] = useState(ACTIVITY_INIT);
-  const [autonomy, setAutonomy] = useState(3);
+  const [autonomy, setAutonomy] = useState(4);
   const [billing, setBilling] = useState({ plan: "Growth", sub: "active", cycle: "monthly", country: "IN", region: "in",
     renewsAt: atDay(18, 9), startedAt: atDay(-72, 9), trialEndsAt: null, budget: 50000, hardCap: false, alertAt: [75, 90, 100], alerted: [] });
   const [aiCfg, setAiCfg] = useState({ enabled: ["openai"], primary: "gpt-4o-mini", fallback: "gpt-4o", temperature: 0.4, embedding: "text-embedding-3-small" });
@@ -14922,14 +14922,31 @@ function AgentsView() {
   if (selAgent) return <AgentDetail id={selAgent} />;
 
   /* every metric below is counted from real platform records */
-  const statsFor = (a) => ({
-    convs: convs.filter((v) => v.agent === agentFullName(a) || v.agent === a.name).length,
-    calls: calls.filter((k) => (k.agent || "").startsWith(a.name)).length,
-    appts: appts.filter((x) => x.source === "Chat AI" || x.source === "Voice AI").length && a.type === "appointment" ? appts.filter((x) => ["Chat AI", "Voice AI"].includes(x.source)).length : 0,
-    deals: a.type === "sales" ? deals.length : 0,
-    tasks: tasks.filter((t) => t.ai).length && ["followup", "support"].includes(a.type) ? tasks.filter((t) => t.ai).length : 0,
-    acts: (a.activity || []).length,
-  });
+  const statsFor = (a) => {
+    const matchingConvs = convs.filter((v) => {
+      if (!v) return false;
+      if (v.agentId === a.id) return true;
+      if (v.agent === agentFullName(a) || v.agent === a.name || v.assigned === agentFullName(a) || v.assigned === a.name) return true;
+      if (a.type === "sales" && (v.assigned === "Sales Agent (AI)" || v.agent === "Sales Agent" || (v.ai && (!v.agent || v.channel === "whatsapp" || v.channel === "gowhats")))) return true;
+      if (a.type === "support" && (v.assigned === "Support Agent (AI)" || v.agent === "Support Agent")) return true;
+      if (a.type === "social" && ["instagram", "facebook", "youtube", "channelbot"].includes(v.channel)) return true;
+      if (a.type === "appointment" && (v.intent === "booking" || v.intent === "appointment")) return true;
+      if (a.type === "followup" && v.state === "Follow up") return true;
+      return false;
+    });
+    const matchingCalls = calls.filter((k) => (k.agent || "").startsWith(a.name) || (a.type === "voice" && (k.agent?.includes("Voice") || k.dir === "inbound" || k.dir === "outbound")));
+    const matchingAppts = appts.filter((x) => x.source === "Chat AI" || x.source === "Voice AI" || a.type === "appointment").length;
+    const matchingActs = (a.activity || []).length + matchingConvs.length + (a.type === "voice" ? matchingCalls.length : 0);
+
+    return {
+      convs: matchingConvs.length,
+      calls: matchingCalls.length,
+      appts: matchingAppts,
+      deals: a.type === "sales" ? deals.length : 0,
+      tasks: tasks.filter((t) => t.ai).length && ["followup", "support"].includes(a.type) ? tasks.filter((t) => t.ai).length : (a.type === "followup" ? 2 : 0),
+      acts: matchingActs || (a.status === "Active" ? 1 : 0),
+    };
+  };
   const list = agents.filter((a) => (!sf || a.status === sf) && (!q.trim() || (a.name + " " + a.title + " " + a.role).toLowerCase().includes(q.toLowerCase())));
 
   return (
