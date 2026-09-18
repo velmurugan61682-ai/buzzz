@@ -7009,9 +7009,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             };
 
             if (newMsgItem.from === "customer") {
-              const sender = backendConv?.customerName || backendMsg?.sender?.name || "Customer";
-              const snippet = (newMsgItem.text || "").slice(0, 45);
-              flash(`📩 New message from ${sender}: "${snippet}${snippet.length >= 45 ? "…" : ""}"`);
+              const convTargetId = backendConv?.id;
+              if (convTargetId) {
+                setNotifRead((prev) => prev.filter((id) => id !== `msg_${convTargetId}`));
+              }
             }
 
             setConvs((cs) => {
@@ -7026,14 +7027,20 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
                 const target = updated[existingIdx];
                 const msgExists = (target.msgs || []).some((m) => m.id === newMsgItem.id);
                 const newMsgs = msgExists ? target.msgs : [...(target.msgs || []), newMsgItem];
+                const isIncomingCustomer = backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer";
                 updated[existingIdx] = {
                   ...target,
                   customerName: backendConv.customerName || target.customerName,
                   channel: target.channel || channelKey,
-                  unread: (backendMsg.sender === "customer" || backendMsg.direction === "inbound" || backendMsg.sender?.kind === "customer") ? (target.unread || 0) + 1 : target.unread,
+                  unread: isIncomingCustomer ? (target.unread || 0) + 1 : target.unread,
                   last: newMsgItem.text,
+                  lastMessage: newMsgItem.text,
+                  updatedAt: newMsgItem.time || new Date().toISOString(),
                   msgs: newMsgs,
                 };
+                if (isIncomingCustomer && target.id) {
+                  setNotifRead((prev) => prev.filter((id) => id !== `msg_${target.id}`));
+                }
                 return updated;
               } else {
                 const newConvObj = {
@@ -7049,8 +7056,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
                   priority: "high",
                   msgs: [newMsgItem],
                   last: newMsgItem.text,
+                  lastMessage: newMsgItem.text,
+                  updatedAt: newMsgItem.time || new Date().toISOString(),
                   tags: [channelKey],
                 };
+                setNotifRead((prev) => prev.filter((id) => id !== `msg_${newConvObj.id}`));
                 return [newConvObj, ...cs];
               }
             });
