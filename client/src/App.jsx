@@ -3227,11 +3227,24 @@ function suggestCdmCampaigns(bp) {
 /* ==================================================================== */
 
 /* Read the API base from a global rather than import.meta: the artifact runner
-   evaluates this file as a plain script, where import.meta is a parse error.
-   Set window.BUZZZ_API_BASE in index.html, or inject it at build time. */
-const API_BASE = (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) ||
-  (typeof import.meta !== "undefined" && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_BASE)) ||
-  "http://localhost:5000";
+const resolveApiBase = () => {
+  if (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) {
+    return globalThis.BUZZZ_API_BASE;
+  }
+  if (typeof import.meta !== "undefined" && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_BASE)) {
+    return (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE).replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined") {
+    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    if (isLocal) {
+      return "http://localhost:5000";
+    }
+    return window.location.origin;
+  }
+  return "http://localhost:5000";
+};
+
+const API_BASE = resolveApiBase();
 
 async function apiCall(path, { method = "GET", body, timeoutMs = 15000 } = {}) {
   const apiBase = API_BASE || "http://localhost:5000";
@@ -7350,11 +7363,27 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
 
   /* Real-time SSE listener for multi-channel incoming messages (ChannelBot, InstaxBot, Gmail) */
   useEffect(() => {
-    const apiBaseUrl = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+    const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    const configuredApiBase = (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) ||
+      (typeof import.meta !== "undefined" && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_BASE)) ||
+      "";
+
+    const apiBaseUrl = configuredApiBase || (isLocal ? "http://localhost:5000" : (typeof window !== "undefined" ? window.location.origin : ""));
     const sseUrl = `${apiBaseUrl}/api/v1/events`;
     let es;
+    let sseFailures = 0;
     try {
       es = new EventSource(sseUrl);
+      es.onopen = () => {
+        sseFailures = 0;
+      };
+      es.onerror = () => {
+        sseFailures++;
+        // If SSE connection fails in production/serverless, close to stop endless aggressive retry spam
+        if (sseFailures >= 2) {
+          try { es.close(); } catch (_) {}
+        }
+      };
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
