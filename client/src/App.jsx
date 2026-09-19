@@ -3225,8 +3225,7 @@ function suggestCdmCampaigns(bp) {
 /* may exist. When no API is configured this reports that plainly rather */
 /* than pretending a meeting was created.                                */
 /* ==================================================================== */
-
-/* Read the API base from a global rather than import.meta: the artifact runner
+// Read the API base dynamically based on environment (localhost vs production origin)
 const resolveApiBase = () => {
   if (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) {
     return globalThis.BUZZZ_API_BASE;
