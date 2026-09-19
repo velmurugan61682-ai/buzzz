@@ -1098,6 +1098,24 @@ const SERVICES_INIT = [
   { id: "sv4", name: "VIP Account Review & Support Call", dur: 30, price: 0, kind: "Phone", buffBefore: 0, buffAfter: 10, staff: ["st1", "st3"], locations: ["L3"], approval: false, deposit: 0, policy: "Priority VIP channel", desc: "Direct account manager check-in and permanent fix walkthrough." },
 ];
 
+const BOOKING_RULES_INIT = {
+  minNoticeH: 2,
+  maxAdvanceD: 60,
+  maxPerDay: 12,
+  maxPerCustomer: 3,
+  cancelWindowH: 24,
+  rescheduleWindowH: 4,
+  autoConfirm: true,
+  slotStep: 15,
+  tz: "Asia/Kolkata",
+  reminders: [
+    { id: "r1", at: "On booking", ch: "whatsapp", on: true },
+    { id: "r2", at: "24 hours before", ch: "whatsapp", on: true },
+    { id: "r3", at: "2 hours before", ch: "sms", on: true },
+    { id: "r4", at: "After completion", ch: "whatsapp", on: false },
+  ],
+};
+
 const makeRelIso = (dOff, h, m = 0) => {
   const d = new Date();
   d.setDate(d.getDate() + dOff);
