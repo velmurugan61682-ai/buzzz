@@ -119,24 +119,33 @@ export function UnifiedInbox() {
     loadInbox();
 
     // Setup real-time EventSource (SSE) listener for new_message push events
-    const eventSource = new EventSource("/api/events");
+    let eventSource;
+    try {
+      eventSource = new EventSource("/api/events");
 
-    eventSource.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "new_message" || payload.type === "message:new") {
-          const newMsg = payload.payload?.message || payload.payload;
-          if (newMsg && (newMsg.platform || newMsg.text)) {
-            setMessages((prev) => dedupeMessages([newMsg, ...prev]));
+      eventSource.onerror = () => {
+        try { eventSource.close(); } catch (_) {}
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "new_message" || payload.type === "message:new") {
+            const newMsg = payload.payload?.message || payload.payload;
+            if (newMsg && (newMsg.platform || newMsg.text)) {
+              setMessages((prev) => dedupeMessages([newMsg, ...prev]));
+            }
           }
+        } catch (err) {
+          console.warn("⚠️ Failed to parse SSE event payload:", err);
         }
-      } catch (err) {
-        console.warn("⚠️ Failed to parse SSE event payload:", err);
-      }
-    };
+      };
+    } catch (_) {}
 
     return () => {
-      eventSource.close();
+      if (eventSource) {
+        try { eventSource.close(); } catch (_) {}
+      }
     };
   }, []);
 

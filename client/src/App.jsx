@@ -3225,8 +3225,12 @@ function suggestCdmCampaigns(bp) {
 /* may exist. When no API is configured this reports that plainly rather */
 /* than pretending a meeting was created.                                */
 /* ==================================================================== */
-// Read the API base dynamically based on environment (localhost vs production origin)
-const resolveApiBase = () => {
+const isClientLocal = () => {
+  if (typeof window === "undefined") return false;
+  return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+};
+
+const getApiHost = () => {
   if (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) {
     return globalThis.BUZZZ_API_BASE;
   }
@@ -3234,19 +3238,16 @@ const resolveApiBase = () => {
     return (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE).replace(/\/$/, "");
   }
   if (typeof window !== "undefined") {
-    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    if (isLocal) {
-      return "http://localhost:5000";
-    }
+    if (isClientLocal()) return "http://localhost:5000";
     return window.location.origin;
   }
-  return "http://localhost:5000";
+  return "";
 };
 
-const API_BASE = resolveApiBase();
+const API_BASE = getApiHost();
 
 async function apiCall(path, { method = "GET", body, timeoutMs = 15000 } = {}) {
-  const apiBase = API_BASE || "http://localhost:5000";
+  const apiBase = getApiHost();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -3496,7 +3497,7 @@ const authApi = {
   logOut: async () => {
     try { localStorage.removeItem("buzzz_session"); } catch (e) {}
     try {
-      const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+      const apiBase = getApiHost();
       await fetch(`${apiBase}/api/v1/auth/logout`, { method: "POST", credentials: "include" });
     } catch (e) {}
     return { ok: true };
@@ -6575,7 +6576,7 @@ const SOCIAL_PROVIDERS = {
 
 const oauthApi = {
   providers: async () => {
-    const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+    const apiBase = getApiHost();
     try {
       const res = await fetch(`${apiBase}/api/v1/auth/oauth/providers`);
       if (res.ok) {
@@ -6586,7 +6587,7 @@ const oauthApi = {
     return { ok: true, data: { providers: [{ id: "google", label: "Google" }] } };
   },
   authorize: async (provider) => {
-    const apiBase = typeof API_BASE !== "undefined" && API_BASE ? API_BASE : "http://localhost:5000";
+    const apiBase = getApiHost();
     if (provider === "google") {
       const authUrl = `${apiBase}/api/v1/auth/google`;
       return { ok: true, data: { authorization_url: authUrl, url: authUrl } };
@@ -7362,12 +7363,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
 
   /* Real-time SSE listener for multi-channel incoming messages (ChannelBot, InstaxBot, Gmail) */
   useEffect(() => {
-    const isLocal = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    const configuredApiBase = (typeof globalThis !== "undefined" && globalThis.BUZZZ_API_BASE) ||
-      (typeof import.meta !== "undefined" && (import.meta.env?.VITE_API_URL || import.meta.env?.VITE_API_BASE_URL || import.meta.env?.VITE_API_BASE)) ||
-      "";
-
-    const apiBaseUrl = configuredApiBase || (isLocal ? "http://localhost:5000" : (typeof window !== "undefined" ? window.location.origin : ""));
+    const apiBaseUrl = getApiHost();
     const sseUrl = `${apiBaseUrl}/api/v1/events`;
     let es;
     let sseFailures = 0;
@@ -7378,8 +7374,8 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       };
       es.onerror = () => {
         sseFailures++;
-        // If SSE connection fails in production/serverless, close to stop endless aggressive retry spam
-        if (sseFailures >= 2) {
+        // If SSE connection fails in production/serverless, close to stop endless retry spam
+        if (sseFailures >= 2 || !isClientLocal()) {
           try { es.close(); } catch (_) {}
         }
       };
@@ -7493,9 +7489,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   /* Fetch real connected Google/Gmail & Contacts API status from backend */
   const syncGoogleConnectionStatus = useCallback(async () => {
     try {
-      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
-        ? "http://localhost:5000" 
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      const apiHost = getApiHost();
 
       const data = await safeFetchJson(`${apiHost}/api/google/status`);
       if (data && data.connected && data.email) {
@@ -7543,9 +7537,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   /* Fetch real connected InstaxBot status from backend */
   const syncInstaxBotConnectionStatus = useCallback(async () => {
     try {
-      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
-        ? "http://localhost:5000" 
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      const apiHost = getApiHost();
 
       const data = await safeFetchJson(`${apiHost}/api/integrations/instaxbot/status`);
       if (data && data.connected) {
@@ -7582,9 +7574,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   /* Fetch real connected ChannelBot.in status from backend */
   const syncChannelBotConnectionStatus = useCallback(async () => {
     try {
-      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-        ? "http://localhost:5000"
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      const apiHost = getApiHost();
 
       const data = await safeFetchJson(`${apiHost}/api/integrations/channelbot/status`);
       if (data && data.connected) {
@@ -7622,9 +7612,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   /* Fetch real connected LinkedIn status from backend */
   const syncLinkedInConnectionStatus = useCallback(async () => {
     try {
-      const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
-        ? "http://localhost:5000" 
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      const apiHost = getApiHost();
 
       const data = await safeFetchJson(`${apiHost}/api/linkedin/status`);
       if (data && data.connected) {
@@ -8295,6 +8283,9 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     let eventSource = null;
     try {
       eventSource = new EventSource("/api/events");
+      eventSource.onerror = () => {
+        try { eventSource.close(); } catch (_) {}
+      };
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -23788,9 +23779,7 @@ function ConnectModal({ provider, onClose }) {
     return () => window.removeEventListener("message", onMsg);
   }, [connectProvider, flash, onClose]);
 
-  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost")) 
-    ? "http://localhost:5000" 
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+  const apiHost = getApiHost();
   const webhookEndpoint = provider.id === "gowhats"
     ? `${apiHost}/api/v1/inbox/webhook`
     : provider.id === "instaxbot"
@@ -23802,16 +23791,12 @@ function ConnectModal({ provider, onClose }) {
   };
   const run = async () => {
     if (provider.id === "linkedin") {
-      const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-        ? "http://localhost:5000"
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      const targetHost = getApiHost();
       window.location.href = `${targetHost}/api/linkedin/auth`;
       return;
     }
     if (provider.id === "gmail" || provider.id === "google" || provider.id === "gcontacts") {
-      const targetHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-        ? "http://localhost:5000"
-        : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+      const targetHost = getApiHost();
       window.location.href = `${targetHost}/api/google/auth`;
       return;
     }
@@ -23988,9 +23973,7 @@ function ProviderDetail({ provider, onClose }) {
   const [tab, setTab] = useState("Overview");
   const depCount = deps.agents.length + deps.workflows.length + deps.campaigns.length;
 
-  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-    ? "http://localhost:5000"
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+  const apiHost = getApiHost();
 
   const handleDisconnect = async () => {
     if (provider.id === "instaxbot") {
@@ -24158,9 +24141,7 @@ function ChannelBotBackfillWidget() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
 
-  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-    ? "http://localhost:5000"
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+  const apiHost = getApiHost();
 
   const pollStatus = async () => {
     try {
@@ -24254,9 +24235,7 @@ function InstaxBotBackfillWidget() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
 
-  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-    ? "http://localhost:5000"
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+  const apiHost = getApiHost();
 
   const pollStatus = async () => {
     try {
@@ -24351,9 +24330,7 @@ function LinkedInShareWidget() {
   const [text, setText] = useState("");
   const [sharing, setSharing] = useState(false);
 
-  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-    ? "http://localhost:5000"
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+  const apiHost = getApiHost();
 
   const checkStatus = async () => {
     try {
@@ -24483,9 +24460,7 @@ function GoogleContactsView() {
   const [syncing, setSyncing] = useState(false);
   const [status, setStatus] = useState({ connected: false, error: null });
 
-  const apiHost = (typeof window !== "undefined" && window.location.origin.includes("localhost"))
-    ? "http://localhost:5000"
-    : (typeof window !== "undefined" ? window.location.origin : "http://localhost:5000");
+  const apiHost = getApiHost();
 
   const loadContacts = async () => {
     setLoading(true);

@@ -3,7 +3,7 @@
  * Version: 1.0.0
  */
 
-const CACHE_NAME = "buzzz-cache-v1";
+const CACHE_NAME = "buzzz-cache-v2";
 const PRECACHE_RESOURCES = [
   "/",
   "/index.html",
@@ -43,7 +43,8 @@ self.addEventListener("activate", (event) => {
 
 // 3. Fetch strategy:
 // - Pass through all API requests directly to network (never stale API responses)
-// - Cache-First for static assets (fonts, images, Vite bundle chunks)
+// - Let native browser module loader handle JavaScript modulepreloads without cross-world mismatch
+// - Cache-First for static assets (fonts, images, icons, css)
 // - Network-First with cache fallback for page navigation
 self.addEventListener("fetch", (event) => {
   const req = event.request;
@@ -60,6 +61,11 @@ self.addEventListener("fetch", (event) => {
     url.pathname.startsWith("/auth/") ||
     url.pathname === "/api/events"
   ) {
+    return;
+  }
+
+  // Let browser native module loader handle JavaScript chunks & modulepreloads cleanly
+  if (req.destination === "script" || req.destination === "worker" || url.pathname.endsWith(".js")) {
     return;
   }
 
