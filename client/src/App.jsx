@@ -13212,33 +13212,8 @@ function InboxView() {
       {/* ============ list panel ============ */}
       <div className={`${conv ? "hidden md:flex" : "flex"} w-full md:w-72 xl:w-80 shrink-0 md:border-r flex-col min-h-0 ${T.border} ${T.panel}`}>
         <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
-            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/30">
-              AI ACTIVE
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={runAutopilot}
-              disabled={runningAutopilot}
-              title="Run AI Autopilot on unread conversations"
-              className="h-7 px-2.5 rounded-lg text-[10px] font-semibold text-white flex items-center gap-1 shadow-xs transition hover:opacity-90 disabled:opacity-50 cursor-pointer"
-              style={{ background: BRAND }}
-            >
-              <Zap size={11} className={runningAutopilot ? "animate-spin" : ""} />
-              {runningAutopilot ? "Running…" : "AI Autopilot"}
-            </button>
-            <button
-              onClick={() => syncAppointmentsWithAna && syncAppointmentsWithAna(convs)}
-              title="Ana (Appointment Agent): Sync appointments from conversation chats"
-              className={`h-7 px-2 rounded-lg text-[10px] font-semibold border flex items-center gap-1 transition ${T.chip} ${T.hover}`}
-            >
-              <Calendar size={11} className="text-red-500" />
-              <span>Ana Sync</span>
-            </button>
-            <button onClick={() => setAdv(!adv)} title="Filter by channel" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
-          </div>
+          <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
+          <button onClick={() => setAdv(!adv)} title="Filter by channel" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
         </div>
         <div className={`px-4 py-3 space-y-2 border-b ${T.border}`}>
           <div className={`h-9 flex items-center gap-2 px-3 rounded-lg ${T.input}`}>
