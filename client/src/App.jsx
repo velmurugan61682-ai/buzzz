@@ -8006,9 +8006,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return { ...p, status, stats: status === "Published" && !p.stats ? { reach: 0, likes: 0, comments: 0, shares: 0, clicks: 0, leads: 0 } : p.stats };
   }));
   const socialLead = (comment) => {
-    const name = comment.who.replace("@", "").replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    const r = createContact({ name, company: "—", source: "Social media", status: "New", channels: [comment.platform], tags: ["Social lead", PLATFORMS[comment.platform].label], bySource: "BUZZZ AI" });
-    if (r.ok) { createTask({ txt: "Reply to " + comment.who + " about " + (comment.kind === "Question" ? "pricing" : "their comment"), who: "Rina Sato", contactId: r.id, type: "Follow up", ai: true }); }
+    const name = (comment.who || "Lead").replace("@", "").replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const platLabel = PLATFORMS[comment.platform]?.label || comment.platform || "Social";
+    const r = createContact({ name, company: "—", source: "Social media", status: "New", channels: [comment.platform || "social"], tags: ["Social lead", platLabel], bySource: "BUZZZ AI" });
+    if (r.ok) { createTask({ txt: "Reply to " + (comment.who || name) + " about " + (comment.kind === "Question" ? "pricing" : "their comment"), who: "Rina Sato", contactId: r.id, type: "Follow up", ai: true }); }
     return r;
   };
 
@@ -20172,60 +20173,328 @@ function AccountsView() {
 
 /* ---------- engagement ---------- */
 function EngagementView() {
-  const { T, dk, comments, setComments, posts, socialLead, flash, openContact, log } = useApp();
+  const { T, dk, comments = [], setComments, posts = [], socialLead, flash, openContact, openConv, log, convs = [], setConvs } = useApp();
   const [f, setF] = useState("");
   const [reply, setReply] = useState({});
-  const list = comments.filter((c) => !f || c.kind === f).sort((a, b) => new Date(b.at) - new Date(a.at));
-  const tint = { Question: "bg-sky-50 text-sky-700 border-sky-200", Positive: "bg-emerald-50 text-emerald-700 border-emerald-200", Negative: "bg-red-50 text-red-700 border-red-200", Spam: "bg-zinc-100 text-zinc-500 border-zinc-200" };
+  const [repliedIds, setRepliedIds] = useState(new Set());
+
+  // Derive and combine engagement items from inbox chat conversations (YouTube, Instagram, Facebook, LinkedIn, WhatsApp) & social comments
+  const combinedItems = useMemo(() => {
+    // 1. Direct social comments in state
+    const existing = (comments || []).map((c) => ({
+      ...c,
+      platform: c.platform || "instagram",
+      isQuestion: c.kind === "Question" || (Boolean(c.text) && c.text.includes("?")),
+      sentiment: c.sentiment || (c.kind === "Positive" ? "Positive" : c.kind === "Negative" ? "Negative" : "Neutral"),
+    }));
+
+    // 2. Chat conversations from unified inbox
+    const fromConvs = (convs || []).map((conv) => {
+      const msgs = Array.isArray(conv.msgs) ? conv.msgs : [];
+      const customerMsgs = msgs.filter((m) => m.from === "customer" || m.direction === "inbound" || m.sender?.kind === "customer");
+      const lastCust = customerMsgs[customerMsgs.length - 1];
+      const lastAny = msgs[msgs.length - 1];
+      const text = lastCust?.text || conv.lastMessage || conv.last || "Inbound message";
+      const time = lastCust?.time || lastAny?.time || conv.updatedAt || new Date().toISOString();
+
+      // Normalize platform
+      const rawPlatform = (conv.channel || conv.platform || "youtube").toLowerCase();
+      let platform = "youtube";
+      if (rawPlatform.includes("instagram") || rawPlatform.includes("instaxbot")) platform = "instagram";
+      else if (rawPlatform.includes("facebook")) platform = "facebook";
+      else if (rawPlatform.includes("linkedin")) platform = "linkedin";
+      else if (rawPlatform.includes("whatsapp") || rawPlatform.includes("gowhats")) platform = "whatsapp";
+      else if (rawPlatform.includes("x") || rawPlatform.includes("twitter")) platform = "x";
+      else if (rawPlatform.includes("google")) platform = "google";
+      else platform = "youtube";
+
+      // Detect question
+      const hasQMark = text.includes("?");
+      const isQuestionIntent = ["question", "pricing", "inquiry", "product inquiry"].includes((conv.intent || "").toLowerCase());
+      const isQuestionText = /^(does|do|can|is|are|will|would|how|what|where|when|why|which|could|should|asking)\b/i.test(text.trim());
+      const isQuestion = hasQMark || isQuestionIntent || isQuestionText;
+
+      // Detect sentiment
+      let sentiment = conv.sentiment || "Neutral";
+      if (/amazing|awesome|love|great|super|fire|good|excellent|thanks|thank you|best|perfect|interested|promising/i.test(text)) {
+        sentiment = "Positive";
+      } else if (/deleted|unacceptable|broken|error|fail|complaint|worst|scam|hate|angry|refund|dispute|terrible|slow|bug/i.test(text) || (conv.tags || []).includes("Complaint")) {
+        sentiment = "Negative";
+      }
+
+      // Primary kind for pill display
+      let kind = "Positive";
+      if (sentiment === "Negative") {
+        kind = "Negative";
+      } else if (isQuestion) {
+        kind = "Question";
+      } else if (sentiment === "Positive") {
+        kind = "Positive";
+      } else {
+        kind = isQuestion ? "Question" : "Positive";
+      }
+
+      const isLead = Boolean(
+        conv.priority === "High" ||
+        conv.priority === "Critical" ||
+        ["purchase", "pricing", "lead", "product inquiry"].includes((conv.intent || "").toLowerCase()) ||
+        (conv.tags || []).some((t) => /lead|intent|sale|enterprise|channelbot|buying/i.test(t))
+      );
+
+      const hasReplied = Boolean(
+        repliedIds.has(conv.id) ||
+        (lastAny && (lastAny.from === "ai" || lastAny.from === "agent" || lastAny.from === "user")) ||
+        conv.unread === 0 ||
+        conv.state === "Resolved"
+      );
+
+      const postTitle =
+        conv.videoTitle ||
+        msgs.find((m) => m.metadata?.videoTitle)?.metadata?.videoTitle ||
+        (conv.tags || []).find((t) => t.includes("YouTube") || t.includes("ChannelBot") || t.includes("Post")) ||
+        (conv.channel ? `Thread on ${CH[conv.channel]?.label || conv.channel}` : "Customer Conversation");
+
+      return {
+        id: conv.id,
+        convId: conv.id,
+        who: conv.customerName || conv.name || "@" + (conv.phone || "user"),
+        platform,
+        channel: conv.channel || platform,
+        text,
+        at: time,
+        kind,
+        sentiment,
+        isQuestion,
+        lead: isLead,
+        replied: hasReplied,
+        postTitle,
+        unread: conv.unread || 0,
+      };
+    });
+
+    const seen = new Set();
+    const result = [];
+    for (const item of [...fromConvs, ...existing]) {
+      const key = item.convId || item.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(item);
+      }
+    }
+    return result;
+  }, [comments, convs, repliedIds]);
+
+  const matchesFilter = (c, filterKey) => {
+    if (!filterKey || filterKey === "All") return true;
+    if (filterKey === "Question") {
+      return c.kind === "Question" || c.isQuestion || (Boolean(c.text) && c.text.includes("?"));
+    }
+    if (filterKey === "Positive") {
+      return c.kind === "Positive" || c.sentiment === "Positive";
+    }
+    if (filterKey === "Negative") {
+      return c.kind === "Negative" || c.sentiment === "Negative";
+    }
+    return c.kind === filterKey;
+  };
+
+  const list = combinedItems.filter((c) => matchesFilter(c, f)).sort((a, b) => new Date(b.at) - new Date(a.at));
+
+  const filterCounts = useMemo(() => ({
+    "": combinedItems.length,
+    Question: combinedItems.filter((c) => matchesFilter(c, "Question")).length,
+    Positive: combinedItems.filter((c) => matchesFilter(c, "Positive")).length,
+    Negative: combinedItems.filter((c) => matchesFilter(c, "Negative")).length,
+  }), [combinedItems]);
+
+  const tint = {
+    Question: "bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800",
+    Positive: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800",
+    Negative: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800",
+    Neutral: "bg-zinc-100 text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300",
+    Spam: "bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400",
+  };
+
+  const handleReply = (c) => {
+    const text = (reply[c.id] || "").trim();
+    if (!text) {
+      flash("Write or generate a reply first", "err");
+      return;
+    }
+    // Update conversation in unified inbox if linked
+    if (c.convId && setConvs) {
+      setConvs((cs) =>
+        cs.map((conv) => {
+          if (conv.id !== c.convId) return conv;
+          const newMsg = {
+            id: `msg_${Date.now()}`,
+            from: "agent",
+            sender: "agent",
+            text,
+            time: new Date().toISOString(),
+            at: new Date().toISOString(),
+            channel: conv.channel || c.platform,
+          };
+          return {
+            ...conv,
+            unread: 0,
+            lastMessage: text,
+            last: text,
+            updatedAt: new Date().toISOString(),
+            msgs: [...(conv.msgs || []), newMsg],
+          };
+        })
+      );
+    }
+    setComments((prev) =>
+      prev.map((x) => (x.id === c.id ? { ...x, replied: true } : x))
+    );
+    setRepliedIds((prev) => new Set([...prev, c.id, c.convId]));
+    log("Sky · Social Agent", "Engagement reply posted", c.who);
+    flash(`Reply posted to ${c.who} on ${PLATFORMS[c.platform]?.label || c.platform}!`);
+    setReply((prev) => ({ ...prev, [c.id]: "" }));
+  };
+
   return (
     <div className="h-full flex flex-col min-h-0">
-      <div className={`shrink-0 px-6 py-3 border-b ${T.border} flex items-center gap-2`}>
-        {["", "Question", "Positive", "Negative"].map((k) => (
-          <button key={k || "all"} onClick={() => setF(k)} className={`h-8 px-3 rounded-full border text-[11px] font-medium ${f === k ? "text-white border-transparent" : `${T.chip} ${T.hover}`}`} style={f === k ? { background: "#18181b" } : {}}>{k || "All"}</button>
-        ))}
-        <span className={`text-[11px] ${T.faint}`}>{list.filter((c) => !c.replied).length} unanswered · {list.filter((c) => c.lead).length} look like leads</span>
-      </div>
-      <div className="flex-1 overflow-y-auto bz-scroll p-6 space-y-3">
-        {list.map((c) => {
-          const post = posts.find((p) => p.id === c.postId);
+      <div className={`shrink-0 px-6 py-3 border-b ${T.border} flex items-center gap-2 flex-wrap`}>
+        {["", "Question", "Positive", "Negative"].map((k) => {
+          const count = filterCounts[k] || 0;
           return (
-            <div key={c.id} className={`rounded-2xl p-4 ${T.card}`}>
-              <div className="flex items-start gap-3">
-                <Brand id={PLATFORMS[c.platform].logo} size={22} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-semibold">{c.who}</span>
-                    <Pill c={tint[c.kind]}>{c.kind}</Pill>
-                    {c.lead && <Pill c="bg-amber-50 text-amber-700 border-amber-200">buying intent</Pill>}
-                    <span className={`text-[10px] ml-auto ${T.faint}`}>{fmtT(new Date(c.at))} · on "{post ? post.text.slice(0, 26) : "a post"}…"</span>
-                  </div>
-                  <p className="text-[12px] mt-1.5 leading-relaxed">{c.text}</p>
-                  {c.replied ? <div className={`text-[11px] mt-2 flex items-center gap-1 text-emerald-600`}><CheckCircle2 size={12} /> Replied</div> : (
-                    <div className="flex gap-2 mt-2.5">
-                      <input value={reply[c.id] || ""} onChange={(e) => setReply({ ...reply, [c.id]: e.target.value })} placeholder="Reply publicly…" className={inputCls(T)} />
-                      <button onClick={() => {
-                        const draft = c.kind === "Question" ? "Great question! Plans start at ₹6,999 a month and include every channel. Want me to send the full breakdown in a DM?"
-                          : c.kind === "Negative" ? "That is not the experience we want you to have, and I am sorry. Sending you a DM now so we can fix it today."
-                          : "Thank you, that genuinely makes our week 🙏";
-                        setReply({ ...reply, [c.id]: draft });
-                      }} className={`px-3 rounded-xl border text-[11px] font-semibold shrink-0 ${T.chip} ${T.hover} inline-flex items-center gap-1`}><Sparkles size={11} style={{ color: BRAND }} /> Draft</button>
-                      <button onClick={() => { if (!(reply[c.id] || "").trim()) { flash("Write or generate a reply first", "err"); return; } setComments(comments.map((x) => x.id === c.id ? { ...x, replied: true } : x)); log("Sky · Social Agent", "Comment replied", c.who); flash("Reply posted on " + PLATFORMS[c.platform].label); }}
-                        className="px-3 rounded-xl text-[11px] font-semibold text-white shrink-0" style={{ background: BRAND }}>Reply</button>
-                    </div>
-                  )}
-                  {c.lead && (
-                    <button onClick={() => { const r = socialLead(c); if (r.ok) { flash(c.who + " captured as a CRM lead with a follow up task."); openContact(r.id); } else flash(r.why, "err"); }}
-                      className={`mt-2 h-7 px-2.5 rounded-lg border text-[11px] font-semibold ${T.chip} ${T.hover}`}>Capture as CRM lead</button>
-                  )}
-                </div>
-              </div>
-            </div>
+            <button
+              key={k || "all"}
+              onClick={() => setF(k)}
+              className={`h-8 px-3 rounded-full border text-[11px] font-medium flex items-center gap-1.5 transition ${
+                f === k ? "text-white border-transparent shadow-xs" : `${T.chip} ${T.hover}`
+              }`}
+              style={f === k ? { background: "#18181b" } : {}}
+            >
+              <span>{k || "All"}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${f === k ? "bg-white/20 text-white" : "bg-zinc-200/70 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"}`}>
+                {count}
+              </span>
+            </button>
           );
         })}
+        <span className={`text-[11px] ml-auto ${T.faint}`}>
+          {list.filter((c) => !c.replied).length} unanswered · {list.filter((c) => c.lead).length} look like leads
+        </span>
+      </div>
+      <div className="flex-1 overflow-y-auto bz-scroll p-6 space-y-3">
+        {list.length === 0 ? (
+          <div className={`p-12 text-center rounded-2xl border border-dashed ${T.border}`}>
+            <MessageSquare size={32} className={`mx-auto mb-2 ${T.faint}`} />
+            <div className="text-xs font-semibold">No engagement items in this category</div>
+            <div className={`text-[11px] mt-1 ${T.faint}`}>Incoming customer comments and messages will appear here.</div>
+          </div>
+        ) : (
+          list.map((c) => {
+            const post = posts.find((p) => p.id === c.postId);
+            const logoId = PLATFORMS[c.platform]?.logo || (c.platform === "whatsapp" ? "whatsapp" : c.platform || "youtube");
+            const channelLabel = PLATFORMS[c.platform]?.label || CH[c.channel]?.label || c.channel || "Conversation";
+
+            return (
+              <div key={c.id} className={`rounded-2xl p-4.5 border transition ${T.border} ${T.card}`}>
+                <div className="flex items-start gap-3.5">
+                  <div className="mt-0.5 shrink-0">
+                    <Brand id={logoId} size={22} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold">{c.who}</span>
+                      <Pill c={tint[c.kind] || tint.Neutral}>{c.kind}</Pill>
+                      {c.sentiment && c.sentiment !== c.kind && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${c.sentiment === "Positive" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" : c.sentiment === "Negative" ? "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"}`}>
+                          {c.sentiment}
+                        </span>
+                      )}
+                      {c.lead && <Pill c="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300">buying intent</Pill>}
+                      <span className={`text-[10px] ml-auto ${T.faint}`}>
+                        {fmtT(new Date(c.at))} · {post ? `on "${post.text.slice(0, 26)}…"` : c.postTitle || channelLabel}
+                      </span>
+                    </div>
+                    <p className="text-[12px] mt-2 leading-relaxed">{c.text}</p>
+                    {c.replied ? (
+                      <div className="mt-2.5 flex items-center justify-between">
+                        <div className="text-[11px] flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-medium">
+                          <CheckCircle2 size={13} /> Replied / AI Handled
+                        </div>
+                        {c.convId && typeof openConv === "function" && (
+                          <button
+                            onClick={() => openConv(c.convId)}
+                            className={`text-[11px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 flex items-center gap-1`}
+                          >
+                            <MessageSquare size={11} /> View in Inbox &rarr;
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-2 mt-3">
+                        <div className="flex gap-2">
+                          <input
+                            value={reply[c.id] || ""}
+                            onChange={(e) => setReply({ ...reply, [c.id]: e.target.value })}
+                            placeholder="Reply to customer…"
+                            className={inputCls(T)}
+                          />
+                          <button
+                            onClick={() => {
+                              const draft = c.kind === "Question" || c.isQuestion
+                                ? "Great question! Plans start at ₹6,999 a month and include every channel. Want me to send the full breakdown in a DM?"
+                                : c.kind === "Negative" || c.sentiment === "Negative"
+                                ? "That is not the experience we want you to have, and I am sorry. Sending you a DM now so we can fix it today."
+                                : "Thank you, that genuinely makes our week 🙏";
+                              setReply({ ...reply, [c.id]: draft });
+                            }}
+                            className={`px-3 rounded-xl border text-[11px] font-semibold shrink-0 ${T.chip} ${T.hover} inline-flex items-center gap-1`}
+                          >
+                            <Sparkles size={11} style={{ color: BRAND }} /> Draft
+                          </button>
+                          <button
+                            onClick={() => handleReply(c)}
+                            className="px-3.5 rounded-xl text-[11px] font-semibold text-white shrink-0 shadow-xs hover:opacity-95 active:scale-95 transition"
+                            style={{ background: BRAND }}
+                          >
+                            Reply
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {c.convId && typeof openConv === "function" && (
+                            <button
+                              onClick={() => openConv(c.convId)}
+                              className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold ${T.chip} ${T.hover} inline-flex items-center gap-1`}
+                            >
+                              <MessageSquare size={11} /> Open in Inbox
+                            </button>
+                          )}
+                          {c.lead && (
+                            <button
+                              onClick={() => {
+                                const r = socialLead(c);
+                                if (r.ok) {
+                                  flash(c.who + " captured as a CRM lead with a follow up task.");
+                                  openContact(r.id);
+                                } else flash(r.why, "err");
+                              }}
+                              className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold ${T.chip} ${T.hover}`}
+                            >
+                              Capture as CRM lead
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
 }
+
 
 /* ---------- campaigns ---------- */
 function SocialCampaigns({ onOpen }) {
