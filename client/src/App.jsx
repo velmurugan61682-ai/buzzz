@@ -2041,14 +2041,14 @@ function eventStats(events) {
   };
 }
 const ACTIVITY_INIT = [
-  eventItem({ actor: "Sarah — Sales Agent", action: "Replied on WhatsApp", detail: "Answered product and pricing inquiry autonomously", outcome: "success", mode: "autonomous", category: "communication" }),
-  eventItem({ actor: "Sky — Social Agent", action: "Engaged YouTube comment", detail: "Responded to inbound video inquiry on ChannelBot", outcome: "success", mode: "autonomous", category: "social" }),
-  eventItem({ actor: "Kai — Support Agent", action: "Resolved support query", detail: "Troubleshot integration setup on first contact", outcome: "success", mode: "autonomous", category: "service" }),
-  eventItem({ actor: "Ana — Appointment Agent", action: "Scheduled appointment", detail: "Offered calendar availability and held slot", outcome: "success", mode: "autonomous", category: "calendar" }),
-  eventItem({ actor: "Voz — Voice Agent", action: "Logged voice call", detail: "Captured caller intent and synced notes to CRM", outcome: "success", mode: "autonomous", category: "voice" }),
-  eventItem({ actor: "Mira — Follow up Agent", action: "Sent follow up message", detail: "Nurtured warm lead on WhatsApp", outcome: "success", mode: "autonomous", category: "campaign" }),
-  eventItem({ actor: "Sky — Social Agent", action: "Replied to Instagram DM", detail: "Engaged customer inquiry via InstaxBot", outcome: "success", mode: "autonomous", category: "social" }),
-  eventItem({ actor: "Sarah — Sales Agent", action: "Updated CRM deal stage", detail: "Moved qualified WhatsApp lead to Negotiation", outcome: "success", mode: "autonomous", category: "crm" }),
+  makeEvent({ actor: "Sarah — Sales Agent", action: "Replied on WhatsApp", detail: "Answered product and pricing inquiry autonomously", outcome: "success", mode: "autonomous", category: "communication" }),
+  makeEvent({ actor: "Sky — Social Agent", action: "Engaged YouTube comment", detail: "Responded to inbound video inquiry on ChannelBot", outcome: "success", mode: "autonomous", category: "social" }),
+  makeEvent({ actor: "Kai — Support Agent", action: "Resolved support query", detail: "Troubleshot integration setup on first contact", outcome: "success", mode: "autonomous", category: "service" }),
+  makeEvent({ actor: "Ana — Appointment Agent", action: "Scheduled appointment", detail: "Offered calendar availability and held slot", outcome: "success", mode: "autonomous", category: "calendar" }),
+  makeEvent({ actor: "Voz — Voice Agent", action: "Logged voice call", detail: "Captured caller intent and synced notes to CRM", outcome: "success", mode: "autonomous", category: "voice" }),
+  makeEvent({ actor: "Mira — Follow up Agent", action: "Sent follow up message", detail: "Nurtured warm lead on WhatsApp", outcome: "success", mode: "autonomous", category: "campaign" }),
+  makeEvent({ actor: "Sky — Social Agent", action: "Replied to Instagram DM", detail: "Engaged customer inquiry via InstaxBot", outcome: "success", mode: "autonomous", category: "social" }),
+  makeEvent({ actor: "Sarah — Sales Agent", action: "Updated CRM deal stage", detail: "Moved qualified WhatsApp lead to Negotiation", outcome: "success", mode: "autonomous", category: "crm" }),
 ];
 
 const WORKFLOWS = [
