@@ -329,7 +329,17 @@ const PIPELINES_INIT = [
 ];
 const TICKETS_INIT = []; // TODO_BACKEND
 
-const CONTACTS = [];
+const CONTACTS = [
+  { id: "c1", name: "Alex Rivera", email: "alex@riveratech.com", phone: "+91 98401 23456", company: "Rivera Tech", score: 82, stage: "Lead", tags: ["Tech", "Enterprise"] },
+  { id: "c2", name: "Sarah Chen", email: "sarah@chenstudio.design", phone: "+91 98401 23457", company: "Chen Creative", score: 74, stage: "Qualified", tags: ["SMB", "Design"] },
+  { id: "c3", name: "Daniel Vance", email: "daniel@vancewms.io", phone: "+91 98401 23458", company: "Vance Logistics", score: 88, stage: "Customer", tags: ["VIP", "SLA"] },
+  { id: "c4", name: "Priya Nair", email: "priya@nairdentalcare.com", phone: "+91 98401 23459", company: "Nair Dental Clinics", score: 79, stage: "Qualified", tags: ["Healthcare", "Appointment"] },
+  { id: "c5", name: "Michael Chang", email: "michael@changholdings.com", phone: "+91 98401 23460", company: "Chang Portfolio Capital", score: 91, stage: "Demo Booked", tags: ["High Intent", "VIP"] },
+  { id: "c6", name: "Fatima Al-Mansoor", email: "fatima@almansoor.ae", phone: "+91 98401 23461", company: "Al-Mansoor Trading", score: 65, stage: "Lead", tags: ["Pricing", "Nurture"] },
+  { id: "c7", name: "Tom Miller", email: "tom@millerfintech.co", phone: "+91 98401 23462", company: "Miller Fintech", score: 85, stage: "Qualified", tags: ["Urgent", "Fintech"] },
+  { id: "c8", name: "Grace Hopper", email: "grace@hopperindustries.com", phone: "+91 98401 23463", company: "Hopper Industries", score: 95, stage: "Customer", tags: ["VIP", "Churn Risk"] },
+  { id: "c10", name: "Chloe Bennett", email: "chloe@bennettsalon.com", phone: "+91 98401 23465", company: "Bennett Salon & Spa", score: 72, stage: "Lead", tags: ["Beauty", "Inbound"] },
+];
 CONTACTS.forEach((c, i) => {
   c.owner = c.owner || TEAM_USERS[i % 4];
   c.source = c.source || LEAD_SOURCES[i % LEAD_SOURCES.length];
@@ -804,7 +814,7 @@ const AGENTS = [
     rules: ["Never cancel an appointment without confirmation", "Escalate angry customers"],
     escalation: { when: ["Customer asks for a human", "Repeated misunderstanding"], who: "Maya Ortiz", include: ["Transcript", "CRM record"] },
     knowledge: ["Opening hours and locations", "Refund and cancellation policy"], memory: ["Current conversation", "Customer history"],
-    conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-02" },
+    conv: 11, res: 9, actions: 11, esc: 0, cvr: 85, csat: 96, rt: "1.2m", versions: [], activity: [], created: "2026-07-02" },
   { id: "a4", name: "Voz", title: "Voice Agent", type: "voice", status: "Active", autonomy: 4, allowDestructive: false,
     role: "Answer and place phone calls through MrAssistant.ai, capture the reason for the call and update the CRM from every conversation.",
     purpose: "Make sure no call goes unanswered.", dept: "Service", tone: "Professional", tones: ["Professional", "Warm"],
@@ -1069,16 +1079,246 @@ const APPT_STYLE = {
 const APPT_SOURCES = ["Manual", "Website", "WhatsApp", "Voice AI", "Chat AI", "Email", "SMS", "CRM", "Campaign", "API"];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const LOCATIONS_INIT = []; // TODO_BACKEND
-const STAFF_INIT = []; // TODO_BACKEND
-const SERVICES_INIT = []; // TODO_BACKEND
-const BOOKING_RULES_INIT = {
-  minNoticeH: 2, maxAdvanceD: 60, maxPerDay: 12, maxPerCustomer: 3, cancelWindowH: 24, rescheduleWindowH: 4,
-  autoConfirm: true, slotStep: 15, tz: "Asia/Singapore (GMT+8)",
-  reminders: [{ id: "r1", at: "On booking", ch: "whatsapp", on: true }, { id: "r2", at: "24 hours before", ch: "whatsapp", on: true }, { id: "r3", at: "2 hours before", ch: "sms", on: true }, { id: "r4", at: "After completion", ch: "whatsapp", on: false }],
+const LOCATIONS_INIT = [
+  { id: "L1", name: "Virtual / Google Meet", addr: "meet.google.com/buzzz-live", kind: "Video", rooms: ["Meet Room 1", "Meet Room 2"], hours: { 1: [8, 20], 2: [8, 20], 3: [8, 20], 4: [8, 20], 5: [8, 20], 6: [9, 18], 0: null } },
+  { id: "L2", name: "Downtown Headquarters", addr: "100 Innovation Blvd, Tech Hub", kind: "In person", rooms: ["Boardroom A", "Demo Suite 1"], hours: { 1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: null, 0: null } },
+  { id: "L3", name: "Phone / Audio Bridge", addr: "Direct Telephony via Voz", kind: "Phone", rooms: ["Line 1", "Line 2"], hours: { 1: [8, 20], 2: [8, 20], 3: [8, 20], 4: [8, 20], 5: [8, 20], 6: [9, 17], 0: null } },
+];
+
+const STAFF_INIT = [
+  { id: "st1", name: "Ana (AI Agent)", role: "Appointment Specialist", tz: "Asia/Kolkata", services: ["sv1", "sv2", "sv3", "sv4"], locations: ["L1", "L3"], hours: { 1: [8, 20], 2: [8, 20], 3: [8, 20], 4: [8, 20], 5: [8, 20], 6: [9, 18], 0: null }, breaks: [[13, 14]], off: [], capacity: 15, color: "#EF2B13" },
+  { id: "st2", name: "Maya Ortiz", role: "Product Specialist", tz: "Asia/Kolkata", services: ["sv1", "sv2"], locations: ["L1", "L2"], hours: { 1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: null, 0: null }, breaks: [[13, 14]], off: [], capacity: 8, color: "#3b82f6" },
+  { id: "st3", name: "Ken Watanabe", role: "Account Executive", tz: "Asia/Kolkata", services: ["sv1", "sv3", "sv4"], locations: ["L1", "L3"], hours: { 1: [9, 18], 2: [9, 18], 3: [9, 18], 4: [9, 18], 5: [9, 18], 6: null, 0: null }, breaks: [[13, 14]], off: [], capacity: 8, color: "#10b981" },
+];
+
+const SERVICES_INIT = [
+  { id: "sv1", name: "Product Walkthrough & Demo", dur: 30, price: 0, kind: "Video", buffBefore: 0, buffAfter: 10, staff: ["st1", "st2", "st3"], locations: ["L1"], approval: false, deposit: 0, policy: "Rescheduling allowed up to 4 hours in advance", desc: "Live walkthrough of BUZZZ AI platform, AI agents and automation builder." },
+  { id: "sv2", name: "Dental Clinic AI Setup Consultation", dur: 45, price: 0, kind: "Video", buffBefore: 0, buffAfter: 10, staff: ["st1", "st2"], locations: ["L1"], approval: false, deposit: 0, policy: "Free consultation", desc: "Walkthrough of multi-location appointment reminders, WhatsApp and voice AI." },
+  { id: "sv3", name: "Technical Architecture Deep Dive", dur: 45, price: 0, kind: "Video", buffBefore: 0, buffAfter: 15, staff: ["st1", "st3"], locations: ["L1"], approval: false, deposit: 0, policy: "Enterprise consultation", desc: "Technical session on API integrations, webhook security, and dedicated tenant deployment." },
+  { id: "sv4", name: "VIP Account Review & Support Call", dur: 30, price: 0, kind: "Phone", buffBefore: 0, buffAfter: 10, staff: ["st1", "st3"], locations: ["L3"], approval: false, deposit: 0, policy: "Priority VIP channel", desc: "Direct account manager check-in and permanent fix walkthrough." },
+];
+
+const makeRelIso = (dOff, h, m = 0) => {
+  const d = new Date();
+  d.setDate(d.getDate() + dOff);
+  d.setHours(h, m, 0, 0);
+  return d.toISOString();
 };
-const APPOINTMENTS_INIT = []; // TODO_BACKEND
-const WAITLIST_INIT = []; // TODO_BACKEND
+
+const APPOINTMENTS_INIT = [
+  {
+    id: "ap_init_1",
+    contactId: "c2", // Sarah Chen
+    serviceId: "sv1",
+    staffId: "st1", // Ana (AI Agent)
+    locationId: "L1",
+    start: makeRelIso(0, 11, 30),
+    durMin: 30,
+    status: "Confirmed",
+    title: "Product Walkthrough & Demo",
+    source: "Chat AI",
+    confirmChannel: "instagram",
+    room: "Meet Room 1",
+    notes: ["Booked via Instagram DM after automation builder inquiry."],
+    cf: {},
+    meetUrl: "https://meet.google.com/buzzz-sarah-demo",
+    meetingState: "ready",
+    googleEventId: "g_evt_101",
+    reminders: [{ id: "rem_1", at: "2 hours before", ch: "instagram", on: true, sent: false }],
+  },
+  {
+    id: "ap_init_2",
+    contactId: "c4", // Priya Nair
+    serviceId: "sv2",
+    staffId: "st1", // Ana (AI Agent)
+    locationId: "L1",
+    start: makeRelIso(1, 10, 0),
+    durMin: 45,
+    status: "Pending",
+    title: "Dental Clinic AI Setup Consultation",
+    source: "Chat AI",
+    confirmChannel: "facebook",
+    room: "Meet Room 2",
+    notes: ["Ana held provisional slot based on Facebook chat."],
+    cf: {},
+    meetUrl: "https://meet.google.com/buzzz-priya-dental",
+    meetingState: "ready",
+    reminders: [{ id: "rem_2", at: "24 hours before", ch: "whatsapp", on: true, sent: false }],
+  },
+  {
+    id: "ap_init_3",
+    contactId: "c5", // Michael Chang
+    serviceId: "sv1",
+    staffId: "st1", // Ana (AI Agent)
+    locationId: "L1",
+    start: makeRelIso(3, 10, 0),
+    durMin: 30,
+    status: "Confirmed",
+    title: "Multi-Brand Portfolio Demo",
+    source: "Chat AI",
+    confirmChannel: "whatsapp",
+    room: "Meet Room 1",
+    notes: ["Booked automatically by Ana: Friday 10:00 confirmed."],
+    cf: {},
+    meetUrl: "https://meet.google.com/buzzz-michael-demo",
+    meetingState: "ready",
+    googleEventId: "g_evt_103",
+    reminders: [{ id: "rem_3", at: "24 hours before", ch: "whatsapp", on: true, sent: false }],
+  },
+  {
+    id: "ap_init_4",
+    contactId: "c8", // Grace Hopper
+    serviceId: "sv4",
+    staffId: "st3", // Ken Watanabe
+    locationId: "L3",
+    start: makeRelIso(0, 15, 0),
+    durMin: 30,
+    status: "Confirmed",
+    title: "VIP Account Review & Support Call",
+    source: "Chat AI",
+    confirmChannel: "whatsapp",
+    room: "Line 1",
+    notes: ["Support walkthrough call agreed for 3:00 PM today."],
+    cf: {},
+    reminders: [{ id: "rem_4", at: "2 hours before", ch: "whatsapp", on: true, sent: false }],
+  },
+  {
+    id: "ap_init_5",
+    contactId: "c7", // Tom Miller
+    serviceId: "sv3",
+    staffId: "st1", // Ana (AI Agent)
+    locationId: "L1",
+    start: makeRelIso(2, 14, 0),
+    durMin: 45,
+    status: "Pending",
+    title: "Technical Architecture Deep Dive",
+    source: "Chat AI",
+    confirmChannel: "telegram",
+    room: "Meet Room 1",
+    notes: ["Pre-board meeting technical review requested in Telegram thread."],
+    cf: {},
+    meetUrl: "https://meet.google.com/buzzz-tom-tech",
+    meetingState: "ready",
+  },
+  {
+    id: "ap_init_6",
+    contactId: "c3", // Daniel Vance
+    serviceId: "sv4",
+    staffId: "st2",
+    locationId: "L3",
+    start: makeRelIso(-1, 16, 0),
+    durMin: 30,
+    status: "No show",
+    title: "WMS Middleware Sync Check",
+    source: "Manual",
+    confirmChannel: "email",
+    room: "Line 2",
+    notes: ["Customer missed appointment due to urgent dispatch failure."],
+    cf: {},
+  },
+];
+
+const WAITLIST_INIT = [];
+
+/* ============ ANA APPOINTMENT INTELLIGENCE & AUTO-SYNC ENGINE ============ */
+function parseAppointmentFromConv(conv) {
+  if (!conv) return null;
+  const msgs = Array.isArray(conv.msgs) ? conv.msgs : [];
+  const textBlob = (
+    msgs.map((m) => m.text || "").join(" ") +
+    " " + (conv.lastMessage || conv.last || "") +
+    " " + (conv.intent || "") +
+    " " + ((conv.tags || []).join(" "))
+  ).toLowerCase();
+
+  const isApptRelated =
+    conv.intent === "Appointment" ||
+    conv.intent === "booking" ||
+    (conv.tags && conv.tags.includes("Appointment")) ||
+    (conv.assigned && /appointment|ana/i.test(conv.assigned)) ||
+    (conv.agent && /ana/i.test(conv.agent)) ||
+    /appointment|book|schedule|demo|walkthrough|time slot|calendar|meeting|session|call at|provisional/i.test(textBlob);
+
+  if (!isApptRelated) return null;
+
+  // Detect time
+  let hour = 10, minute = 0;
+  const timeMatch = textBlob.match(/(\b[0-2]?[0-9])[:.]([0-5][0-9])\s*(am|pm)?/i) || textBlob.match(/(\b[0-1]?[0-9])\s*(am|pm)\b/i);
+  if (timeMatch) {
+    hour = parseInt(timeMatch[1], 10);
+    minute = timeMatch[2] && !isNaN(parseInt(timeMatch[2], 10)) ? parseInt(timeMatch[2], 10) : 0;
+    const ampm = (timeMatch[3] || timeMatch[2] || "").toLowerCase();
+    if (ampm === "pm" && hour < 12) hour += 12;
+    if (ampm === "am" && hour === 12) hour = 0;
+  } else if (/morning|9:30|10:00/i.test(textBlob)) {
+    hour = /9:30/i.test(textBlob) ? 9 : 10;
+    minute = /9:30/i.test(textBlob) ? 30 : 0;
+  } else if (/afternoon|3pm|15:00|2pm|14:00/i.test(textBlob)) {
+    hour = /3pm|15:00/i.test(textBlob) ? 15 : 14;
+    minute = 0;
+  }
+
+  // Detect day
+  let dayOffset = 1; // default tomorrow
+  if (/today/i.test(textBlob)) dayOffset = 0;
+  else if (/tomorrow/i.test(textBlob)) dayOffset = 1;
+  else {
+    const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    const todayDay = new Date().getDay();
+    for (let di = 0; di < dayNames.length; di++) {
+      if (new RegExp(`\\b${dayNames[di]}\\b`, "i").test(textBlob)) {
+        dayOffset = (di - todayDay + 7) % 7;
+        if (dayOffset === 0) dayOffset = 7;
+        break;
+      }
+    }
+  }
+
+  // Detect service
+  let serviceId = "sv1";
+  let title = "Product Walkthrough & Demo";
+  let durMin = 30;
+  if (/dental|clinic|patient/i.test(textBlob)) {
+    serviceId = "sv2";
+    title = "Dental Clinic AI Setup Consultation";
+    durMin = 45;
+  } else if (/technical|architecture|deep dive|tenant|api/i.test(textBlob)) {
+    serviceId = "sv3";
+    title = "Technical Architecture Deep Dive";
+    durMin = 45;
+  } else if (/vip|complaint|billing|refund|account review|reversal/i.test(textBlob)) {
+    serviceId = "sv4";
+    title = "VIP Account Review & Support Call";
+    durMin = 30;
+  }
+
+  const isConfirmed =
+    /ai booked meeting|calendar invite sent|confirmed|i will take the call|that works|perfect|scheduled/i.test(textBlob);
+  const status = isConfirmed ? "Confirmed" : "Pending";
+
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + dayOffset);
+  targetDate.setHours(hour, minute, 0, 0);
+
+  return {
+    contactId: conv.contactId,
+    customerName: conv.customerName || conv.name,
+    serviceId,
+    staffId: "st1", // Ana (AI Agent)
+    staffName: "Ana (AI Agent)",
+    locationId: "L1",
+    start: targetDate.toISOString(),
+    durMin,
+    status,
+    title,
+    source: "Chat AI",
+    confirmChannel: (conv.channel || "whatsapp").toLowerCase(),
+    meetUrl: `https://meet.google.com/buzzz-${conv.contactId || conv.id}`,
+    meetingState: "ready",
+    conversationId: conv.id,
+    notes: [`Ana auto-scheduled from conversation chat: "${(conv.lastMessage || (msgs[msgs.length - 1]?.text) || "").slice(0, 70)}"`],
+  };
+}
 
 /* ============ AVAILABILITY ENGINE ============ */
 const mins = (d) => d.getHours() * 60 + d.getMinutes();
@@ -6904,6 +7144,70 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return "New Lead";
   }, []);
 
+  /* Ana Appointment Agent: Automatically sync and update appointments from message conversation chats */
+  const syncAppointmentsWithAna = useCallback((targetConvs = convs, silent = false) => {
+    let syncedCount = 0;
+    setAppts((prevAppts) => {
+      const currentList = Array.isArray(prevAppts) ? [...prevAppts] : [];
+      (targetConvs || []).forEach((conv) => {
+        const parsed = parseAppointmentFromConv(conv);
+        if (!parsed || !parsed.contactId) return;
+
+        const existingIdx = currentList.findIndex(
+          (a) => a.contactId === parsed.contactId || (parsed.conversationId && a.conversationId === parsed.conversationId)
+        );
+
+        if (existingIdx === -1) {
+          // Create new appointment
+          const newAppt = {
+            id: `ap_ana_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            workspaceId: "ws_default",
+            ...parsed,
+          };
+          currentList.unshift(newAppt);
+          syncedCount++;
+          api.createAppointment("ws_default", newAppt).catch(() => {});
+        } else {
+          const existing = currentList[existingIdx];
+          // Check if status or notes need sync
+          if (existing.status !== parsed.status || existing.title !== parsed.title) {
+            currentList[existingIdx] = {
+              ...existing,
+              status: parsed.status,
+              title: parsed.title || existing.title,
+              notes: [...(existing.notes || []), ...(parsed.notes || [])],
+            };
+            syncedCount++;
+          }
+        }
+      });
+
+      if (syncedCount > 0) {
+        setAgents((prev) =>
+          prev.map((ag) =>
+            ag.id === "a3"
+              ? { ...ag, conv: Math.max(ag.conv || 0, 11), actions: (ag.actions || 0) + syncedCount }
+              : ag
+          )
+        );
+        if (!silent) {
+          flash(`⚡ Ana (Appointment Agent) automatically updated ${syncedCount} appointment${syncedCount > 1 ? "s" : ""} from chats!`);
+        }
+      } else if (!silent) {
+        flash("All appointments are already up to date with conversation chats.");
+      }
+      return currentList;
+    });
+    return syncedCount;
+  }, [convs]);
+
+  // Run Ana automatic sync whenever conversations are loaded or updated
+  useEffect(() => {
+    if (Array.isArray(convs) && convs.length > 0) {
+      syncAppointmentsWithAna(convs, true);
+    }
+  }, [convs]);
+
 
   /* Auto-populate pipeline from real conversations — smart content-based intent classification */
   useEffect(() => {
@@ -8593,13 +8897,25 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return (c ? c.name : "Customer") + " · " + (a.title || "appointment");
   };
   const createAppt = (a, source = "You") => {
-    const svc = SERVICES_INIT.concat(services).find((x) => x.id === a.serviceId);
+    const allServices = SERVICES_INIT.concat(services);
+    const svc = allServices.find((x) => x.id === a.serviceId) || allServices[0];
     const appt = {
-      id: "ap" + Date.now() + Math.floor(Math.random() * 99), status: svc && svc.approval ? "Pending" : (rules.autoConfirm ? "Confirmed" : "Pending"),
-      durMin: svc ? svc.dur : 30, locationId: (svc && svc.locations[0]) || "L3", staffId: (svc && svc.staff[0]) || "st1",
-      source: "Manual", confirmChannel: "whatsapp", room: "", notes: [], cf: {}, title: svc ? svc.name : "Appointment", ...a,
+      id: a.id || ("ap" + Date.now() + Math.floor(Math.random() * 99)),
+      status: a.status || (svc && svc.approval ? "Pending" : (rules?.autoConfirm ? "Confirmed" : "Pending")),
+      durMin: a.durMin || (svc ? svc.dur : 30),
+      locationId: a.locationId || (svc && svc.locations && svc.locations[0]) || "L1",
+      staffId: a.staffId || (svc && svc.staff && svc.staff[0]) || "st1",
+      source: a.source || "Chat AI",
+      confirmChannel: a.confirmChannel || "whatsapp",
+      room: a.room || "Meet Room 1",
+      notes: a.notes || [],
+      cf: a.cf || {},
+      title: a.title || (svc ? svc.name : "Appointment"),
+      meetUrl: a.meetUrl || `https://meet.google.com/buzzz-${a.contactId || "session"}`,
+      meetingState: a.meetingState || "ready",
+      ...a,
     };
-    setAppts((as) => [appt, ...as]);
+    setAppts((as) => [appt, ...as.filter((x) => x.id !== appt.id)]);
     trail("Appointment created", apptLabel(appt), "", fmtWhen(appt), source);
     log(source === "You" ? "You" : source, "Appointment created", apptLabel(appt));
     return appt;
@@ -8717,14 +9033,43 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     return { ...a, ...patch };
   }));
   const deleteAppt = (id) => { const a = appts.find((x) => x.id === id); setAppts((as) => as.filter((x) => x.id !== id)); if (a) { trail("Appointment deleted", apptLabel(a), fmtWhen(a), "removed"); log("You", "Appointment deleted", apptLabel(a)); } };
-  const bookAppointment = (contactId, title, source, when) => {
-    const svc = services && services[0];
+  const bookAppointment = (contactId, title, source, when, extra = {}) => {
+    const allServices = SERVICES_INIT.concat(services);
+    const svc = (extra.serviceId && allServices.find((s) => s.id === extra.serviceId)) || allServices[0];
     if (!svc) return null;
-    const loc = locations.find((l) => l.id === (svc.locations ? svc.locations[0] : null)) || locations[0];
-    const date = new Date(); date.setDate(date.getDate() + (/tomorrow/i.test(when || "") ? 1 : 1)); date.setHours(10, 0, 0, 0);
-    const av = availability({ date, service: svc, staff: null, location: loc, appts, rules, staffList: staff });
-    const slot = (av && av.slots && av.slots[0]) || date;
-    const appt = createAppt({ contactId, serviceId: svc.id, start: slot.toISOString(), title: title || svc.name, source: source && /BUZZZ|AI/i.test(source) ? "Chat AI" : "Manual" }, source || "You");
+    const allLocs = LOCATIONS_INIT.concat(locations);
+    const loc = allLocs.find((l) => l.id === (svc.locations ? svc.locations[0] : null)) || allLocs[0];
+    let slot = null;
+    if (when instanceof Date) {
+      slot = when;
+    } else if (typeof when === "string" && !isNaN(Date.parse(when))) {
+      slot = new Date(when);
+    } else {
+      const date = new Date(); date.setDate(date.getDate() + (/tomorrow/i.test(when || "") ? 1 : 1)); date.setHours(10, 0, 0, 0);
+      const av = availability({ date, service: svc, staff: null, location: loc, appts, rules, staffList: staff });
+      slot = (av && av.slots && av.slots[0]) || date;
+    }
+    const appt = createAppt({
+      contactId,
+      serviceId: svc.id,
+      staffId: extra.staffId || "st1",
+      start: slot.toISOString(),
+      title: title || svc.name,
+      source: source && /BUZZZ|AI|Ana/i.test(source) ? "Chat AI" : "Manual",
+      confirmChannel: extra.channel || "whatsapp",
+      notes: [extra.note || "Booked by Ana (Appointment Agent) from conversation chat."],
+      ...extra,
+    }, source || "Ana — Appointment Agent");
+
+    setAgents((prev) =>
+      prev.map((ag) =>
+        ag.id === "a3"
+          ? { ...ag, conv: (ag.conv || 0) + 1, actions: (ag.actions || 0) + 1 }
+          : ag
+      )
+    );
+
+    api.createAppointment("ws_default", appt).catch(() => {});
     flash(`Booked for ${fmtWhen(appt)}. Confirmation queued on the customer's channel.`);
     return appt;
   };
@@ -8851,7 +9196,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     sequences, setSequences, enrollments, enroll, stopEnrollment, forms, setForms, submitForm,
     quotas, setQuotas, assignRule, setAssignRule, nextOwner, forecast, memories, setMemories, addMemory, forgetMemory, learnFrom, scoreOf, healthOf, nbaOf, contactGate, recordTouch, handOff, handoffs, duplicates, touches, notifications, unread, notifRead, markRead, markAllRead, aiThreads, setAiThreads, billing, setBilling, aiCfg, setAiCfg, ws, setWs, escRules, setEscRules, notifRules, setNotifRules, usage, ent, gate, changePlan, setSubState, setRegionByCountry, priceNow, conns, setConns, connOf, isConnected, connectProvider, disconnectProvider, updateConn, runSync, syncRuns, resolveConflict, apiKeys, setApiKeys, outHooks, setOutHooks, policies, setPolicies, delegations, setDelegations, me, setMe, requestApproval, retryApproval, kbQueries, setKbQueries, kbGaps, setKbGaps, ingestSource, reindexSource, publishVersion, rollbackVersion, archiveSource, askKnowledge, groundedAnswer, wfRuns, setWfRuns, fireWorkflow, resumeRun, cancelRun, retryRun, makeExec, dk, T, view, go, convs, setConvs, deals, moveDeal, approvals, setApprovals, decideApproval, activity, log, flash,
     selConv, setSelConv, selContact, setSelContact, openContact, openConv, selAgent, setSelAgent, selCall, setSelCall,
-    appts, setAppts, confirmAppt, setApptStatus, bookAppointment, createAppt, rescheduleAppt, updateAppt, deleteAppt,
+    appts, setAppts, confirmAppt, setApptStatus, bookAppointment, createAppt, rescheduleAppt, updateAppt, deleteAppt, syncAppointmentsWithAna,
     calls, setCalls, voice, voiceCfg, setVoiceCfg, placeCall, syncCalls, updateCall, applyCallOutcome,
     staff, setStaff, services, setServices, locations, setLocations, rules, setRules, waitlist, setWaitlist, industry, setIndustry, ind, posts, setPosts, aiKeys, setAiKeys,
     accounts, setAccounts, brand, setBrand, pillars, setPillars, socialCamps, setSocialCamps, assets, setAssets,
@@ -12733,7 +13078,7 @@ function Dashboard() {
 }
 
 function InboxView() {
-  const { T, dk, convs, setConvs, selConv, setSelConv, flash, log, agents } = useApp();
+  const { T, dk, convs, setConvs, selConv, setSelConv, flash, log, agents, syncAppointmentsWithAna } = useApp();
   const [qy, setQy] = useState("");
   const [filter, setFilter] = useState("All");
   const [chFilter, setChFilter] = useState(null);
@@ -12831,6 +13176,14 @@ function InboxView() {
             >
               <Zap size={11} className={runningAutopilot ? "animate-spin" : ""} />
               {runningAutopilot ? "Running…" : "AI Autopilot"}
+            </button>
+            <button
+              onClick={() => syncAppointmentsWithAna && syncAppointmentsWithAna(convs)}
+              title="Ana (Appointment Agent): Sync appointments from conversation chats"
+              className={`h-7 px-2 rounded-lg text-[10px] font-semibold border flex items-center gap-1 transition ${T.chip} ${T.hover}`}
+            >
+              <Calendar size={11} className="text-red-500" />
+              <span>Ana Sync</span>
             </button>
             <button onClick={() => setAdv(!adv)} title="Filter by channel" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
           </div>
@@ -13033,7 +13386,7 @@ const generateSmartAgentReplyText = (agent, conv, lastText = "") => {
 };
 
 function Thread({ conv, showPanel, setShowPanel }) {
-  const { T, dk, flash, autonomy, setConvs, log, addTask, bookAppointment, setSelConv, agents, agentAct, approvals, go } = useApp();
+  const { T, dk, flash, autonomy, setConvs, log, addTask, bookAppointment, setSelConv, agents, agentAct, approvals, go, appts, syncAppointmentsWithAna } = useApp();
   if (!conv) return null;
   const contact = CONTACTS.find((c) => (c?.id || (c?._id ? String(c._id) : null)) === conv.contactId) || null;
   const [text, setText] = useState("");
@@ -13081,6 +13434,22 @@ function Thread({ conv, showPanel, setShowPanel }) {
   };
   const addMsg = (m) => setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, msgs: [...(x.msgs || []), { at: new Date().toISOString(), channel: sendCh, ...m }], last: (m.text || m.attachment || "").slice(0, 60) } : x));
 
+  const checkAndAutoBook = (msgText) => {
+    if (!msgText || !contact?.id) return;
+    const lower = msgText.toLowerCase();
+    if (/book|appointment|schedule|meeting|slot|tomorrow|thursday|friday|monday|tuesday|wednesday|saturday|sunday|10:00|11:00|3pm|15:00|9:30/i.test(lower)) {
+      const parsed = parseAppointmentFromConv({ ...conv, msgs: [...(conv.msgs || []), { text: msgText }] });
+      if (parsed) {
+        bookAppointment(contact.id, parsed.title, "Ana — Appointment Agent", parsed.start, {
+          serviceId: parsed.serviceId,
+          staffId: "st1",
+          channel: sendCh || conv.channel || "whatsapp",
+          note: `Auto-scheduled by Ana from message: "${msgText.slice(0, 60)}"`,
+        });
+      }
+    }
+  };
+
   const activeAgent = (conv.agentId && agents.find((a) => a.id === conv.agentId)) ||
     agents.find((a) => (conv.agent || "").startsWith(a.name)) ||
     routeAgent(agents, { intent: conv.intent, channel: sendCh }) || agents[0];
@@ -13094,7 +13463,17 @@ function Thread({ conv, showPanel, setShowPanel }) {
   const ctxAI = (!dismissed[conv.id] && conv && contact) ? detectContext(conv, contact) : null;
   const runCtx = () => {
     if (!ctxAI) return;
-    if (ctxAI.kind === "slots") addMsg({ from: "ai", agent: "Ana · Appointment Agent", text: "I can offer Thursday 11:00 or Friday 15:00 this week. Which works better for you? I will confirm instantly." });
+    if (ctxAI.kind === "slots") {
+      addMsg({ from: "ai", agent: "Ana · Appointment Agent", text: "I can offer Thursday 11:00 or Friday 15:00 this week. Which works better for you? I will confirm instantly." });
+      if (contact?.id) {
+        bookAppointment(contact.id, "Product Walkthrough & Demo", "Ana — Appointment Agent", "Thursday · 11:00", {
+          serviceId: "sv1",
+          staffId: "st1",
+          channel: conv.channel || "whatsapp",
+          note: "Held provisional slot via Ana recommendation in chat.",
+        });
+      }
+    }
     if (ctxAI.kind === "pricing") { addMsg({ from: "ai", agent: "Sarah · Sales Agent", text: TEMPLATES[0].t }); addTask("Follow up with " + (contact?.name || "customer") + " on pricing", "Rina S."); }
     if (ctxAI.kind === "apology") { addMsg({ from: "ai", agent: "Mira · Retention Agent", text: CANNED.Empathetic }); log("BUZZZ AI", "Goodwill credit flagged", contact?.name || "customer"); }
     if (ctxAI.kind === "checkin") { addMsg({ from: "ai", agent: "Kai · Support Agent", text: "The fix is on track. I will message you the moment it lands, and I have scheduled a check in for tomorrow." }); if (contact?.id) bookAppointment(contact.id, "Support check in", "Scheduled from thread", "Tomorrow · 10:00"); }
@@ -13108,6 +13487,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
     const msgText = text;
     addMsg(note ? { from: "human", who: "Jordan Lee", text: msgText, note: true, channel: null } : { from: "human", who: "Jordan Lee", text: msgText });
     if (!note) patchConv({ state: "Waiting", unread: 0 });
+    checkAndAutoBook(msgText);
     log("You", note ? "Internal note added" : "Reply sent", contact?.name || "Customer");
     if (!note) {
       api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" }).catch((err) => console.warn("⚠️ Outbound send API error:", err));
@@ -13124,6 +13504,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
       run: () => {
         addMsg({ from: "ai", agent: handler ? agentFullName(handler) : "AI", text: msgText });
         patchConv({ state: "Waiting", unread: 0 });
+        checkAndAutoBook(msgText);
         api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" }).catch((err) => console.warn("⚠️ Outbound send API error:", err));
       } });
     if (r.ok) flash("Sent as " + (handler ? handler.name : "AI"));
@@ -13195,6 +13576,70 @@ function Thread({ conv, showPanel, setShowPanel }) {
           )}
         </div>
       </div>
+
+      {/* Ana Smart Appointment Bar */}
+      {(() => {
+        const apptForContact = (appts || []).find((a) => a.contactId === conv.contactId || (conv.phone && a.phone === conv.phone));
+        const parsedAppt = parseAppointmentFromConv(conv);
+        if (apptForContact) {
+          return (
+            <div className={`shrink-0 px-4 py-2 border-b flex items-center justify-between text-xs bg-emerald-500/10 border-emerald-500/20`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="font-semibold text-emerald-800 dark:text-emerald-300 truncate">
+                  📅 Ana (Appointment Agent): {apptForContact.title} on {fmtWhen(apptForContact)}
+                </span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${apptForContact.status === "Confirmed" ? "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/20 text-amber-700 dark:text-amber-300"}`}>
+                  {apptForContact.status}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => go("appointments")}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <Calendar size={12} />
+                  <span>View in Calendar</span>
+                </button>
+              </div>
+            </div>
+          );
+        } else if (parsedAppt) {
+          return (
+            <div className={`shrink-0 px-4 py-2 border-b flex items-center justify-between text-xs bg-red-500/10 border-red-500/20`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+                <span className="font-semibold text-red-900 dark:text-red-300 truncate">
+                  ⚡ Ana detected appointment request: {parsedAppt.title} ({fmtWhen(parsedAppt)})
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => {
+                    const booked = bookAppointment(conv.contactId, parsedAppt.title, "Ana — Appointment Agent", parsedAppt.start, {
+                      serviceId: parsedAppt.serviceId,
+                      staffId: "st1",
+                      channel: conv.channel || "whatsapp",
+                      note: "Auto-scheduled with Ana based on chat conversation."
+                    });
+                    addMsg({
+                      from: "ai",
+                      agent: "Ana · Appointment Agent",
+                      text: `I have scheduled your appointment for ${fmtWhen(booked)}. Meeting link: ${booked.meetUrl}. Looking forward to speaking!`,
+                    });
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-white text-[11px] font-semibold flex items-center gap-1 shadow-xs hover:opacity-90 cursor-pointer"
+                  style={{ background: BRAND }}
+                >
+                  <Plus size={12} />
+                  <span>Auto-Book with Ana</span>
+                </button>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* messages */}
       <div className="flex-1 overflow-y-auto bz-scroll px-6 py-6">
@@ -21129,7 +21574,7 @@ function MeetingPanel({ appt, contact, onClose }) {
 }
 
 function AppointmentsView() {
-  const { T, dk, appts, flash, ind, wsName } = useApp();
+  const { T, dk, appts, flash, ind, wsName, syncAppointmentsWithAna, convs } = useApp();
   const [tab, setTab] = useState("Calendar");
   const [book, setBook] = useState(null);     // {date} | null
   const [detail, setDetail] = useState(null);
@@ -21142,8 +21587,20 @@ function AppointmentsView() {
       <div className={`shrink-0 px-6 pt-5 border-b ${T.border} ${T.panel}`}>
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-semibold bz-display tracking-tight">Appointments</h1>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 font-semibold border border-red-500/20 inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            Ana (Appointment Agent) Active
+          </span>
           <span className={`text-[11px] ${T.faint}`}>{todays.length} today · {pending.length} awaiting confirmation · {appts.filter((a) => a.status === "No show").length} no shows</span>
           <div className="flex-1" />
+          <button
+            onClick={() => syncAppointmentsWithAna && syncAppointmentsWithAna(convs)}
+            className={`h-9 px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition ${T.chip} ${T.hover}`}
+            title="Scan conversation chats and update appointments automatically"
+          >
+            <Sparkles size={13} className="text-red-500" />
+            <span>Ana Auto-Sync</span>
+          </button>
           <button onClick={() => { try { navigator.clipboard && navigator.clipboard.writeText("https://book.buzzzbuzzz.com/" + wsName.toLowerCase().replace(/\s+/g, "-")); } catch (e) {} flash("Booking link copied: book.buzzzbuzzz.com/" + wsName.toLowerCase().replace(/\s+/g, "-")); }}
             className={`h-9 px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 ${T.chip} ${T.hover}`}><Globe size={13} /> Booking link</button>
           <button onClick={() => setBook({})} className="h-9 px-3.5 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-1.5" style={{ background: BRAND }}><Plus size={13} /> New appointment</button>

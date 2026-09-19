@@ -1076,7 +1076,34 @@ apiRouter.post("/conversations/:convId/ai-reply", async (req, res, next) => {
       updatedAt: new Date().toISOString(),
     };
 
-    const savedConv = await upsertConversation(updatedConv);
+    // Ana (Appointment Agent) automatic sync from conversation chat
+    if (agent.id === "a3" || agent.name === "Ana" || /appointment|book|schedule|demo|walkthrough/i.test(replyText || "")) {
+      const existingAppt = db.appointments.find((a) => a.conversationId === convId || (conv.phone && a.phone === conv.phone) || (conv.customerName && a.customerName === conv.customerName));
+      if (!existingAppt) {
+        const autoAppt = {
+          id: `ap_ana_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          workspaceId: conv.workspaceId || "ws_default",
+          conversationId: convId,
+          contactId: conv.contactId || `c_${convId}`,
+          customerName: conv.customerName || "Customer",
+          phone: conv.phone || "",
+          serviceId: "sv1",
+          staffId: "st1",
+          staffName: "Ana (AI Agent)",
+          title: "Product Walkthrough & Demo",
+          start: new Date(Date.now() + 86400000 * 2 + 3600000 * 3).toISOString(),
+          durMin: 30,
+          status: "Confirmed",
+          source: "Chat AI",
+          confirmChannel: (conv.channel || "whatsapp").toLowerCase(),
+          notes: [`Automatically scheduled by Ana from conversation: "${(replyText || "").slice(0, 60)}"`],
+          createdAt: new Date().toISOString(),
+        };
+        db.appointments.unshift(autoAppt);
+        broadcastSseEvent("appointment:created", { appointment: autoAppt });
+      }
+    }
+
     broadcastSseEvent("message:new", { conversation: savedConv, message: savedMsg });
     broadcastSseEvent("conversation:updated", { conversation: savedConv });
 
@@ -1427,6 +1454,38 @@ apiRouter.get("/appointments", (req, res) => {
   const wsId = getWorkspaceId(req);
   const appointments = db.appointments.filter((a) => !a.workspaceId || a.workspaceId === wsId);
   res.json(appointments);
+});
+
+apiRouter.post("/appointments", (req, res) => {
+  const wsId = getWorkspaceId(req);
+  const newAppt = {
+    id: req.body.id || `ap_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    workspaceId: wsId,
+    createdAt: new Date().toISOString(),
+    status: "Confirmed",
+    durMin: 30,
+    source: "Chat AI",
+    ...req.body,
+  };
+  db.appointments.unshift(newAppt);
+  broadcastSseEvent("appointment:created", { appointment: newAppt });
+  res.status(201).json(newAppt);
+});
+
+apiRouter.patch("/appointments/:id", (req, res) => {
+  const { id } = req.params;
+  const idx = db.appointments.findIndex((a) => a.id === id);
+  if (idx === -1) return res.status(404).json({ error: "Appointment not found" });
+  db.appointments[idx] = { ...db.appointments[idx], ...req.body, updatedAt: new Date().toISOString() };
+  broadcastSseEvent("appointment:updated", { appointment: db.appointments[idx] });
+  res.json(db.appointments[idx]);
+});
+
+apiRouter.delete("/appointments/:id", (req, res) => {
+  const { id } = req.params;
+  db.appointments = db.appointments.filter((a) => a.id !== id);
+  broadcastSseEvent("appointment:deleted", { id });
+  res.json({ success: true });
 });
 
 apiRouter.get("/agents", (req, res) => {
