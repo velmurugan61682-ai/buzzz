@@ -7682,9 +7682,15 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
+    const periodicSync = setInterval(() => {
+      syncChannelBotConnectionStatus();
+    }, 120000);
 
-    return () => window.removeEventListener("focus", onFocus);
-  }, [flash, syncGoogleConnectionStatus, syncInstaxBotConnectionStatus]);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      clearInterval(periodicSync);
+    };
+  }, [flash, syncGoogleConnectionStatus, syncInstaxBotConnectionStatus, syncChannelBotConnectionStatus]);
   const [syncRuns, setSyncRuns] = useState([]);
   const [apiKeys, setApiKeys] = useState([{ id: "k1", name: "Production", key: "bz_live_9f2ac41d77e0", created: atDay(-30, 9), lastUsed: atDay(0, 7), scopes: ["contacts:read", "contacts:write", "messages:send"] }]);
   const [outHooks, setOutHooks] = useState([{ id: "h1", url: "https://acme.example/hooks/buzzz", events: ["contact.created", "deal.won"], on: true, lastStatus: 200, lastAt: atDay(0, 8), failures: 0 }]);

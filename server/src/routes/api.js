@@ -2720,6 +2720,8 @@ const handleChannelBotInStatus = async (req, res) => {
       connectedAt: new Date().toISOString(),
       remoteStatus: health.status || "200_OK",
       usageCountIncremented: true,
+      syncIntervalSeconds: Math.round((parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 120000) / 1000),
+      syncIntervalMinutes: Math.round((parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 120000) / 60000),
     });
   } catch (err) {
     res.status(500).json({ connected: false, state: "Needs attention", error: err.message });

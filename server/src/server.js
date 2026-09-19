@@ -110,7 +110,8 @@ const startServer = async () => {
   startGmailMessagesAutoSyncScheduler(broadcastSseEvent, 30000);
   startGoWhatsAutoSyncScheduler(broadcastSseEvent, 10000);
   startInstaxBotAutoSyncScheduler(broadcastSseEvent, 45000);
-  startChannelBotAutoSyncScheduler(broadcastSseEvent, 60000);
+  const channelBotSyncIntervalMs = parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 120000; // 2 minutes auto-sync
+  startChannelBotAutoSyncScheduler(broadcastSseEvent, channelBotSyncIntervalMs);
 
   const server = app.listen(PORT, () => {
     console.log(`=======================================================`);
