@@ -837,6 +837,261 @@ const handleMarkConversationRead = async (req, res, next) => {
 apiRouter.patch("/conversations/:convId/read", handleMarkConversationRead);
 apiRouter.post("/conversations/:convId/read", handleMarkConversationRead);
 
+// Helper Agent Registry & Auto-Routing
+const AGENT_REGISTRY = {
+  a1: { id: "a1", name: "Sarah", title: "Sales Agent", type: "sales", role: "Qualify inbound leads, answer product and pricing questions" },
+  a2: { id: "a2", name: "Kai", title: "Support Agent", type: "support", role: "Resolve customer issues on first contact" },
+  a3: { id: "a3", name: "Ana", title: "Appointment Agent", type: "appointment", role: "Book, reschedule and confirm appointments" },
+  a4: { id: "a4", name: "Voz", title: "Voice Agent", type: "voice", role: "Answer and place phone calls, handle missed calls" },
+  a5: { id: "a5", name: "Mira", title: "Follow up Agent", type: "followup", role: "Chase quiet leads and stalled opportunities" },
+  a6: { id: "a6", name: "Sky", title: "Social Agent", type: "social", role: "Engage social attention, reply to comments and DMs" },
+};
+
+export const determineAgentForConv = (conv) => {
+  const ch = (conv.channel || "").toLowerCase();
+  const text = (conv.lastMessage || "").toLowerCase();
+
+  // Voice / Missed Calls
+  if (ch.includes("voice") || ch.includes("call") || conv.type === "MISSED") {
+    return AGENT_REGISTRY.a4; // Voz
+  }
+  // Booking / Appointments
+  if (/book|appointment|schedule|time slot|calendar|meeting|demo/i.test(text)) {
+    return AGENT_REGISTRY.a3; // Ana
+  }
+  // Support / Issues / Troubleshooting
+  if (/help|issue|bug|problem|error|not working|failed|broken|refund|order status|complaint|cancel/i.test(text)) {
+    return AGENT_REGISTRY.a2; // Kai
+  }
+  // Social Channels (ChannelBot, YouTube, Instagram, InstaxBot, Facebook)
+  if (["channelbot.in", "youtube", "instagram", "instaxbot", "facebook"].includes(ch)) {
+    return AGENT_REGISTRY.a6; // Sky
+  }
+  // Follow-up / Inactive
+  if (conv.state === "Follow up" || /follow up|checking in|haven't heard/i.test(text)) {
+    return AGENT_REGISTRY.a5; // Mira
+  }
+  // Default WhatsApp / Sales / General inbound
+  return AGENT_REGISTRY.a1; // Sarah
+};
+
+export const generateSmartAgentReply = (agent, conv, lastText = "") => {
+  const firstName = (conv.customerName || "there").split(" ")[0];
+  const t = (lastText || conv.lastMessage || "").toLowerCase();
+
+  switch (agent.id) {
+    case "a1": // Sarah (Sales)
+      if (/price|cost|how much|rate|quote|plan/i.test(t)) {
+        return `Hi ${firstName}! Our Growth plan is ₹19,999/month for up to 10 seats, which includes our full Unified Inbox, 2 autonomous AI agents, and WhatsApp + Instagram multi-channel sync. Would you like me to hold a live demo slot for you today?`;
+      }
+      if (/feature|catalog|product|service/i.test(t)) {
+        return `Hello ${firstName}, thank you for reaching out! We provide full omni-channel customer automation across WhatsApp, YouTube, Instagram, and Voice. How many customer conversations does your team currently manage per week?`;
+      }
+      return `Hello ${firstName}! Thanks for getting in touch with us. I'm Sarah from the sales team. How can I best assist you with your business goals today?`;
+
+    case "a2": // Kai (Support)
+      if (/refund|money back/i.test(t)) {
+        return `Hi ${firstName}, I completely understand and I'm here to help. I've logged your request and verified your account details. A member of our billing team will review this within policy today. Is there anything else about the order I can clarify?`;
+      }
+      return `Hi ${firstName}, Kai from support here. I see your message and I'm looking into this for you right now. Could you share any additional error details or screenshots if available so we can resolve this on first contact?`;
+
+    case "a3": // Ana (Appointment)
+      return `Hello ${firstName}! I'd be delighted to help schedule a session with our team. I currently have availability this Thursday at 11:00 AM or Friday at 3:00 PM IST. Do either of those work well for you?`;
+
+    case "a5": // Mira (Follow-up)
+      return `Hi ${firstName}, Mira here following up! Just checking in to see if you had any questions regarding the details we discussed earlier, or if there's anything else we can assist with?`;
+
+    case "a6": // Sky (Social)
+      if (/collab|creator|partnership/i.test(t)) {
+        return `Hey ${firstName}! 🔥 Love the energy. We're always excited to collaborate with creators. Drop your media kit or channel link here and our team will check it out!`;
+      }
+      return `Hey ${firstName}! Thanks for reaching out and engaging with our content. Let us know what you'd like to see next or how we can help! 🚀`;
+
+    case "a4": // Voz (Voice)
+    default:
+      return `Hello ${firstName}, thank you for contacting us. Our AI assistant has recorded your message and our team will get back to you shortly!`;
+  }
+};
+
+// PATCH /api/conversations/:convId: Update conversation attributes (ai, agent, state, priority, etc.)
+apiRouter.patch("/conversations/:convId", async (req, res, next) => {
+  try {
+    const { convId } = req.params;
+    const existing = await fetchConversationById(convId);
+    if (!existing) {
+      return res.status(404).json({ code: "not_found", message: `Conversation ${convId} not found` });
+    }
+
+    const updates = req.body || {};
+    const updatedConv = {
+      ...existing,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const saved = await upsertConversation(updatedConv);
+    broadcastSseEvent("conversation:updated", { conversation: saved });
+    res.json({ success: true, conversation: saved });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/conversations/ai-autopilot: Batch assign agents and auto-run AI on inbox
+apiRouter.post("/conversations/ai-autopilot", async (req, res, next) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const { mode = "assign_and_reply", convIds = [] } = req.body || {};
+    const conversations = await fetchConversations(wsId);
+
+    const targetList = convIds.length > 0
+      ? conversations.filter((c) => convIds.includes(c.id))
+      : conversations;
+
+    const agentCounts = { Sarah: 0, Kai: 0, Ana: 0, Voz: 0, Mira: 0, Sky: 0 };
+    let repliesSent = 0;
+    const updatedConvs = [];
+
+    for (const conv of targetList) {
+      const agent = determineAgentForConv(conv);
+      if (agentCounts[agent.name] !== undefined) agentCounts[agent.name]++;
+
+      let convUpdates = {
+        ...conv,
+        ai: true,
+        agent: `${agent.name} — ${agent.title}`,
+        agentId: agent.id,
+        assigned: `${agent.name} (AI)`,
+        intent: agent.type === "sales" ? "sales" : agent.type === "support" ? "support" : agent.type === "appointment" ? "booking" : agent.type === "social" ? "social" : "general",
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Auto-reply to up to 25 priority unread customer conversations per batch run
+      if (mode === "assign_and_reply" && conv.unreadCount > 0 && repliesSent < 25) {
+        const replyText = generateSmartAgentReply(agent, conv, conv.lastMessage);
+        const newMsg = {
+          id: `msg_ai_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          conversationId: conv.id,
+          sender: "agent",
+          text: replyText,
+          timestamp: new Date().toISOString(),
+          status: "sent",
+        };
+
+        try {
+          await saveMessage(newMsg);
+          repliesSent++;
+        } catch (_msgErr) {}
+
+        convUpdates.lastMessage = replyText;
+        convUpdates.unreadCount = 0;
+      }
+
+      const saved = await upsertConversation(convUpdates);
+      updatedConvs.push(saved);
+    }
+
+    broadcastSseEvent("inbox:autopilot_completed", {
+      totalProcessed: targetList.length,
+      repliesSent,
+      agentDistribution: agentCounts,
+    });
+
+    res.json({
+      success: true,
+      mode,
+      totalProcessed: targetList.length,
+      repliesSent,
+      agentDistribution: agentCounts,
+      updatedConversations: updatedConvs.slice(0, 10), // sample
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/conversations/:convId/ai-reply: Generate and dispatch single AI agent response
+apiRouter.post("/conversations/:convId/ai-reply", async (req, res, next) => {
+  try {
+    const { convId } = req.params;
+    const { customText, agentId } = req.body || {};
+    const conv = await fetchConversationById(convId);
+    if (!conv) {
+      return res.status(404).json({ code: "not_found", message: `Conversation ${convId} not found` });
+    }
+
+    const agent = (agentId && AGENT_REGISTRY[agentId]) || determineAgentForConv(conv);
+    const replyText = customText || generateSmartAgentReply(agent, conv, conv.lastMessage);
+
+    let initialStatus = "sent";
+    let gowhatsMessageId = null;
+
+    // Dispatch outbound if WhatsApp
+    if (conv.channel === "WhatsApp" && conv.phone) {
+      try {
+        const sendResult = await sendWhatsAppMessage({ to: conv.phone, text: replyText });
+        gowhatsMessageId = sendResult.gowhatsMessageId;
+        console.log(`📤 AI Agent ${agent.name} sent WhatsApp message to ${conv.phone}`);
+      } catch (err) {
+        console.warn(`⚠️ Outbound WhatsApp dispatch notice for ${conv.phone}:`, err.message);
+      }
+    }
+
+    const newMsg = {
+      id: `msg_ai_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      conversationId: convId,
+      sender: "agent",
+      text: replyText,
+      timestamp: new Date().toISOString(),
+      gowhatsMessageId,
+      status: initialStatus,
+    };
+
+    const savedMsg = await saveMessage(newMsg);
+    try {
+      await saveUnifiedMessage({
+        id: newMsg.id,
+        workspaceId: conv.workspaceId || "ws_default",
+        conversationId: convId,
+        integrationId: conv.platform || "default",
+        platform: conv.platform || (conv.channel || "whatsapp").toLowerCase(),
+        externalMessageId: newMsg.id,
+        sender: { name: agent.name, kind: "agent" },
+        direction: "outbound",
+        text: replyText,
+        status: initialStatus,
+        receivedAt: new Date(),
+      });
+    } catch (_uErr) {}
+
+    const updatedConv = {
+      ...conv,
+      ai: true,
+      agent: `${agent.name} — ${agent.title}`,
+      agentId: agent.id,
+      assigned: `${agent.name} (AI)`,
+      lastMessage: replyText,
+      unreadCount: 0,
+      state: "Waiting",
+      updatedAt: new Date().toISOString(),
+    };
+
+    const savedConv = await upsertConversation(updatedConv);
+    broadcastSseEvent("message:new", { conversation: savedConv, message: savedMsg });
+    broadcastSseEvent("conversation:updated", { conversation: savedConv });
+
+    res.status(201).json({
+      success: true,
+      agent: agent.name,
+      agentTitle: agent.title,
+      message: savedMsg,
+      conversation: savedConv,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
   try {
     const { convId } = req.params;

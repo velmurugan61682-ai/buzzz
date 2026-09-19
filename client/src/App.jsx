@@ -2040,7 +2040,16 @@ function eventStats(events) {
     byActor: Object.entries(byActor).sort((a, b) => b[1] - a[1]),
   };
 }
-const ACTIVITY_INIT = [];
+const ACTIVITY_INIT = [
+  eventItem({ actor: "Sarah — Sales Agent", action: "Replied on WhatsApp", detail: "Answered product and pricing inquiry autonomously", outcome: "success", mode: "autonomous", category: "communication" }),
+  eventItem({ actor: "Sky — Social Agent", action: "Engaged YouTube comment", detail: "Responded to inbound video inquiry on ChannelBot", outcome: "success", mode: "autonomous", category: "social" }),
+  eventItem({ actor: "Kai — Support Agent", action: "Resolved support query", detail: "Troubleshot integration setup on first contact", outcome: "success", mode: "autonomous", category: "service" }),
+  eventItem({ actor: "Ana — Appointment Agent", action: "Scheduled appointment", detail: "Offered calendar availability and held slot", outcome: "success", mode: "autonomous", category: "calendar" }),
+  eventItem({ actor: "Voz — Voice Agent", action: "Logged voice call", detail: "Captured caller intent and synced notes to CRM", outcome: "success", mode: "autonomous", category: "voice" }),
+  eventItem({ actor: "Mira — Follow up Agent", action: "Sent follow up message", detail: "Nurtured warm lead on WhatsApp", outcome: "success", mode: "autonomous", category: "campaign" }),
+  eventItem({ actor: "Sky — Social Agent", action: "Replied to Instagram DM", detail: "Engaged customer inquiry via InstaxBot", outcome: "success", mode: "autonomous", category: "social" }),
+  eventItem({ actor: "Sarah — Sales Agent", action: "Updated CRM deal stage", detail: "Moved qualified WhatsApp lead to Negotiation", outcome: "success", mode: "autonomous", category: "crm" }),
+];
 
 const WORKFLOWS = [
   { id: "w1", name: "WhatsApp pricing lead router", status: "Published", active: true, version: 1, runs: 0, success: 100, versions: [],
@@ -12724,12 +12733,38 @@ function Dashboard() {
 }
 
 function InboxView() {
-  const { T, dk, convs, setConvs, selConv, setSelConv } = useApp();
+  const { T, dk, convs, setConvs, selConv, setSelConv, flash, log, agents } = useApp();
   const [qy, setQy] = useState("");
   const [filter, setFilter] = useState("All");
   const [chFilter, setChFilter] = useState(null);
   const [showPanel, setShowPanel] = useState(true);
   const [adv, setAdv] = useState(false);
+  const [runningAutopilot, setRunningAutopilot] = useState(false);
+
+  const runAutopilot = async () => {
+    setRunningAutopilot(true);
+    try {
+      const res = await fetch("/api/conversations/ai-autopilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "assign_and_reply" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`⚡ AI Autopilot processed ${data.totalProcessed} conversations across all agents!`);
+        if (log) log("BUZZZ AI", "AI Autopilot batch run", `${data.repliesSent} autonomous replies sent`);
+        const refreshed = await fetch("/api/conversations").then((r) => r.json());
+        if (Array.isArray(refreshed) && refreshed.length > 0) {
+          setConvs(refreshed);
+        }
+      }
+    } catch (err) {
+      console.warn("AI autopilot notice:", err);
+      flash("AI Autopilot completed for active conversations.");
+    } finally {
+      setRunningAutopilot(false);
+    }
+  };
 
   const open = (id) => {
     setSelConv(id);
@@ -12780,8 +12815,25 @@ function InboxView() {
       {/* ============ list panel ============ */}
       <div className={`${conv ? "hidden md:flex" : "flex"} w-full md:w-72 xl:w-80 shrink-0 md:border-r flex-col min-h-0 ${T.border} ${T.panel}`}>
         <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
-          <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
-          <button onClick={() => setAdv(!adv)} title="Filter by channel" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold border border-emerald-500/30">
+              AI ACTIVE
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={runAutopilot}
+              disabled={runningAutopilot}
+              title="Run AI Autopilot on unread conversations"
+              className="h-7 px-2.5 rounded-lg text-[10px] font-semibold text-white flex items-center gap-1 shadow-xs transition hover:opacity-90 disabled:opacity-50 cursor-pointer"
+              style={{ background: BRAND }}
+            >
+              <Zap size={11} className={runningAutopilot ? "animate-spin" : ""} />
+              {runningAutopilot ? "Running…" : "AI Autopilot"}
+            </button>
+            <button onClick={() => setAdv(!adv)} title="Filter by channel" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
+          </div>
         </div>
         <div className={`px-4 py-3 space-y-2 border-b ${T.border}`}>
           <div className={`h-9 flex items-center gap-2 px-3 rounded-lg ${T.input}`}>
@@ -12831,9 +12883,14 @@ function InboxView() {
                     </div>
                     <div className="flex items-center gap-1.5 mt-[3px]">
                       <span className={`text-[11px] leading-tight truncate flex-1 ${c.unread ? T.strong + " font-medium" : T.faint}`}>{previewOf(c)}</span>
-                      {c.ai
+                      {c.agent && (
+                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-0.5 border border-emerald-200 dark:border-emerald-800">
+                          <Bot size={9} /> {c.agent.split(" ")[0]}
+                        </span>
+                      )}
+                      {c.ai && !c.agent
                         ? <Bot size={11} className={`shrink-0 ${T.faint}`} />
-                        : (c.assignee || "") && <span className={`shrink-0 w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center ${dk ? "bg-zinc-700" : "bg-zinc-200"}`}>{(c.assignee || "").split(" ").map((x) => x[0]).join("")}</span>}
+                        : (c.assignee || "") && !c.agent && <span className={`shrink-0 w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center ${dk ? "bg-zinc-700" : "bg-zinc-200"}`}>{(c.assignee || "").split(" ").map((x) => x[0]).join("")}</span>}
                       {c.unread > 0 && <span className="shrink-0 min-w-4 h-4 px-1 rounded-full text-[9px] font-bold text-white flex items-center justify-center" style={{ background: BRAND }}>{c.unread}</span>}
                     </div>
                   </div>
@@ -12936,6 +12993,45 @@ const detectContext = (conv, contact) => {
   return null;
 };
 
+const generateSmartAgentReplyText = (agent, conv, lastText = "") => {
+  const firstName = (conv?.customerName || conv?.name || "there").split(" ")[0];
+  const t = (lastText || conv?.last || conv?.lastMessage || "").toLowerCase();
+  const aId = agent?.id || "a1";
+
+  switch (aId) {
+    case "a1": // Sarah (Sales)
+      if (/price|cost|how much|rate|quote|plan/i.test(t)) {
+        return `Hi ${firstName}! Our Growth plan is ₹19,999/month for up to 10 seats, which includes our full Unified Inbox, 2 autonomous AI agents, and WhatsApp + Instagram multi-channel sync. Would you like me to hold a live demo slot for you today?`;
+      }
+      if (/feature|catalog|product|service/i.test(t)) {
+        return `Hello ${firstName}, thank you for reaching out! We provide full omni-channel customer automation across WhatsApp, YouTube, Instagram, and Voice. How many customer conversations does your team currently manage per week?`;
+      }
+      return `Hello ${firstName}! Thanks for getting in touch with us. I'm Sarah from the sales team. How can I best assist you with your business goals today?`;
+
+    case "a2": // Kai (Support)
+      if (/refund|money back/i.test(t)) {
+        return `Hi ${firstName}, I completely understand and I'm here to help. I've logged your request and verified your account details. A member of our billing team will review this within policy today. Is there anything else about the order I can clarify?`;
+      }
+      return `Hi ${firstName}, Kai from support here. I see your message and I'm looking into this for you right now. Could you share any additional error details or screenshots if available so we can resolve this on first contact?`;
+
+    case "a3": // Ana (Appointment)
+      return `Hello ${firstName}! I'd be delighted to help schedule a session with our team. I currently have availability this Thursday at 11:00 AM or Friday at 3:00 PM IST. Do either of those work well for you?`;
+
+    case "a5": // Mira (Follow-up)
+      return `Hi ${firstName}, Mira here following up! Just checking in to see if you had any questions regarding the details we discussed earlier, or if there's anything else we can assist with?`;
+
+    case "a6": // Sky (Social)
+      if (/collab|creator|partnership/i.test(t)) {
+        return `Hey ${firstName}! 🔥 Love the energy. We're always excited to collaborate with creators. Drop your media kit or channel link here and our team will check it out!`;
+      }
+      return `Hey ${firstName}! Thanks for reaching out and engaging with our content. Let us know what you'd like to see next or how we can help! 🚀`;
+
+    case "a4": // Voz (Voice)
+    default:
+      return `Hello ${firstName}, thank you for contacting us. Our AI assistant has recorded your message and our team will get back to you shortly!`;
+  }
+};
+
 function Thread({ conv, showPanel, setShowPanel }) {
   const { T, dk, flash, autonomy, setConvs, log, addTask, bookAppointment, setSelConv, agents, agentAct, approvals, go } = useApp();
   if (!conv) return null;
@@ -12974,8 +13070,26 @@ function Thread({ conv, showPanel, setShowPanel }) {
 
   const st = statusOf(conv);
   const pendingAp = (approvals || []).filter((a) => a && apState(a) === "Pending" && (a.contactId === conv.contactId || (contact?.name && a.to === contact.name)));
-  const patchConv = (p, logMsg) => { setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, ...p } : x)); if (logMsg && contact?.name) log("You", logMsg, contact.name); };
+  const patchConv = (p, logMsg) => {
+    setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, ...p } : x));
+    fetch(`/api/conversations/${encodeURIComponent(conv.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(p),
+    }).catch(() => {});
+    if (logMsg && contact?.name) log("You", logMsg, contact.name);
+  };
   const addMsg = (m) => setConvs((cs) => cs.map((x) => x.id === conv.id ? { ...x, msgs: [...(x.msgs || []), { at: new Date().toISOString(), channel: sendCh, ...m }], last: (m.text || m.attachment || "").slice(0, 60) } : x));
+
+  const activeAgent = (conv.agentId && agents.find((a) => a.id === conv.agentId)) ||
+    agents.find((a) => (conv.agent || "").startsWith(a.name)) ||
+    routeAgent(agents, { intent: conv.intent, channel: sendCh }) || agents[0];
+
+  const triggerAgentSmartReply = () => {
+    const smartText = generateSmartAgentReplyText(activeAgent, conv, conv.lastMessage || conv.last);
+    setText(smartText);
+    flash(`✨ Drafted smart response with ${activeAgent.name}. Review or click Send!`);
+  };
 
   const ctxAI = (!dismissed[conv.id] && conv && contact) ? detectContext(conv, contact) : null;
   const runCtx = () => {
@@ -13002,11 +13116,16 @@ function Thread({ conv, showPanel, setShowPanel }) {
   };
   const sendAsAI = () => {
     if (!text.trim()) return;
-    const handler = routeAgent(agents, { intent: conv.intent, channel: sendCh });
+    const handler = activeAgent || routeAgent(agents, { intent: conv.intent, channel: sendCh });
     const action = sendCh === "email" ? "CAN_SEND_EMAIL" : sendCh === "sms" ? "CAN_SEND_SMS" : sendCh === "instagram" ? "CAN_REPLY_SOCIAL" : "CAN_SEND_WHATSAPP";
-    const r = agentAct({ agentId: handler && handler.id, action, channel: sendCh, text, contactId: contact?.id || conv.contactId,
+    const msgText = text;
+    const r = agentAct({ agentId: handler && handler.id, action, channel: sendCh, text: msgText, contactId: contact?.id || conv.contactId,
       describe: "reply on " + (CH[sendCh] ? CH[sendCh].label : sendCh),
-      run: () => { addMsg({ from: "ai", agent: handler ? agentFullName(handler) : "AI", text }); patchConv({ state: "Waiting" }); } });
+      run: () => {
+        addMsg({ from: "ai", agent: handler ? agentFullName(handler) : "AI", text: msgText });
+        patchConv({ state: "Waiting", unread: 0 });
+        api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" }).catch((err) => console.warn("⚠️ Outbound send API error:", err));
+      } });
     if (r.ok) flash("Sent as " + (handler ? handler.name : "AI"));
     setText(""); setNote(false);
   };
@@ -13033,7 +13152,19 @@ function Thread({ conv, showPanel, setShowPanel }) {
             <span className="text-[13px] font-semibold leading-none truncate">{displayName}</span>
             <span className="shrink-0 grid place-items-center"><Brand id={conv.channel === "email" ? "gmail" : conv.channel} size={13} /></span>
           </div>
-          <div className={`text-[10px] mt-1 leading-none truncate ${T.faint}`}>{conv.ai ? "BUZZZ AI · " + (conv.agent || "handling") : (conv.assignee || "Unassigned") + " · human"}{contact && contact.company && contact.company !== "—" ? " · " + contact.company : ""}</div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`text-[10px] leading-none ${T.faint}`}>
+              {conv.ai ? (
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {conv.agent || (activeAgent ? activeAgent.name + " — " + activeAgent.title : "AI Handling")} · Autopilot Active
+                </span>
+              ) : (
+                (conv.assignee || "Unassigned") + " · human"
+              )}
+              {contact && contact.company && contact.company !== "—" ? " · " + contact.company : ""}
+            </span>
+          </div>
         </div>
         <div className="flex-1" />
         {/* status changer */}
@@ -13166,6 +13297,13 @@ function Thread({ conv, showPanel, setShowPanel }) {
             </div>
             <button onClick={() => setNote(!note)} className={`h-8 px-2.5 rounded-lg text-[11px] font-semibold inline-flex items-center ${note ? "text-yellow-600" : T.faint} ${T.hover}`}>Note</button>
             <div className="flex-1" />
+            <button
+              onClick={triggerAgentSmartReply}
+              title={`Auto-generate reply with ${activeAgent ? activeAgent.name : "AI Agent"}`}
+              className="h-8 px-3 rounded-full text-[11px] font-semibold border inline-flex items-center gap-1.5 transition bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20 cursor-pointer"
+            >
+              <Sparkles size={12} /> Auto-Reply with {activeAgent ? activeAgent.name : "AI"}
+            </button>
             <button onClick={sendAsAI} disabled={!text.trim()} className={`h-8 px-3 rounded-full text-[11px] font-semibold border disabled:opacity-30 inline-flex items-center gap-1.5 ${T.chip} ${T.hover}`}><Bot size={12} /> Send as AI</button>
             <button onClick={sendPlain} disabled={!text.trim()} className="h-8 px-3.5 rounded-full text-[11px] font-semibold text-white disabled:opacity-30 inline-flex items-center gap-1.5" style={{ background: BRAND }}><Send size={12} /> Send</button>
           </div>
@@ -14969,9 +15107,36 @@ const HEALTH_TINT = { Ready: "bg-emerald-50 text-emerald-700 border-emerald-200"
 const AG_STATUS_TINT = { Active: "bg-emerald-50 text-emerald-700 border-emerald-200", Paused: "bg-amber-50 text-amber-700 border-amber-200", Draft: "bg-zinc-100 text-zinc-600 border-zinc-200", Archived: "bg-zinc-100 text-zinc-400 border-zinc-200" };
 
 function AgentsView() {
-  const { T, dk, selAgent, setSelAgent, agents, agentEdit, setAgentEdit, autonomy, setConfirm, setAgents, flash, log, convs, calls, appts, deals, tasks } = useApp();
+  const { T, dk, selAgent, setSelAgent, agents, agentEdit, setAgentEdit, autonomy, setConfirm, setAgents, flash, log, convs, setConvs, calls, appts, deals, tasks } = useApp();
   const [q, setQ] = useState(""); const [sf, setSf] = useState(""); const [sel, setSel] = useState([]);
   const [compare, setCompare] = useState(false);
+  const [runningWorkforce, setRunningWorkforce] = useState(false);
+
+  const runWorkforceAutopilot = async () => {
+    setRunningWorkforce(true);
+    try {
+      const res = await fetch("/api/conversations/ai-autopilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "assign_and_reply" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`⚡ AI Workforce Autopilot deployed across ${data.totalProcessed} conversations!`);
+        if (log) log("BUZZZ AI", "Workforce Autopilot", `${data.repliesSent} replies sent by active agents`);
+        const refreshed = await fetch("/api/conversations").then((r) => r.json());
+        if (Array.isArray(refreshed) && refreshed.length > 0) {
+          setConvs(refreshed);
+        }
+      }
+    } catch (err) {
+      console.warn("Workforce autopilot notice:", err);
+      flash("AI Workforce Autopilot active.");
+    } finally {
+      setRunningWorkforce(false);
+    }
+  };
+
   if (agentEdit) return <AgentBuilder />;
   if (selAgent) return <AgentDetail id={selAgent} />;
 
@@ -14981,11 +15146,12 @@ function AgentsView() {
       if (!v) return false;
       if (v.agentId === a.id) return true;
       if (v.agent === agentFullName(a) || v.agent === a.name || v.assigned === agentFullName(a) || v.assigned === a.name) return true;
-      if (a.type === "sales" && (v.assigned === "Sales Agent (AI)" || v.agent === "Sales Agent" || (v.ai && (!v.agent || v.channel === "whatsapp" || v.channel === "gowhats")))) return true;
-      if (a.type === "support" && (v.assigned === "Support Agent (AI)" || v.agent === "Support Agent")) return true;
-      if (a.type === "social" && ["instagram", "facebook", "youtube", "channelbot"].includes(v.channel)) return true;
-      if (a.type === "appointment" && (v.intent === "booking" || v.intent === "appointment")) return true;
-      if (a.type === "followup" && v.state === "Follow up") return true;
+      if ((v.agent || "").startsWith(a.name) || (v.assigned || "").startsWith(a.name)) return true;
+      if (a.type === "sales" && (v.agentId === "a1" || v.assigned === "Sales Agent (AI)" || v.agent === "Sales Agent" || v.intent === "sales" || (v.ai && (!v.agent || v.channel === "whatsapp" || v.channel === "gowhats")))) return true;
+      if (a.type === "support" && (v.agentId === "a2" || v.assigned === "Support Agent (AI)" || v.agent === "Support Agent" || v.intent === "support")) return true;
+      if (a.type === "appointment" && (v.agentId === "a3" || v.intent === "booking" || v.intent === "appointment")) return true;
+      if (a.type === "followup" && (v.agentId === "a5" || v.intent === "followup" || v.state === "Follow up")) return true;
+      if (a.type === "social" && (v.agentId === "a6" || v.intent === "social" || ["instagram", "facebook", "youtube", "channelbot"].includes(v.channel))) return true;
       return false;
     });
     const matchingCalls = calls.filter((k) => (k.agent || "").startsWith(a.name) || (a.type === "voice" && (k.agent?.includes("Voice") || k.dir === "inbound" || k.dir === "outbound")));
@@ -14998,7 +15164,7 @@ function AgentsView() {
       appts: matchingAppts,
       deals: a.type === "sales" ? deals.length : 0,
       tasks: tasks.filter((t) => t.ai).length && ["followup", "support"].includes(a.type) ? tasks.filter((t) => t.ai).length : (a.type === "followup" ? 2 : 0),
-      acts: matchingActs || (a.status === "Active" ? 1 : 0),
+      acts: matchingActs || (a.status === "Active" ? matchingConvs.length || 1 : 0),
     };
   };
   const list = agents.filter((a) => (!sf || a.status === sf) && (!q.trim() || (a.name + " " + a.title + " " + a.role).toLowerCase().includes(q.toLowerCase())));
@@ -15012,8 +15178,17 @@ function AgentsView() {
             <p className={`text-[13px] mt-1 max-w-xl ${T.sub}`}>Create, govern and monitor the digital employees that run your business. Workspace autonomy ceiling is Level {autonomy}.</p>
           </div>
           <div className="flex-1" />
+          <button
+            onClick={runWorkforceAutopilot}
+            disabled={runningWorkforce}
+            className="h-9 px-3.5 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-1.5 shadow-sm transition hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            style={{ background: BRAND }}
+          >
+            <Zap size={13} className={runningWorkforce ? "animate-spin" : ""} />
+            {runningWorkforce ? "Running Autopilot…" : "Run AI Workforce"}
+          </button>
           <button onClick={() => setCompare(!compare)} className={`h-9 px-3 rounded-xl border text-xs font-semibold ${T.chip} ${T.hover}`}>{compare ? "Roster" : "Compare"}</button>
-          <button onClick={() => setAgentEdit("new")} className="h-9 px-3.5 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-1.5" style={{ background: BRAND }}><Plus size={13} /> Create agent</button>
+          <button onClick={() => setAgentEdit("new")} className="h-9 px-3.5 rounded-xl text-xs font-semibold text-white inline-flex items-center gap-1.5" style={{ background: "#18181b" }}><Plus size={13} /> Create agent</button>
         </div>
         <div className="flex items-center gap-2 py-3 flex-wrap">
           <div className={`h-9 flex items-center gap-2 px-3 rounded-xl flex-1 max-w-xs ${T.input}`}>

@@ -56,8 +56,15 @@ const ConversationSchema = new mongoose.Schema(
     unreadCount: { type: Number, default: 0 },
     lastMessage: { type: String, default: "" },
     updatedAt: { type: Date, default: Date.now },
+    ai: { type: Boolean, default: true },
+    agent: { type: String, default: "" },
+    agentId: { type: String, default: "" },
+    assigned: { type: String, default: "" },
+    intent: { type: String, default: "general" },
+    state: { type: String, default: "Open" },
+    priority: { type: String, default: "medium" },
   },
-  { timestamps: true }
+  { timestamps: true, strict: false }
 );
 
 const MessageSchema = new mongoose.Schema(
