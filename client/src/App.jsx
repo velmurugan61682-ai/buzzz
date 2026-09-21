@@ -1419,7 +1419,14 @@ const PLATFORMS = {
   google: { label: "Google Business", logo: "google", limit: 1500, tags: 0, kinds: ["Image", "Offer", "Update"], dims: { Image: "1200×900", Offer: "1200×900", Update: "1200×900" }, caps: { schedule: true, publish: true, comments: true, dm: true, analytics: true }, note: "Posts expire after 7 days unless they are offers." },
   tiktok: { label: "TikTok", logo: "youtube", limit: 2200, tags: 20, kinds: ["Short"], dims: { Short: "1080×1920" }, caps: { schedule: true, publish: false, comments: true, dm: false, analytics: true }, note: "Direct publishing needs TikTok content posting approval; drafts push to the app." },
 };
-const SOCIAL_ACCOUNTS_INIT = []; // TODO_BACKEND
+const SOCIAL_ACCOUNTS_INIT = [
+  { id: "sa_linkedin", platform: "linkedin", handle: "Vel Murugan", on: true, followers: 500, growth: 12 },
+  { id: "sa_instagram", platform: "instagram", handle: "@buzzz_platform", on: false, followers: 12400, growth: 8 },
+  { id: "sa_facebook", platform: "facebook", handle: "Buzzz Platform", on: false, followers: 8500, growth: 5 },
+  { id: "sa_youtube", platform: "youtube", handle: "Buzzz Tech", on: false, followers: 3200, growth: 15 },
+  { id: "sa_x", platform: "x", handle: "@buzzz_hq", on: false, followers: 4100, growth: -2 },
+  { id: "sa_google", platform: "google", handle: "Buzzz Solutions", on: false, followers: 980, growth: 4 },
+];
 const PILLARS_INIT = []; // TODO_BACKEND
 const BRAND_INIT = {
   name: "", desc: "", tone: "", audience: "", keywords: "", forbidden: "", cta: "Contact Us", colors: ["#EF2B13", "#18181b", "#f4f4f5"], lang: "English", goal: "",
@@ -7640,9 +7647,23 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             picture: data.picture || null,
             linkedinId: data.linkedinId,
             expiresAt: data.expiresAt,
+            lastSync: new Date().toISOString(),
             error: null,
           },
         }));
+        setAccounts((prev) => {
+          const exists = prev.some((a) => a.platform === "linkedin");
+          const item = {
+            id: "sa_linkedin",
+            platform: "linkedin",
+            handle: data.name || "Vel Murugan",
+            on: true,
+            followers: 500,
+            growth: 12,
+          };
+          if (!exists) return [item, ...prev];
+          return prev.map((a) => (a.platform === "linkedin" ? { ...a, on: true, handle: data.name || a.handle } : a));
+        });
       } else {
         setConns((prev) => ({
           ...prev,
@@ -7654,6 +7675,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             error: data?.expired ? "LinkedIn access token expired. Re-authentication required." : null,
           },
         }));
+        setAccounts((prev) => prev.map((a) => (a.platform === "linkedin" ? { ...a, on: false } : a)));
       }
     } catch (e) {
       console.warn("Failed to sync LinkedIn connection status:", e);
@@ -7714,7 +7736,15 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       const params = new URLSearchParams(window.location.search);
       if (params.get("linkedin") === "connected") {
         const user = params.get("user") || "LinkedIn User";
+        if (window.opener) {
+          try {
+            window.opener.postMessage({ type: "LINKEDIN_AUTH_SUCCESS", user }, "*");
+            window.close();
+            return;
+          } catch (e) {}
+        }
         flash(`LinkedIn account connected successfully as ${user}!`);
+        syncLinkedInConnectionStatus();
         window.history.replaceState({}, document.title, window.location.pathname);
       } else if (params.get("linkedin") === "error") {
         const msg = params.get("msg") || "LinkedIn authorization failed";
@@ -8025,12 +8055,52 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       });
     });
     log(who, "Content " + (p.status === "Published" ? "published" : p.status === "Scheduled" ? "scheduled" : "saved"), p.text.slice(0, 50));
+
+    // Live LinkedIn feed integration
+    if (p.status === "Published" && Array.isArray(p.channels) && p.channels.includes("linkedin") && p.text?.trim()) {
+      const apiHost = getApiHost();
+      fetch(`${apiHost}/api/linkedin/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: p.text }),
+      })
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (r.ok && data.success) {
+            flash(`LinkedIn: Successfully published to your feed!`, "ok");
+          } else {
+            flash(`LinkedIn share: ${data.message || "Failed to publish to feed"}`, "err");
+          }
+        })
+        .catch((err) => {
+          flash(`LinkedIn post error: ${err.message}`, "err");
+        });
+    }
   };
   const deletePost = (id) => { const p = posts.find((x) => x.id === id); setPosts((ps) => ps.filter((x) => x.id !== id)); if (p) trail("Post deleted", p.text.slice(0, 40), p.status, "removed"); };
   const setPostStatus = (id, status, who = "You") => setPosts((ps) => ps.map((p) => {
     if (p.id !== id) return p;
     trail("Post " + status.toLowerCase(), p.text.slice(0, 40), p.status, status, who);
     log(who, "Content " + status.toLowerCase(), p.text.slice(0, 50));
+    if (status === "Published" && Array.isArray(p.channels) && p.channels.includes("linkedin") && p.text?.trim()) {
+      const apiHost = getApiHost();
+      fetch(`${apiHost}/api/linkedin/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: p.text }),
+      })
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (r.ok && data.success) {
+            flash(`LinkedIn: Successfully published to your feed!`, "ok");
+          } else {
+            flash(`LinkedIn share: ${data.message || "Failed to publish to feed"}`, "err");
+          }
+        })
+        .catch((err) => {
+          flash(`LinkedIn post error: ${err.message}`, "err");
+        });
+    }
     return { ...p, status, stats: status === "Published" && !p.stats ? { reach: 0, likes: 0, comments: 0, shares: 0, clicks: 0, leads: 0 } : p.stats };
   }));
   const socialLead = (comment) => {
@@ -8591,12 +8661,22 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     setConns((c) => ({ ...c, [id]: { ...(c[id] || { mapping: DEFAULT_MAPPING[id] || [], direction: "Two way", conflict: "Newest wins", freq: "Hourly" }),
       on: true, connectedAt: new Date().toISOString(), lastSync: null, error: null, paused: false,
       account: o.account || "Acme workspace", key: o.key || "", expiresAt: p && p.auth === "oauth" ? atDay(60, 9) : null } }));
+    if (id === "linkedin") {
+      setAccounts((prev) => {
+        const exists = prev.some((a) => a.platform === "linkedin");
+        if (!exists) return [{ id: "sa_linkedin", platform: "linkedin", handle: o.account || "Vel Murugan", on: true, followers: 500, growth: 12 }, ...prev];
+        return prev.map((a) => (a.platform === "linkedin" ? { ...a, on: true, handle: o.account || a.handle } : a));
+      });
+    }
     log("You", "Integration connected", p ? p.name : id);
     trail("Integration connected", p ? p.name : id, "not connected", "connected");
   };
   const disconnectProvider = (id) => {
     const p = PROVIDERS.find((x) => x.id === id);
     setConns((c) => ({ ...c, [id]: { ...(c[id] || {}), on: false, error: null, syncing: false } }));
+    if (id === "linkedin") {
+      setAccounts((prev) => prev.map((a) => (a.platform === "linkedin" ? { ...a, on: false } : a)));
+    }
     log("You", "Integration disconnected", p ? p.name : id);
     trail("Integration disconnected", p ? p.name : id, "connected", "not connected");
   };
@@ -20210,7 +20290,36 @@ function ContentCalendar({ onNew, onOpen }) {
 
 /* ---------- accounts ---------- */
 function AccountsView() {
-  const { T, dk, accounts, setAccounts, flash, log, setConfirm } = useApp();
+  const { T, dk, accounts, setAccounts, setConns, flash, log, setConfirm } = useApp();
+  const apiHost = getApiHost();
+
+  const handleConnect = (a, spec) => {
+    if (a.platform === "linkedin") {
+      window.location.href = `${apiHost}/api/linkedin/auth`;
+      return;
+    }
+    setAccounts(accounts.map((x) => x.id === a.id ? { ...x, on: true } : x));
+    log("You", "Social account connected", spec.label);
+    flash(spec.label + " connected. Publishing and analytics are live.");
+  };
+
+  const handleDisconnect = async (a, spec) => {
+    if (a.platform === "linkedin") {
+      try {
+        await fetch(`${apiHost}/api/linkedin/disconnect`, { method: "POST" });
+        if (setConns) {
+          setConns((prev) => ({
+            ...prev,
+            linkedin: { ...prev.linkedin, on: false, status: "available", account: null },
+          }));
+        }
+      } catch (e) {}
+    }
+    setAccounts(accounts.map((x) => x.id === a.id ? { ...x, on: false } : x));
+    log("You", "Social account disconnected", spec.label);
+    flash(spec.label + " disconnected");
+  };
+
   return (
     <div className="h-full overflow-y-auto bz-scroll p-6">
       <p className={`text-[13px] mb-4 ${T.sub}`}>Connected accounts and exactly what each platform's API allows. Nothing here pretends to do more than the platform permits.</p>
@@ -20223,12 +20332,19 @@ function AccountsView() {
                 <Brand id={spec.logo} size={30} />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-semibold truncate">{spec.label}</div>
-                  <div className={`text-[10px] truncate ${a.on ? "text-emerald-600" : T.faint}`}>{a.on ? a.handle + " · connected" : "not connected"}</div>
+                  <div className={`text-[10px] truncate ${a.on ? "text-emerald-600 font-semibold" : T.faint}`}>
+                    {a.on ? a.handle + " · connected" : "not connected"}
+                  </div>
                 </div>
                 {a.on
-                  ? <button onClick={() => setConfirm({ text: `Disconnect ${spec.label}?`, detail: "Scheduled posts for this platform stay as drafts.", yes: "Disconnect", onYes: () => { setAccounts(accounts.map((x) => x.id === a.id ? { ...x, on: false } : x)); log("You", "Social account disconnected", spec.label); flash(spec.label + " disconnected"); } })}
-                      className={`h-7 px-2.5 rounded-full text-[11px] font-semibold ${T.hover} ${T.sub}`}>Disconnect</button>
-                  : <button onClick={() => { setAccounts(accounts.map((x) => x.id === a.id ? { ...x, on: true } : x)); log("You", "Social account connected", spec.label); flash(spec.label + " connected. Publishing and analytics are live."); }}
+                  ? <button onClick={() => setConfirm({
+                      text: `Disconnect ${spec.label}?`,
+                      detail: "Scheduled posts for this platform stay as drafts.",
+                      yes: "Disconnect",
+                      onYes: () => handleDisconnect(a, spec)
+                    })}
+                    className={`h-7 px-2.5 rounded-full text-[11px] font-semibold ${T.hover} ${T.sub}`}>Disconnect</button>
+                  : <button onClick={() => handleConnect(a, spec)}
                       className="h-7 px-3 rounded-full text-[11px] font-semibold text-white" style={{ background: BRAND }}>Connect</button>}
               </div>
               {a.on && a.followers > 0 && (
@@ -24111,6 +24227,17 @@ function ProviderDetail({ provider, onClose }) {
       }
       return;
     }
+    if (provider.id === "linkedin") {
+      try {
+        await fetch(`${apiHost}/api/linkedin/disconnect`, { method: "POST" });
+        disconnectProvider("linkedin");
+        flash("LinkedIn disconnected successfully.");
+        onClose();
+      } catch (e) {
+        flash("Failed to disconnect LinkedIn", "err");
+      }
+      return;
+    }
     disconnectProvider(provider.id);
     flash(provider.name + " disconnected.");
   };
@@ -24128,10 +24255,24 @@ function ProviderDetail({ provider, onClose }) {
               detail: depCount ? `${deps.agents.length} agents, ${deps.workflows.length} workflows and ${deps.campaigns.length} live campaigns depend on it. They will stop being able to use it immediately, with a stated reason rather than silent failure. Existing history stays.` : "Nothing currently depends on it. Existing history stays.",
               yes: "Disconnect", onYes: handleDisconnect })}
               className={`h-8 px-3 rounded-xl border text-[11px] font-semibold ${T.chip} ${T.hover}`}>Disconnect</button>
-          : <button onClick={() => { connectProvider(provider.id, {}); flash(provider.name + " connected."); }} className="h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>Connect</button>}
+          : <button onClick={() => {
+              if (provider.id === "linkedin") {
+                window.location.href = `${apiHost}/api/linkedin/auth`;
+                return;
+              }
+              connectProvider(provider.id, {});
+              flash(provider.name + " connected.");
+            }} className="h-8 px-3 rounded-xl text-[11px] font-semibold text-white" style={{ background: BRAND }}>Connect</button>}
       </div>
       {h.why && <div className={`rounded-xl border p-3 text-[11px] mb-3 ${h.state === "Error" ? "border-red-200 text-red-600" : "border-amber-200 text-amber-700"}`}>{h.why}
-        {h.state === "Token expired" && <button onClick={() => { connectProvider(provider.id, {}); flash("Reconnected and the token renewed."); }} className="ml-2 font-semibold underline">Reconnect</button>}</div>}
+        {h.state === "Token expired" && <button onClick={() => {
+          if (provider.id === "linkedin") {
+            window.location.href = `${apiHost}/api/linkedin/auth`;
+            return;
+          }
+          connectProvider(provider.id, {});
+          flash("Reconnected and the token renewed.");
+        }} className="ml-2 font-semibold underline">Reconnect</button>}</div>}
 
       <div className={`flex gap-1 border-b mb-3 ${T.border}`}>
         {tabs.map((x) => <button key={x} onClick={() => setTab(x)} className={`px-3 h-8 text-xs font-semibold border-b-2 -mb-px ${tab === x ? "" : `border-transparent ${T.sub}`}`} style={tab === x ? { borderColor: BRAND, color: BRAND } : {}}>{x}</button>)}
