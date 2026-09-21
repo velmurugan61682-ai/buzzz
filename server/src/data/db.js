@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import dns from "dns";
 
 // ==============================================================================
 // 1. IN-MEMORY FALLBACK DATASET
@@ -627,6 +628,11 @@ export const connectDB = async () => {
   }
 
   try {
+    try {
+      dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+    } catch (dnsErr) {
+      // Fallback if system restricts setting DNS
+    }
     await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
     isDbConnected = true;
     console.log(`✅ MongoDB connected successfully to host: ${mongoose.connection.host}`);
