@@ -1,3 +1,10 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+
 import { connectDB, UnifiedMessageModel, ConversationModel } from "../data/db.js";
 
 async function auditMongo() {
@@ -29,13 +36,22 @@ async function auditMongo() {
   });
 
   const conversations = await ConversationModel.find({}).sort({ updatedAt: -1 }).lean();
-  const targetConvs = conversations.filter((c) => ["WhatsApp", "Instagram", "YouTube", "whatsapp", "instagram", "youtube"].includes(c.channel));
+  const targetConvs = conversations.filter((c) => ["WhatsApp", "Instagram", "YouTube", "whatsapp", "instagram", "youtube", "InstaxBot", "gowhats", "instaxbot"].includes(c.channel) || ["instaxbot", "gowhats", "channelbot"].includes(c.platform));
   console.log(`\n=======================================================`);
   console.log(`TARGET CONVERSATIONS IN MONGO (${targetConvs.length} total):`);
   console.log(`=======================================================`);
-  targetConvs.forEach((c, idx) => {
-    console.log(`[${idx + 1}] ID: ${c.id} | Channel: ${c.channel} | Customer: ${c.customerName} | Phone/Email: ${c.phone || c.email || "N/A"}`);
+  targetConvs.slice(0, 30).forEach((c, idx) => {
+    console.log(`[${idx + 1}] ID: ${c.id} | Channel: ${c.channel} | Platform: ${c.platform} | Customer: ${c.customerName} | Phone/Email: ${c.phone || c.email || "N/A"}`);
     console.log(`    LastMsg: "${c.lastMessage}" | UpdatedAt: ${c.updatedAt}`);
+  });
+
+  const { OrderModel } = await import("../data/db.js");
+  const orders = await OrderModel.find({}).sort({ createdAt: -1 }).lean();
+  console.log(`\n=======================================================`);
+  console.log(`TOTAL ORDERS IN MONGO (${orders.length} total):`);
+  console.log(`=======================================================`);
+  orders.slice(0, 10).forEach((o, idx) => {
+    console.log(`[${idx + 1}] ID: ${o.id || o.orderId} | Platform: ${o.platform} | Customer: ${o.customerName} (${o.customerPhone}) | Amount: ${o.totalAmount} ${o.currency}`);
   });
 
   process.exit(0);

@@ -527,13 +527,20 @@ apiRouter.get("/gowhats/status", (req, res) => {
   res.json(getGoWhatsConfigStatus());
 });
 
-// GET /api/orders — returns all orders for a customer phone from the local store
+// GET /api/orders — returns all orders for a customer phone, conversation, or platform from the local store
 apiRouter.get("/orders", async (req, res) => {
   try {
     const rawPhone = req.query.phone || req.query.phoneNumber || req.query.customerPhone || req.query.customer_phone || "";
+    const conversationId = req.query.conversationId || req.query.convId || "";
+    const platform = req.query.platform || "";
     const cleanPhone = String(rawPhone).replace(/\D/g, "");
 
-    const orders = await fetchOrdersByPhone(cleanPhone || rawPhone);
+    const orders = await fetchOrdersByPhone({
+      phone: cleanPhone,
+      rawPhone,
+      conversationId,
+      platform,
+    });
     return res.json({
       ok: true,
       success: true,

@@ -281,12 +281,21 @@ const CHANNEL_KEY_MAP = {
 const resolveChannelKey = (platform, channel) => {
   const p = platform ? String(platform).trim() : "";
   const c = channel ? String(channel).trim() : "";
+  const pl = p.toLowerCase();
+  const cl = c.toLowerCase();
+
   return (
     CHANNEL_KEY_MAP[p] ||
-    CHANNEL_KEY_MAP[p.toLowerCase()] ||
+    CHANNEL_KEY_MAP[pl] ||
     CHANNEL_KEY_MAP[c] ||
-    CHANNEL_KEY_MAP[c.toLowerCase()] ||
-    "channelbot"
+    CHANNEL_KEY_MAP[cl] ||
+    (pl.includes("insta") || cl.includes("insta") ? "instaxbot" : "") ||
+    (pl.includes("what") || cl.includes("what") ? "gowhats" : "") ||
+    (pl.includes("tube") || cl.includes("tube") || pl.includes("channel") || cl.includes("channel") ? "channelbot" : "") ||
+    (pl.includes("mail") || cl.includes("mail") ? "email" : "") ||
+    pl ||
+    cl ||
+    "gowhats"
   );
 };
 
@@ -13196,7 +13205,14 @@ function InboxView() {
       if (chFilter) {
         const cChanNorm = resolveChannelKey(c.platform, c.channel);
         const fChanNorm = resolveChannelKey(chFilter, chFilter);
-        if (cChanNorm !== fChanNorm && c.channel !== chFilter) return false;
+        const isMatch =
+          cChanNorm === fChanNorm ||
+          c.channel === chFilter ||
+          (chFilter === "gowhats" && (c.channel === "WhatsApp" || c.channel === "whatsapp" || c.platform === "gowhats" || c.platform === "whatsapp")) ||
+          (chFilter === "instaxbot" && (c.channel === "InstaxBot" || c.channel === "Instagram" || c.channel === "instagram" || c.platform === "instaxbot" || c.platform === "instagram")) ||
+          (chFilter === "channelbot" && (c.channel === "YouTube" || c.channel === "youtube" || c.channel === "ChannelBot.in" || c.platform === "channelbot" || c.platform === "youtube")) ||
+          (chFilter === "email" && (c.channel === "Email" || c.channel === "email" || c.channel === "Gmail" || c.channel === "gmail"));
+        if (!isMatch) return false;
       }
       if (filter === "Unread" && !c.unread) return false;
       if (filter === "Mine" && (c.assignee || "") !== "Jordan Lee") return false;
@@ -13234,16 +13250,49 @@ function InboxView() {
       <div className={`${conv ? "hidden md:flex" : "flex"} w-full md:w-72 xl:w-80 shrink-0 md:border-r flex-col min-h-0 ${T.border} ${T.panel}`}>
         <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
           <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
-          <button onClick={() => setAdv(!adv)} title="Filter by channel" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
+          <button onClick={() => setAdv(!adv)} title="More channel filters" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
         </div>
-        <div className={`px-4 py-3 space-y-2 border-b ${T.border}`}>
+        <div className={`px-4 py-3 space-y-2.5 border-b ${T.border}`}>
           <div className={`h-9 flex items-center gap-2 px-3 rounded-lg ${T.input}`}>
             <Search size={13} className={`shrink-0 ${T.faint}`} />
             <input value={qy} onChange={(e) => setQy(e.target.value)} placeholder="Search name, message, tag…" className="flex-1 min-w-0 bg-transparent text-xs outline-none" />
             {qy && <button onClick={() => setQy("")} className="shrink-0 grid place-items-center"><X size={12} className={T.faint} /></button>}
           </div>
+
+          {/* Primary Channel Filter Chips: All, WhatsApp (GoWhats), Instagram (InstaxBot), YouTube (ChannelBot), Email */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 bz-noscroll">
+            {[
+              { id: null, label: "All", brand: null, count: convs.length },
+              { id: "gowhats", label: "WhatsApp", brand: "gowhats", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "gowhats" || c.channel === "WhatsApp" || c.channel === "whatsapp" || c.platform === "gowhats").length },
+              { id: "instaxbot", label: "Instagram", brand: "instaxbot", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "instaxbot" || c.channel === "InstaxBot" || c.channel === "Instagram" || c.channel === "instagram" || c.platform === "instaxbot").length },
+              { id: "channelbot", label: "YouTube", brand: "channelbot", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "channelbot" || c.channel === "YouTube" || c.channel === "youtube" || c.channel === "ChannelBot.in" || c.platform === "channelbot").length },
+              { id: "email", label: "Email", brand: "gmail", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "email" || c.channel === "Email" || c.channel === "Gmail" || c.channel === "gmail").length },
+            ].map((ch) => {
+              const isSelected = chFilter === ch.id;
+              return (
+                <button
+                  key={ch.label}
+                  onClick={() => setChFilter(ch.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border shrink-0 ${
+                    isSelected
+                      ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-white shadow-xs"
+                      : `${T.chip} ${T.hover} ${T.border} text-zinc-600 dark:text-zinc-400`
+                  }`}
+                >
+                  {ch.brand && <Brand id={ch.brand} size={13} />}
+                  <span>{ch.label}</span>
+                  {ch.count !== undefined && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? "bg-white/20 dark:bg-black/15 text-white dark:text-zinc-900 font-bold" : "bg-zinc-200/80 dark:bg-zinc-800 text-zinc-500"}`}>
+                      {ch.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
           {adv && (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 pt-1">
               {Object.keys(CH).map((k) => (
                 <button key={k} onClick={() => setChFilter(chFilter === k ? null : k)} title={CH[k].label}
                   className={`w-7 h-7 grid place-items-center rounded-lg border transition-opacity ${chFilter === k ? "" : "opacity-40 hover:opacity-80"} ${T.border}`} style={chFilter === k ? { borderColor: BRAND } : {}}>
@@ -13252,10 +13301,11 @@ function InboxView() {
               ))}
             </div>
           )}
-          <div className="flex gap-1.5 overflow-x-auto bz-noscroll">
+
+          <div className="flex gap-1.5 overflow-x-auto bz-noscroll pt-0.5">
             {FILTERS.map((f) => (
               <button key={f} onClick={() => setFilter(f)}
-                className={`h-7 px-3 rounded-full text-[11px] font-medium whitespace-nowrap border inline-flex items-center transition-colors ${filter === f ? "text-white border-transparent" : `${T.chip} ${T.hover}`}`}
+                className={`h-6 px-2.5 rounded-full text-[10px] font-medium whitespace-nowrap border inline-flex items-center transition-colors ${filter === f ? "text-white border-transparent" : `${T.chip} ${T.hover}`}`}
                 style={filter === f ? { background: "#18181b" } : {}}>
                 {f}{counts[f] ? " · " + counts[f] : ""}
               </button>
@@ -13266,7 +13316,10 @@ function InboxView() {
           {list.length === 0 && <div className={`p-6 text-xs text-center ${T.faint}`}>Nothing matches. Clear the search or filters.</div>}
           {list.map((c) => {
             const k = CONTACTS.find((x) => x.id === c.contactId || (c.phone && x.phone === c.phone)) || {};
-            const displayName = k.name || c.customerName || c.name || c.phone || "YouTube User";
+            const isInsta = c.channel === "instagram" || c.channel === "InstaxBot" || c.platform === "instaxbot";
+            const isWa = c.channel === "whatsapp" || c.channel === "WhatsApp" || c.platform === "gowhats";
+            const fallbackName = isInsta ? "Instagram User" : isWa ? "WhatsApp User" : (c.channel === "youtube" || c.channel === "YouTube" || c.platform === "channelbot") ? "YouTube User" : "Customer";
+            const displayName = k.name || c.customerName || c.name || c.phone || fallbackName;
             const active = selConv === c.id;
             return (
               <button key={c.id} onClick={() => open(c.id)}
@@ -13878,14 +13931,16 @@ function ContextPanel({ conv, close }) {
   const customerPhone = c.phone || conv.phone || "";
 
   useEffect(() => {
-    if (!customerPhone) {
-      setCustomerOrders([]);
-      return;
-    }
     let active = true;
     setLoadingOrders(true);
     const cleanPhone = String(customerPhone).replace(/\D/g, "");
-    safeFetchJson(`/api/orders?phone=${encodeURIComponent(cleanPhone)}`)
+    const qParams = new URLSearchParams();
+    if (cleanPhone) qParams.set("phone", cleanPhone);
+    if (customerPhone) qParams.set("rawPhone", customerPhone);
+    if (conv.id) qParams.set("conversationId", conv.id);
+    if (conv.platform) qParams.set("platform", conv.platform);
+
+    safeFetchJson(`/api/orders?${qParams.toString()}`)
       .then((data) => {
         if (active && data && Array.isArray(data.orders)) {
           setCustomerOrders(data.orders);
@@ -13895,7 +13950,7 @@ function ContextPanel({ conv, close }) {
       .finally(() => { if (active) setLoadingOrders(false); });
 
     return () => { active = false; };
-  }, [conv.id, conv.phone, c.phone, customerPhone]);
+  }, [conv.id, conv.phone, conv.platform, conv.channel, c.phone, customerPhone]);
 
   useEffect(() => {
     const handleOrderUpdate = (e) => {
@@ -14054,8 +14109,15 @@ function ContextPanel({ conv, close }) {
           )}
         </PanelSection>
 
-        {/* WHATSAPP ORDERS PANEL SECTION */}
-        <PanelSection title={`WhatsApp Orders${customerOrders.length ? ` (${customerOrders.length})` : ""}`} defaultOpen>
+        {/* ORDERS PANEL SECTION */}
+        <PanelSection
+          title={`${(conv.platform === "instaxbot" || conv.channel === "instagram" || conv.channel === "InstaxBot")
+            ? "Instagram Orders"
+            : (conv.platform === "gowhats" || conv.channel === "whatsapp" || conv.channel === "WhatsApp")
+            ? "WhatsApp Orders"
+            : "Customer Orders"}${customerOrders.length ? ` (${customerOrders.length})` : ""}`}
+          defaultOpen
+        >
           {loadingOrders ? (
             <div className="text-[11px] text-zinc-400 py-2 flex items-center gap-2">
               <span className="animate-spin">🌀</span> Fetching orders...

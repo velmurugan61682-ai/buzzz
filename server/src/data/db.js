@@ -1750,34 +1750,55 @@ export const saveGoWhatsOrder = async (data) => {
 export const saveOrderRecord = saveGoWhatsOrder;
 
 /**
- * Fetch stored orders by customer phone number or conversation ID
+ * Fetch stored orders by customer phone number, conversation ID, or platform
  */
-export const fetchOrdersByPhone = async (phone) => {
-  const cleanPhone = String(phone || "").replace(/\D/g, "");
-  const targetConvId = `conv_wa_${cleanPhone}`;
+export const fetchOrdersByPhoneOrConv = async (arg = {}) => {
+  const options = typeof arg === "string" ? { phone: arg } : (arg || {});
+  const { phone = "", conversationId = "", platform = "", rawPhone = "" } = options;
+  const cleanPhone = String(phone || rawPhone || "").replace(/\D/g, "");
+  const targetConvId = cleanPhone ? `conv_wa_${cleanPhone}` : "";
+
+  const orConditions = [];
+  if (cleanPhone) {
+    orConditions.push({ customerPhone: cleanPhone });
+    orConditions.push({ customerPhone: new RegExp(cleanPhone + "$") });
+    if (targetConvId) orConditions.push({ conversationId: targetConvId });
+  }
+  if (phone && phone !== cleanPhone) {
+    orConditions.push({ customerPhone: phone });
+  }
+  if (conversationId) {
+    orConditions.push({ conversationId });
+  }
+
+  let filter = {};
+  if (orConditions.length > 0) {
+    filter = { $or: orConditions };
+    if (platform) filter.platform = platform;
+  } else if (platform) {
+    filter = { platform };
+  }
 
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    const docs = await OrderModel.find({
-      $or: [
-        { customerPhone: cleanPhone },
-        { conversationId: targetConvId },
-        ...(phone ? [{ customerPhone: phone }] : []),
-      ],
-    })
+    const docs = await OrderModel.find(filter)
       .sort({ createdAt: -1 })
+      .limit(100)
       .lean();
     return docs.map(normalizeMongoDoc);
   }
 
   if (!db.orders) db.orders = [];
   return db.orders
-    .filter(
-      (o) =>
-        o.customerPhone === cleanPhone ||
-        o.conversationId === targetConvId ||
-        (phone && o.customerPhone === phone)
-    )
+    .filter((o) => {
+      if (platform && o.platform !== platform) return false;
+      if (conversationId && o.conversationId === conversationId) return true;
+      if (cleanPhone && (o.customerPhone === cleanPhone || (o.customerPhone && String(o.customerPhone).includes(cleanPhone)))) return true;
+      if (phone && o.customerPhone === phone) return true;
+      return orConditions.length === 0;
+    })
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 };
+
+export const fetchOrdersByPhone = fetchOrdersByPhoneOrConv;
 
 
