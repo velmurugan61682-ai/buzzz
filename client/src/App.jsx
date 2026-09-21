@@ -11,7 +11,7 @@ import {
   FileText, Tag, ArrowRight, Filter, MoreHorizontal, User, Building2, CheckCircle2,
   XCircle, PlayCircle, Layers, Brain, History, ThumbsUp, ThumbsDown, GitBranch, Timer,
   Target, Wand2, Mic, Home, Smartphone, Command as CommandIcon, Circle, Lock, Eye,
-  RefreshCw, Upload, Link2, DollarSign, Calendar, ListChecks, Headphones, Radio,
+  RefreshCw, Upload, Link2, IndianRupee, DollarSign, Calendar, ListChecks, Headphones, Radio,
   Share2, Image as ImageIcon, CalendarDays, ArrowLeft, KeyRound, LogOut
 , Download, CheckSquare, Activity , ChevronLeft , Image , PhoneIncoming, PhoneOutgoing, PhoneMissed, Pause , TrendingDown , ArrowLeftRight , Paperclip, Volume2, Video, Menu, Trash2, Trash } from "lucide-react";
 import {
@@ -1901,8 +1901,7 @@ const PRICING_REGIONS = [
 const ANNUAL_DISCOUNT = 0.17;
 /* resolve region from country, never from a client supplied price */
 function resolveRegion(countryCode) {
-  const cc = (countryCode || "").toUpperCase();
-  return PRICING_REGIONS.find((r) => r.countries.includes(cc)) || PRICING_REGIONS.find((r) => r.id === "in");
+  return PRICING_REGIONS.find((r) => r.id === "in") || PRICING_REGIONS[0];
 }
 function priceFor(regionId, plan, cycle = "monthly") {
   const r = PRICING_REGIONS.find((x) => x.id === regionId) || PRICING_REGIONS[0];
@@ -4187,43 +4186,30 @@ const TZ_COUNTRY = {
   "Australia/Sydney": "AU", "Pacific/Auckland": "NZ",
 };
 
-/* The visitor's currency, from their own browser settings. Defaults to INR (₹) */
+/* Standardized to Indian Rupee (₹ / INR) */
 function detectCurrency() {
-  if (typeof navigator === "undefined") return "INR";
-  try {
-    const langs = [navigator.language, ...(navigator.languages || [])].filter(Boolean);
-    for (const l of langs) {
-      const region = (String(l).split("-")[1] || "").toUpperCase();
-      if (COUNTRY_CURRENCY[region]) return COUNTRY_CURRENCY[region];
-    }
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const country = TZ_COUNTRY[tz];
-    if (country && COUNTRY_CURRENCY[country]) return COUNTRY_CURRENCY[country];
-  } catch (e) { /* fallback to INR */ }
   return "INR";
 }
 
-/* Formats a base amount into the visitor's currency, rounded to something a
-   person would actually write on an invoice. */
+/* Formats a base amount into Indian Rupee (INR / ₹) */
 function demoMoney(baseAmount, currency) {
-  const cur = currency || "INR";
-  const rate = DEMO_RATES[cur] || 1;
+  const cur = "INR";
+  const rate = DEMO_RATES[cur] || 84;
   const raw = Number(baseAmount) * rate;
-  /* round to a sensible step for the size of the number, so a converted
-     figure does not read like a rounding error */
+  /* round to a sensible step for the size of the number */
   const step = raw >= 100000 ? 1000 : raw >= 10000 ? 500 : raw >= 1000 ? 100 : raw >= 100 ? 10 : 1;
   const rounded = Math.max(step, Math.round(raw / step) * step);
   try {
     return new Intl.NumberFormat("en-IN", {
-      style: "currency", currency: cur, maximumFractionDigits: 0,
+      style: "currency", currency: "INR", maximumFractionDigits: 0,
     }).format(rounded);
-  } catch { return `₹${rounded}`; }
+  } catch { return `₹${rounded.toLocaleString("en-IN")}`; }
 }
 
-/* One reading per session: the currency does not change while someone reads. */
+/* One reading per session: standardized to INR */
 function useDemoCurrency() {
   const [cur, setCur] = useState("INR");
-  useEffect(() => { setCur(detectCurrency()); }, []);
+  useEffect(() => { setCur("INR"); }, []);
   return cur;
 }
 
@@ -4467,7 +4453,7 @@ function MiniCrm() {
                       <ChannelBadge name={d.channel} size={9} />
                       <span className="text-[9.5px] font-medium truncate">{d.who}</span>
                     </div>
-                    <div className="text-[9px] mt-0.5" style={{ color: MUTE }}>{d.value}</div>
+                    <div className="text-[9px] mt-0.5" style={{ color: MUTE }}>{demoMoney(d.value, cur)}</div>
                   </div>
                 ))}
               </div>
@@ -10040,7 +10026,7 @@ function BuzzzAI({ close }) {
       if (!d) return { text: `${c.name} has no open deal, so there is nothing to move. Want me to create one? Say "create a deal for ${c.name.split(" ")[0]}".` };
       if (!stage) return { text: `I did not recognize that stage. Your pipeline stages are: ${STAGES.join(", ")}.` };
       setLastContact(c.id);
-      return { text: `Move "${d.name}" (${d.value}) to ${stage}?`, action: { label: "Move deal", run: () => { moveDeal(d.id, stage); return { text: `Done. ${d.name} is now in ${stage}. The pipeline board reflects it already.` }; } } };
+      return { text: `Move "${d.name}" (${money(d.value)}) to ${stage}?`, action: { label: "Move deal", run: () => { moveDeal(d.id, stage); return { text: `Done. ${d.name} is now in ${stage}. The pipeline board reflects it already.` }; } } };
     }
 
     /* ---- CRM: schedule follow up ---- */
@@ -11026,8 +11012,8 @@ const CURRENCIES = {
   BRL: { symbol: "R$", decimals: 2, name: "Brazilian real" },
 };
 /* rates are per 1 unit of base; a workspace sets its own base and history */
-const FX_INIT = { base: "SGD", asOf: "2026-08-01", rates: {
-  SGD: 1, USD: 0.74, EUR: 0.68, GBP: 0.58, INR: 62.4, AUD: 1.13, AED: 2.72, JPY: 109.5, NGN: 1180, BRL: 4.05 } };
+const FX_INIT = { base: "INR", asOf: "2026-08-01", rates: {
+  SGD: 0.016, USD: 0.012, EUR: 0.011, GBP: 0.0093, INR: 1, AUD: 0.018, AED: 0.044, JPY: 1.75, NGN: 18.9, BRL: 0.065 } };
 
 function convert(amountMinor, from, to, fx) {
   if (!amountMinor) return 0;
@@ -11041,14 +11027,14 @@ function convert(amountMinor, from, to, fx) {
   const converted = (major / rf) * rt;
   return Math.round(converted * Math.pow(10, dt));
 }
-function fmtCurrency(amountMinor, code, { compact = false } = {}) {
-  const c = CURRENCIES[code] || { symbol: code + " ", decimals: 2 };
+function fmtCurrency(amountMinor, code = "INR", { compact = false } = {}) {
+  const c = CURRENCIES[code] || CURRENCIES.INR || { symbol: "₹", decimals: 2 };
   const major = amountMinor / Math.pow(10, c.decimals);
   if (compact && Math.abs(major) >= 1000) {
     const k = Math.abs(major) >= 1e6 ? [major / 1e6, "m"] : [major / 1000, "k"];
     return c.symbol + k[0].toFixed(1) + k[1];
   }
-  return c.symbol + major.toLocaleString(undefined, { minimumFractionDigits: c.decimals, maximumFractionDigits: c.decimals });
+  return c.symbol + major.toLocaleString("en-IN", { minimumFractionDigits: c.decimals, maximumFractionDigits: c.decimals });
 }
 /* roll a mixed-currency set up into one reporting currency, showing what was converted */
 function rollup(records, reportingCurrency, fx, valueOf = (r) => r.valueMinor, curOf = (r) => r.currency) {
@@ -14252,7 +14238,7 @@ function ContextPanel({ conv, close }) {
           {deal ? (
             <div className={`rounded-xl px-3 py-2.5 ${T.softcard}`}>
               <div className="text-[11px] font-semibold leading-tight truncate">{deal.name}</div>
-              <div className={`text-[10px] mt-1 tabular-nums ${T.faint}`}>${(deal.value / 1000).toFixed(0)}k · {deal.stage}</div>
+              <div className={`text-[10px] mt-1 tabular-nums ${T.faint}`}>₹{((deal.value || 0) / 1000).toFixed(0)}k · {deal.stage}</div>
             </div>
           ) : <div className={`text-[11px] ${T.faint}`}>No open deal.</div>}
           <div className="space-y-2 text-[11px] leading-none mt-3">
@@ -15032,7 +15018,7 @@ function PipelineView() {
                         {pipe.stages.map((st) => <option key={st.id}>{st.name}</option>)}
                       </select>
                     </td>
-                    <td className="px-4 font-medium tabular-nums">${d.value.toLocaleString()}</td>
+                    <td className="px-4 font-medium tabular-nums">₹{d.value.toLocaleString("en-IN")}</td>
                     <td className="px-4 tabular-nums">{d.prob ?? 50}%</td>
                     <td className={`px-4 ${T.sub}`}>{d.owner || "Unassigned"}</td>
                     <td className={`px-4 tabular-nums ${T.sub}`}>{d.close || "—"}</td>
@@ -15597,10 +15583,10 @@ function Customer360({ id }) {
               <SecTitle>Deals</SecTitle>
               {myDeals.map((d) => (
                 <div key={d.id} className={`flex items-center gap-3 py-2 text-xs border-b last:border-0 ${T.border}`}>
-                  <DollarSign size={13} style={{ color: BRAND }} />
+                  <IndianRupee size={13} style={{ color: BRAND }} />
                   <span className="font-medium flex-1">{d.name}</span>
                   <Pill c={T.chip}>{d.stage}</Pill>
-                  <span className="font-bold">${(d.value / 1000).toFixed(1)}k</span>
+                  <span className="font-bold">₹{((d.value || 0) / 1000).toFixed(1)}k</span>
                 </div>
               ))}
             </div>
@@ -22159,7 +22145,7 @@ function CallDetail({ call, onClose }) {
             ))}
             {myDeals.map((d) => (
               <div key={d.id} className={`rounded-xl p-3 flex items-center gap-2.5 ${T.softcard}`}>
-                <Target size={14} style={{ color: BRAND }} /><span className="text-[11px] flex-1">{d.name}</span><span className="text-[11px] font-semibold tabular-nums">${(d.value / 1000).toFixed(0)}k</span><Pill c={T.chip}>{d.stage}</Pill>
+                <Target size={14} style={{ color: BRAND }} /><span className="text-[11px] flex-1">{d.name}</span><span className="text-[11px] font-semibold tabular-nums">₹{((d.value || 0) / 1000).toFixed(0)}k</span><Pill c={T.chip}>{d.stage}</Pill>
               </div>
             ))}
             {k.actions.length > 0 && (
