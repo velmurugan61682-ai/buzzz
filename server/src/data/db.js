@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import dns from "dns";
+import crypto from "crypto";
 
 // ==============================================================================
 // 1. IN-MEMORY FALLBACK DATASET
@@ -454,6 +455,124 @@ export const UserModel = mongoose.models.User || mongoose.model("User", UserSche
 export const OrderModel = mongoose.models.Order || mongoose.model("Order", OrderSchema);
 export const SystemSettingModel = mongoose.models.SystemSetting || mongoose.model("SystemSetting", SystemSettingSchema);
 
+const ApiKeySchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    workspaceId: { type: String, default: "ws_default", index: true },
+    name: { type: String, required: true },
+    keyMasked: { type: String, required: true },
+    keyHash: { type: String, required: true, index: true },
+    scopes: { type: [String], default: ["read", "write"] },
+    env: { type: String, enum: ["live", "test"], default: "live" },
+    active: { type: Boolean, default: true },
+    lastUsedAt: { type: Date, default: null },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { timestamps: true }
+);
+
+export const ApiKeyModel = mongoose.models.ApiKey || mongoose.model("ApiKey", ApiKeySchema);
+
+export const createApiKeyRecord = async ({ name, scopes = ["read", "write"], env = "live", workspaceId = "ws_default" }) => {
+  const prefix = env === "test" ? "bz_test_" : "bz_live_";
+  const rawSecret = crypto.randomBytes(24).toString("hex");
+  const rawKey = `${prefix}${rawSecret}`;
+  const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
+  const keyMasked = `${prefix}${rawSecret.slice(0, 4)}...${rawSecret.slice(-4)}`;
+  const id = `key_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+
+  const keyData = {
+    id,
+    workspaceId,
+    name: name || "Default API Key",
+    keyMasked,
+    keyHash,
+    scopes: Array.isArray(scopes) && scopes.length ? scopes : ["read", "write"],
+    env: env === "test" ? "test" : "live",
+    active: true,
+    lastUsedAt: null,
+    createdAt: new Date(),
+  };
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    await ApiKeyModel.create(keyData);
+  }
+  if (!db.apiKeys) db.apiKeys = [];
+  db.apiKeys.unshift(keyData);
+
+  const { keyHash: _, ...publicDoc } = keyData;
+  return { apiKey: publicDoc, rawKey };
+};
+
+export const fetchApiKeys = async (workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const docs = await ApiKeyModel.find({ workspaceId }).sort({ createdAt: -1 }).lean();
+    return docs.map(({ keyHash, _id, __v, ...rest }) => rest);
+  }
+  if (!db.apiKeys) db.apiKeys = [];
+  return (db.apiKeys || []).map(({ keyHash, ...rest }) => rest);
+};
+
+export const deleteApiKeyRecord = async (id, workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    await ApiKeyModel.deleteOne({ id, workspaceId });
+  }
+  if (db.apiKeys) {
+    db.apiKeys = db.apiKeys.filter((k) => k.id !== id);
+  }
+  return true;
+};
+
+export const toggleApiKeyRecord = async (id, active, workspaceId = "ws_default") => {
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const updated = await ApiKeyModel.findOneAndUpdate(
+      { id, workspaceId },
+      { $set: { active } },
+      { new: true }
+    ).lean();
+    if (updated) {
+      const { keyHash, _id, __v, ...rest } = updated;
+      return rest;
+    }
+  }
+  if (db.apiKeys) {
+    const k = db.apiKeys.find((x) => x.id === id);
+    if (k) {
+      k.active = active;
+      const { keyHash, ...rest } = k;
+      return rest;
+    }
+  }
+  return null;
+};
+
+export const validateApiKey = async (rawKey) => {
+  if (!rawKey || typeof rawKey !== "string") return null;
+  const hash = crypto.createHash("sha256").update(rawKey.trim()).digest("hex");
+
+  if (isDbConnected && mongoose.connection.readyState === 1) {
+    const keyDoc = await ApiKeyModel.findOneAndUpdate(
+      { keyHash: hash, active: true },
+      { $set: { lastUsedAt: new Date() } },
+      { new: true }
+    ).lean();
+    if (keyDoc) {
+      const { keyHash, _id, __v, ...rest } = keyDoc;
+      return rest;
+    }
+  }
+
+  if (db.apiKeys) {
+    const k = db.apiKeys.find((x) => x.keyHash === hash && x.active);
+    if (k) {
+      k.lastUsedAt = new Date();
+      const { keyHash, ...rest } = k;
+      return rest;
+    }
+  }
+  return null;
+};
+
 export const getSystemSetting = async (key, defaultValue = null) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const doc = await SystemSettingModel.findOne({ key }).lean();
@@ -653,6 +772,30 @@ export const connectDB = async () => {
     // Merge any duplicate WhatsApp conversations created by legacy WABA ID bug
     await mergeDuplicateWhatsAppConversations();
 
+    // Fix any ChannelBot / YouTube conversations that were mistakenly given platform="whatsapp"
+    try {
+      const fixYt = await ConversationModel.updateMany(
+        {
+          $or: [
+            { id: { $regex: /^conv_yt_/ } },
+            { channel: "ChannelBot.in" },
+            { channel: "YouTube" },
+            { channel: "youtube" },
+          ],
+          platform: { $ne: "channelbot" },
+        },
+        {
+          $set: {
+            platform: "channelbot",
+            channel: "ChannelBot.in",
+          },
+        }
+      );
+      if (fixYt.modifiedCount > 0) {
+        console.log(`🔧 [DATA MIGRATION] Corrected ${fixYt.modifiedCount} YouTube / ChannelBot conversation(s) platform to 'channelbot'.`);
+      }
+    } catch (_migErr) {}
+
     return true;
   } catch (err) {
     console.error(`❌ MongoDB connection failed: ${err.message}`);
@@ -673,9 +816,32 @@ export const getDbStatus = () => ({
 const normalizeMongoDoc = (doc) => {
   if (!doc) return doc;
   const id = doc.id || (doc._id ? String(doc._id) : undefined);
+  const idStr = String(id || "");
+  const chStr = String(doc.channel || "").toLowerCase();
+  const plStr = String(doc.platform || "").toLowerCase();
+
+  let platform = doc.platform;
+  let channel = doc.channel;
+
+  if (idStr.startsWith("conv_yt_") || chStr.includes("tube") || chStr.includes("channel") || plStr.includes("tube") || plStr.includes("channel")) {
+    platform = "channelbot";
+    channel = "ChannelBot.in";
+  } else if (idStr.startsWith("conv_ig_") || chStr.includes("insta") || plStr.includes("insta")) {
+    platform = "instaxbot";
+    channel = "Instagram";
+  } else if (idStr.startsWith("conv_gmail_") || chStr.includes("mail") || plStr.includes("mail")) {
+    platform = "gmail";
+    channel = "Email";
+  } else if (idStr.startsWith("conv_wa_") || chStr.includes("what") || plStr.includes("what") || (!platform && !channel)) {
+    platform = "whatsapp";
+    channel = "WhatsApp";
+  }
+
   return {
     ...doc,
     id,
+    channel: channel || doc.channel || "WhatsApp",
+    platform: platform || doc.platform || "whatsapp",
     tags: Array.isArray(doc.tags) ? doc.tags : [],
   };
 };
@@ -709,20 +875,52 @@ export const findConversationByPhone = async (phone, channel = "WhatsApp") => {
 };
 
 export const upsertConversation = async (data) => {
-  const isEmail =
-    String(data.channel || "").toLowerCase().includes("email") ||
-    String(data.platform || "").toLowerCase() === "gmail" ||
-    (data.phone && String(data.phone).includes("@")) ||
-    (data.id && String(data.id).startsWith("conv_gmail_"));
+  const chLower = String(data.channel || "").toLowerCase();
+  const plLower = String(data.platform || "").toLowerCase();
+  const idLower = String(data.id || "").toLowerCase();
 
-  const cleanPhone = (data.phone && !isEmail) ? String(data.phone).replace(/\D/g, "") : (data.phone || "");
+  const isEmail =
+    chLower.includes("email") ||
+    chLower.includes("mail") ||
+    plLower === "gmail" ||
+    (data.phone && String(data.phone).includes("@")) ||
+    idLower.startsWith("conv_gmail_");
+
+  const isChannelBot =
+    !isEmail && (
+      chLower.includes("channel") ||
+      chLower.includes("tube") ||
+      plLower.includes("channel") ||
+      plLower.includes("youtube") ||
+      idLower.startsWith("conv_yt_")
+    );
+
+  const isInstax =
+    !isEmail && !isChannelBot && (
+      chLower.includes("insta") ||
+      plLower.includes("insta") ||
+      idLower.startsWith("conv_ig_")
+    );
+
+  const isWhatsApp =
+    !isEmail && !isChannelBot && !isInstax && (
+      chLower.includes("what") ||
+      plLower.includes("what") ||
+      idLower.startsWith("conv_wa_") ||
+      Boolean(data.phone && !isEmail)
+    );
+
+  const channel = isEmail ? "Email" : isChannelBot ? "ChannelBot.in" : isInstax ? "Instagram" : (data.channel || "WhatsApp");
+  const platform = isEmail ? "gmail" : isChannelBot ? "channelbot" : isInstax ? "instaxbot" : (data.platform || (isWhatsApp ? "whatsapp" : "gowhats"));
+
+  const cleanPhone = (data.phone && !isEmail && !isChannelBot) ? String(data.phone).replace(/\D/g, "") : (data.phone || "");
   const resolvedEmail = data.email || (data.phone && String(data.phone).includes("@") ? data.phone : undefined);
   const payload = {
     ...data,
     email: resolvedEmail,
     phone: isEmail ? (resolvedEmail || data.phone) : (cleanPhone || data.phone),
-    channel: isEmail ? "Email" : (data.channel || "WhatsApp"),
-    platform: isEmail ? "gmail" : (data.platform || "whatsapp"),
+    channel,
+    platform,
     updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
   };
 
@@ -747,8 +945,79 @@ export const upsertConversation = async (data) => {
 
 export const fetchMessagesByConversationId = async (conversationId) => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    const legacyMsgs = await MessageModel.find({ conversationId }).sort({ createdAt: 1 }).lean();
-    const unifiedMsgs = await UnifiedMessageModel.find({ conversationId }).sort({ receivedAt: 1, createdAt: 1 }).lean();
+    const conv = await ConversationModel.findOne({
+      $or: [
+        { id: conversationId },
+        ...(mongoose.isValidObjectId(conversationId) ? [{ _id: conversationId }] : []),
+      ],
+    }).lean();
+
+    const convIdsToSearch = new Set([conversationId]);
+    let phoneFilter = null;
+    let handleFilter = null;
+
+    if (conv) {
+      if (conv.id) convIdsToSearch.add(conv.id);
+      if (conv._id) convIdsToSearch.add(String(conv._id));
+      if (conv.phone) {
+        const cleanPhone = String(conv.phone).replace(/\D/g, "");
+        if (cleanPhone) {
+          phoneFilter = cleanPhone;
+          convIdsToSearch.add(cleanPhone);
+          convIdsToSearch.add(`conv_wa_${cleanPhone}`);
+          convIdsToSearch.add(`wa_${cleanPhone}`);
+        }
+      }
+      const igHandle =
+        conv.metadata?.instagramHandle ||
+        conv.metadata?.senderHandle ||
+        (["Instagram", "instagram", "instaxbot", "InstaxBot"].includes(conv.channel) || ["instagram", "instaxbot"].includes(conv.platform)
+          ? conv.phone || conv.customerName
+          : null);
+      if (igHandle) {
+        handleFilter = igHandle;
+        const cleanHandle = String(igHandle).replace(/\W/g, "_");
+        convIdsToSearch.add(igHandle);
+        convIdsToSearch.add(`conv_ig_${cleanHandle}`);
+        convIdsToSearch.add(`ig_${cleanHandle}`);
+      }
+    }
+
+    if (!phoneFilter && typeof conversationId === "string") {
+      const digits = conversationId.replace(/\D/g, "");
+      if (digits.length >= 7) {
+        phoneFilter = digits;
+        convIdsToSearch.add(digits);
+        convIdsToSearch.add(`conv_wa_${digits}`);
+        convIdsToSearch.add(`wa_${digits}`);
+      }
+    }
+
+    const convIdArray = Array.from(convIdsToSearch);
+    const legacyQuery = {
+      $or: [
+        { conversationId: { $in: convIdArray } },
+        ...(phoneFilter ? [{ gowhatsMessageId: { $exists: true } }] : []),
+      ],
+    };
+    const legacyMsgs = await MessageModel.find(legacyQuery).sort({ createdAt: 1 }).lean();
+
+    const unifiedQuery = {
+      $or: [
+        { conversationId: { $in: convIdArray } },
+        ...(phoneFilter ? [
+          { "sender.phone": phoneFilter },
+          { "sender.handle": phoneFilter },
+          { "metadata.whatsappPhone": phoneFilter },
+        ] : []),
+        ...(handleFilter ? [
+          { "sender.handle": handleFilter },
+          { "metadata.instagramHandle": handleFilter },
+          { "sender.name": handleFilter },
+        ] : []),
+      ],
+    };
+    const unifiedMsgs = await UnifiedMessageModel.find(unifiedQuery).sort({ receivedAt: 1, createdAt: 1 }).lean();
 
     const normalizedUnified = (unifiedMsgs || []).map((m) => ({
       id: m.id || String(m._id),
@@ -760,6 +1029,37 @@ export const fetchMessagesByConversationId = async (conversationId) => {
       platform: m.platform,
       externalMessageId: m.externalMessageId,
     }));
+
+    if (phoneFilter) {
+      try {
+        const orders = await OrderModel.find({
+          $or: [{ customerPhone: phoneFilter }, { conversationId: { $in: convIdArray } }],
+        }).sort({ createdAt: 1 }).lean();
+
+        for (const ord of orders) {
+          const orderExtId = `gw_ord_${ord.externalOrderId || ord.orderId || ord._id}`;
+          const alreadyPresent = (unifiedMsgs || []).some((m) => m.externalMessageId === orderExtId || m.id === `msg_${orderExtId}`);
+          if (!alreadyPresent) {
+            const itemLines = Array.isArray(ord.items) && ord.items.length > 0
+              ? ord.items.map((i) => `${i.name || "Product"} (x${i.quantity || 1})`).join(", ")
+              : "Order Items";
+            const ordText = `🛒 GoWhats Order #${ord.orderId || ord.externalOrderId}: ${itemLines} — Total: ${ord.currency || "INR"} ${ord.totalAmount || 0} [${ord.status || "CREATED"}]`;
+            normalizedUnified.push({
+              id: `msg_${orderExtId}`,
+              conversationId: conversationId,
+              sender: "customer",
+              text: ordText,
+              timestamp: ord.createdAt || new Date().toISOString(),
+              status: "received",
+              platform: "whatsapp",
+              externalMessageId: orderExtId,
+            });
+          }
+        }
+      } catch (ordErr) {
+        console.warn("⚠️ Order fetch fallback error:", ordErr.message);
+      }
+    }
 
     const normalizedLegacy = (legacyMsgs || []).map((m) => ({
       id: m.id || String(m._id),
@@ -790,12 +1090,11 @@ export const fetchMessagesByConversationId = async (conversationId) => {
       return combined;
     }
 
-    const conv = await ConversationModel.findOne({ id: conversationId }).lean();
     if (conv && conv.lastMessage) {
       return [
         {
-          id: `msg_conv_${conv.id}`,
-          conversationId: conv.id,
+          id: `msg_conv_${conv.id || conversationId}`,
+          conversationId: conv.id || conversationId,
           sender: "customer",
           text: conv.lastMessage,
           timestamp: conv.updatedAt || new Date().toISOString(),

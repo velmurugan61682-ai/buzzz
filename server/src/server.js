@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 
 import { apiRouter, broadcastSseEvent } from "./routes/api.js";
 import { contactsRouter } from "./routes/contactsRouter.js";
+import { adminRouter } from "./routes/admin.js";
 import { connectDB } from "./data/db.js";
 import { startGmailMessagesAutoSyncScheduler, startGoogleContactsAutoSyncScheduler } from "./services/gmailAuth.js";
 import { startGoWhatsAutoSyncScheduler } from "./services/gowhats.js";
@@ -83,6 +84,10 @@ app.use("/api", apiRouter);
 app.use("/api/v1", contactsRouter);
 app.use("/api", contactsRouter);
 app.use("/", contactsRouter); // for POST /webhooks/missed-call
+
+// Mount Admin router on both /api/v1/admin and /api/admin
+app.use("/api/v1/admin", adminRouter);
+app.use("/api/admin", adminRouter);
 
 // 404 Handler
 app.use((req, res) => {

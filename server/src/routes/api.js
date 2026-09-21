@@ -38,7 +38,7 @@ import {
   syncDealsFromOrders,
 } from "../data/db.js";
 
-import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
+import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact, isRateLimited, rateLimitedUntil } from "../services/gowhats.js";
 import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, fetchAllYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus, runChannelBotHistoricalBackfill, getChannelBotBackfillStatus } from "../services/channelbot.js";
 import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages, sendGmailMessage } from "../services/gmailAuth.js";
 import { fetchInstaxBotOrders, fetchAllInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast, sendInstaxBotMessage, runInstaxBotHistoricalBackfill, getInstaxBotBackfillStatus } from "../services/instaxbot.js";
@@ -809,10 +809,37 @@ apiRouter.post("/gowhats/sync", handleGoWhatsSync);
 apiRouter.get("/conversations/:convId/messages", async (req, res, next) => {
   try {
     const { convId } = req.params;
+    const wsId = getWorkspaceId(req);
+
+    const conv = await fetchConversationById(convId);
+    if (conv && (conv.channel === "WhatsApp" || conv.platform === "whatsapp" || conv.platform === "gowhats")) {
+      const phone = conv.phone || (conv.metadata && conv.metadata.whatsappPhone) || (conv.id && conv.id.startsWith("conv_wa_") ? conv.id.replace("conv_wa_", "") : null);
+      if (phone) {
+        try {
+          await Promise.race([
+            syncGoWhatsMessages({ workspaceId: wsId, phoneNumber: phone, broadcastFn: broadcastSseEvent }),
+            new Promise((resolve) => setTimeout(resolve, 2500)),
+          ]);
+        } catch (syncErr) {
+          console.warn("⚠️ [CONV MSG SYNC] WhatsApp sync error:", syncErr.message);
+        }
+      } else {
+        syncGoWhatsMessages({ workspaceId: wsId, broadcastFn: broadcastSseEvent }).catch(() => {});
+      }
+    } else if (conv && (conv.channel === "Instagram" || conv.platform === "instaxbot" || conv.platform === "instagram")) {
+      try {
+        await Promise.race([
+          fetchInstaxBotMessages({ workspaceId: wsId }),
+          new Promise((resolve) => setTimeout(resolve, 2500)),
+        ]);
+      } catch (syncErr) {
+        console.warn("⚠️ [CONV MSG SYNC] Instagram sync error:", syncErr.message);
+      }
+    }
+
     const messages = await fetchMessagesByConversationId(convId);
 
     // Auto-mark conversation as read when messages are fetched
-    const conv = await fetchConversationById(convId);
     if (conv && conv.unreadCount > 0) {
       conv.unreadCount = 0;
       await upsertConversation(conv);
@@ -2998,6 +3025,9 @@ apiRouter.post("/gowhats/webhook", handleGoWhatsWebhook);
  *   ?limit=N                       (default: 200, max 1000)
  *   ?phone=<e164>                  optional: filter to a single phone number
  */
+let lastGoWhatsInboxSyncTime = 0;
+let lastGoWhatsInboxResult = null;
+
 const handleGoWhatsInbox = async (req, res) => {
   try {
     const wsId = getWorkspaceId(req);
@@ -3012,17 +3042,25 @@ const handleGoWhatsInbox = async (req, res) => {
     }
 
     if (isRateLimited()) {
-      return res.status(429).json({
-        success: false,
-        error: "rate_limited",
-        message: "GoWhats API is currently rate-limited. Please retry in a moment.",
+      return res.json({
+        success: true,
+        rateLimited: true,
+        cached: true,
         retryAfterMs: Math.max(0, rateLimitedUntil - Date.now()),
+        message: "GoWhats API is cooling down from rate-limit. Serving active local conversations.",
+        inbox: { chats: [], calls: [], orders: [] },
+        counts: { chats: 0, calls: 0, orders: 0 },
       });
     }
 
     const filterType = (req.query.type || req.body?.type || "all").toLowerCase();
     const limit = Math.min(parseInt(req.query.limit || req.body?.limit || "200", 10), 1000);
     const filterPhone = (req.query.phone || req.body?.phone || "").replace(/\D/g, "") || null;
+
+    // Fast throttle cache for global sync: return recent result if within 2.5 seconds
+    if (!filterPhone && Date.now() - lastGoWhatsInboxSyncTime < 2500 && lastGoWhatsInboxResult) {
+      return res.json(lastGoWhatsInboxResult);
+    }
 
     console.log(`📲 [GOWHATS INBOX] Fetching inbox for workspace '${wsId}' (type=${filterType}, limit=${limit}${filterPhone ? `, phone=${filterPhone}` : ""})...`);
 
@@ -3314,7 +3352,7 @@ const handleGoWhatsInbox = async (req, res) => {
       `chats:${results.chats.length}, calls:${results.calls.length}, orders:${results.orders.length}`
     );
 
-    return res.json({
+    const responsePayload = {
       success: true,
       workspaceId: wsId,
       filterType,
@@ -3338,7 +3376,14 @@ const handleGoWhatsInbox = async (req, res) => {
       message: totalFetched === 0
         ? "No GoWhats WhatsApp messages found. Ensure your WhatsApp instance is connected and has recent activity."
         : `Fetched and synced ${totalFetched} WhatsApp item(s) into Unified Inbox (${totalNew} new).`,
-    });
+    };
+
+    if (!filterPhone) {
+      lastGoWhatsInboxSyncTime = Date.now();
+      lastGoWhatsInboxResult = responsePayload;
+    }
+
+    return res.json(responsePayload);
   } catch (err) {
     const safeMsg = sanitizeMessage(err.message);
     console.error("❌ [GOWHATS INBOX] Error:", safeMsg);
@@ -3355,6 +3400,10 @@ apiRouter.get("/integrations/gowhats/inbox", handleGoWhatsInbox);
 apiRouter.get("/gowhats/inbox", handleGoWhatsInbox);
 apiRouter.post("/integrations/gowhats/inbox", handleGoWhatsInbox);
 apiRouter.post("/gowhats/inbox", handleGoWhatsInbox);
+apiRouter.get("/integrations/gowhats/sync", handleGoWhatsInbox);
+apiRouter.post("/integrations/gowhats/sync", handleGoWhatsInbox);
+apiRouter.get("/gowhats/sync", handleGoWhatsInbox);
+apiRouter.post("/gowhats/sync", handleGoWhatsInbox);
 
 // ==============================================================================
 // CHANNELBOT.IN (YOUTUBE COMMENT & LEAD AUTOMATION) INTEGRATION ROUTES

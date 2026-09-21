@@ -51,13 +51,14 @@ export const getGoWhatsConfigStatus = () => {
   };
 };
 
-let rateLimitedUntil = 0;
+export let rateLimitedUntil = 0;
 
 export const checkRateLimit = (response) => {
   if (!response) return false;
   if (response.status === 429) {
     const retryAfterHeader = response.headers?.get ? response.headers.get("retry-after") : null;
-    const seconds = parseInt(retryAfterHeader, 10) || 60;
+    const rawSeconds = parseInt(retryAfterHeader, 10);
+    const seconds = !isNaN(rawSeconds) && rawSeconds > 0 ? Math.min(rawSeconds, 30) : 10;
     rateLimitedUntil = Date.now() + seconds * 1000;
     console.warn(`⚠️ [GOWHATS RATE LIMIT] Rate limit reached. Backing off for ${seconds}s.`);
     return true;
@@ -326,7 +327,49 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) =>
       console.warn(`⚠️ [GOWHATS FETCH ALL] Reached max page cap (${MAX_PAGES}). Fetched ${allMessages.length} messages. Increase MAX_PAGES in gowhats.js if needed.`);
     }
 
-    console.log(`✅ [GOWHATS FETCH ALL] Complete — ${allMessages.length} total messages fetched across ${Math.min(page, MAX_PAGES)} page(s).`);
+    // If global messages fetch returned no messages or failed, fetch for known WhatsApp contacts
+    if (allMessages.length === 0) {
+      console.log("📥 [GOWHATS FETCH ALL] Global /messages returned 0 items. Querying known active WhatsApp contacts...");
+      const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
+      const phonesToFetch = new Set([defaultPhone.replace(/\D/g, "")]);
+
+      if (mongoose.connection.readyState === 1) {
+        try {
+          const recentConvs = await ConversationModel.find({
+            $or: [{ channel: "WhatsApp" }, { platform: "whatsapp" }, { platform: "gowhats" }],
+          }).sort({ updatedAt: -1 }).limit(30).lean();
+
+          for (const c of recentConvs) {
+            const p = c.phone || (c.id && c.id.startsWith("conv_wa_") ? c.id.replace("conv_wa_", "") : null);
+            if (p) {
+              const cp = String(p).replace(/\D/g, "");
+              if (cp.length >= 7) phonesToFetch.add(cp);
+            }
+          }
+        } catch (dbErr) {
+          console.warn("⚠️ Could not query recent WhatsApp conversations:", dbErr.message);
+        }
+      }
+
+      const fetchPromises = Array.from(phonesToFetch).map(async (phone) => {
+        try {
+          const msgs = await fetchForSinglePhone(phone);
+          return msgs;
+        } catch {
+          return [];
+        }
+      });
+
+      const batchResults = await Promise.allSettled(fetchPromises);
+      for (const bRes of batchResults) {
+        if (bRes.status === "fulfilled" && Array.isArray(bRes.value) && bRes.value.length > 0) {
+          allMessages.push(...bRes.value);
+        }
+      }
+      totalContactsChecked = phonesToFetch.size;
+    }
+
+    console.log(`✅ [GOWHATS FETCH ALL] Complete — ${allMessages.length} total messages fetched across contacts.`);
 
     return {
       success: true,
@@ -608,7 +651,7 @@ export const clearGoWhatsMessages = async ({ workspaceId = "ws_default" } = {}) 
   };
 };
 
-export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", overrideKey, broadcastFn } = {}) => {
+export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", phoneNumber, overrideKey, broadcastFn } = {}) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, syncedCount: 0, error: "No GoWhats API key configured" };
 
@@ -623,7 +666,8 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
     }
   }
 
-  const res = await fetchGoWhatsMessages({ overrideKey: apiKey });
+  const cleanPhone = phoneNumber ? String(phoneNumber).replace(/\D/g, "") : undefined;
+  const res = await fetchGoWhatsMessages({ phoneNumber: cleanPhone, overrideKey: apiKey });
   if (!res.success || !Array.isArray(res.messages)) {
     return { success: res.success, syncedCount: 0, messages: [], error: res.error || "Failed to fetch GoWhats messages" };
   }
