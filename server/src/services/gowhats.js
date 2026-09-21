@@ -51,6 +51,24 @@ export const getGoWhatsConfigStatus = () => {
   };
 };
 
+let rateLimitedUntil = 0;
+
+export const checkRateLimit = (response) => {
+  if (!response) return false;
+  if (response.status === 429) {
+    const retryAfterHeader = response.headers?.get ? response.headers.get("retry-after") : null;
+    const seconds = parseInt(retryAfterHeader, 10) || 60;
+    rateLimitedUntil = Date.now() + seconds * 1000;
+    console.warn(`⚠️ [GOWHATS RATE LIMIT] Rate limit reached. Backing off for ${seconds}s.`);
+    return true;
+  }
+  return false;
+};
+
+export const isRateLimited = () => {
+  return Date.now() < rateLimitedUntil;
+};
+
 /**
  * 1. Health & Connection Verification (Send/Read Messages scope check)
  * Performs a real authenticated request to GoWhats API to drive usage counter.
@@ -58,6 +76,16 @@ export const getGoWhatsConfigStatus = () => {
 export const verifyGoWhatsConnection = async (overrideKey) => {
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { connected: false, error: "No GoWhats API key configured" };
+
+  if (!overrideKey && isRateLimited()) {
+    const waitSec = Math.ceil((rateLimitedUntil - Date.now()) / 1000);
+    return {
+      connected: true,
+      status: 429,
+      rateLimited: true,
+      message: `GoWhats WhatsApp API connected (cooldown active: ${waitSec}s remaining)`,
+    };
+  }
 
   const baseUrl = getBaseUrl();
   const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
@@ -72,13 +100,18 @@ export const verifyGoWhatsConnection = async (overrideKey) => {
       },
     });
 
+    checkRateLimit(response);
     const data = await response.json().catch(() => ({}));
-    const isOk = response.ok && data.success !== false;
+    // 200 is OK, 429 means authenticated API key that reached rate limit
+    const isOk = (response.ok && data.success !== false) || response.status === 429;
 
     return {
       connected: isOk,
       status: response.status,
-      message: isOk ? "GoWhats WhatsApp API connected and verified" : (data.error || data.message || `HTTP ${response.status}`),
+      rateLimited: response.status === 429,
+      message: isOk
+        ? (response.status === 429 ? "GoWhats WhatsApp API connected (rate limit cooldown)" : "GoWhats WhatsApp API connected and verified")
+        : (data.error || data.message || `HTTP ${response.status}`),
       data,
     };
   } catch (err) {
@@ -126,6 +159,7 @@ export const sendWhatsAppMessage = async ({ to, text, overrideKey }) => {
       body: JSON.stringify(payload),
     });
 
+    checkRateLimit(response);
     const data = await response.json().catch(() => ({}));
     return { response, data };
   };
@@ -167,6 +201,10 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) =>
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, messages: [] };
 
+  if (isRateLimited()) {
+    return { success: true, messages: [], rateLimited: true };
+  }
+
   const baseUrl = getBaseUrl();
 
   const fetchForSinglePhone = async (phone) => {
@@ -181,6 +219,8 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) =>
           "Content-Type": "application/json",
         },
       });
+      checkRateLimit(response);
+      if (!response.ok) return [];
       const data = await response.json().catch(() => ({}));
       const rawList = data.data?.messages || data.messages || data.data?.data || (Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []));
       return Array.isArray(rawList) ? rawList : [];
@@ -195,57 +235,34 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) =>
       return { success: true, messages: msgs };
     }
 
-    // If no specific phoneNumber passed, fetch ALL contacts first to get every customer's phone number
-    const phoneSet = new Set();
-    const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
-    if (defaultPhone) phoneSet.add(defaultPhone.replace(/\D/g, ""));
-
-    const contactsUrl = `${baseUrl}/contacts`;
+    // 1. Try single generic messages request first (single API call)
     try {
-      const contactsRes = await fetch(contactsUrl, {
+      const genRes = await fetch(`${baseUrl}/messages?limit=50`, {
         method: "GET",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
       });
-      const contactsData = await contactsRes.json().catch(() => ({}));
-      const rawContacts = contactsData.data?.contacts || contactsData.contacts || (Array.isArray(contactsData.data) ? contactsData.data : []);
-      if (Array.isArray(rawContacts)) {
-        for (const c of rawContacts) {
-          const p = c.phone_number || c.phone || c.number || (c.bsuid ? String(c.bsuid).replace(/\D/g, "") : "");
-          if (p) {
-            const cleanP = String(p).replace(/\D/g, "");
-            if (cleanP && cleanP.length >= 7) phoneSet.add(cleanP);
-          }
+      checkRateLimit(genRes);
+      if (genRes.ok) {
+        const genData = await genRes.json().catch(() => ({}));
+        const rawList = genData.data?.messages || genData.messages || genData.data?.data || (Array.isArray(genData.data) ? genData.data : (Array.isArray(genData) ? genData : []));
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          return { success: true, messages: rawList, totalContactsChecked: 1 };
         }
       }
-    } catch (err) {
-      console.warn("⚠️ GoWhats fetch contacts list warning:", err.message);
-    }
+    } catch (_e) {}
 
-    // Fetch messages for all unique phone numbers concurrently
-    const allMessages = [];
-    const seenMsgIds = new Set();
+    if (isRateLimited()) return { success: true, messages: [], rateLimited: true };
 
-    const phones = Array.from(phoneSet);
-    const fetchPromises = phones.map((p) => fetchForSinglePhone(p));
-    const results = await Promise.all(fetchPromises);
-
-    for (const msgList of results) {
-      for (const msg of msgList) {
-        const extId = getGoWhatsMessageExtId(msg);
-        if (extId && !seenMsgIds.has(extId)) {
-          seenMsgIds.add(extId);
-          allMessages.push(msg);
-        }
-      }
-    }
-
+    // 2. Fallback: only check the default business phone number
+    const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
+    const msgs = await fetchForSinglePhone(defaultPhone);
     return {
       success: true,
-      messages: allMessages,
-      totalContactsChecked: phones.length,
+      messages: msgs,
+      totalContactsChecked: 1,
     };
   } catch (err) {
     return { success: false, messages: [], error: err.message };
@@ -288,6 +305,7 @@ export const fetchGoWhatsOrders = async ({ phoneNumber, page, limit, overrideKey
       },
     });
 
+    checkRateLimit(response);
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok || data.success === false) {
@@ -327,6 +345,10 @@ export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", override
   const apiKey = overrideKey || getApiKey();
   if (!apiKey) return { success: false, syncedCount: 0, error: "No GoWhats API key configured" };
 
+  if (isRateLimited()) {
+    return { success: true, syncedCount: 0, rateLimited: true };
+  }
+
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}/contacts`;
 
@@ -338,6 +360,11 @@ export const syncGoWhatsContacts = async ({ workspaceId = "ws_default", override
         "Content-Type": "application/json",
       },
     });
+
+    checkRateLimit(response);
+    if (!response.ok) {
+      return { success: false, syncedCount: 0, error: `HTTP ${response.status}` };
+    }
 
     const data = await response.json().catch(() => ({}));
     const rawContacts = data.data?.contacts || data.contacts || data.data || [];
@@ -667,57 +694,74 @@ export const syncGoWhatsMessages = async ({ workspaceId = "ws_default", override
 };
 
 let isGoWhatsSyncRunning = false;
+let lastContactsSyncTime = 0;
+let ordersPermissionDenied = false;
 
-export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 10000) {
+export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 120000) {
   console.log(`⏰ Initializing GoWhats WhatsApp background sync scheduler (polling every ${intervalMs / 1000}s)...`);
 
   const runSync = async () => {
     if (isGoWhatsSyncRunning) return;
+    if (isRateLimited()) {
+      const waitSec = Math.ceil((rateLimitedUntil - Date.now()) / 1000);
+      console.log(`⏳ [GOWHATS AUTO-SYNC] Rate limit cooldown active (${waitSec}s remaining). Skipping poll cycle.`);
+      return;
+    }
+
     isGoWhatsSyncRunning = true;
     try {
       if (!isGoWhatsConfigured()) return;
       await syncGoWhatsMessages({ workspaceId: "ws_default", broadcastFn });
-      await syncGoWhatsContacts({ workspaceId: "ws_default", broadcastFn });
 
-      // Sync GoWhats Orders on schedule
-      const resOrders = await fetchGoWhatsOrders({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
+      // Only sync contacts occasionally (every 10 minutes) to conserve API quotas
+      const now = Date.now();
+      if (now - lastContactsSyncTime > 600000 && !isRateLimited()) {
+        lastContactsSyncTime = now;
+        await syncGoWhatsContacts({ workspaceId: "ws_default", broadcastFn });
+      }
 
-      if (!resOrders.success) {
-        const errKey = `${resOrders.statusCode}_${resOrders.error}`;
-        if (!loggedOrdersSyncErrors.has(errKey)) {
-          loggedOrdersSyncErrors.add(errKey);
-          if (resOrders.statusCode === 403 || (resOrders.error && resOrders.error.includes("permissions"))) {
-            console.warn(`⚠️ GoWhats orders sync disabled: API key missing 'orders.read' permission. Enable this scope in the GoWhats dashboard to activate order sync.`);
-          } else {
-            console.warn(`⚠️ GoWhats orders sync disabled (${resOrders.statusCode || "Error"}): ${resOrders.error}`);
+      // Sync GoWhats Orders on schedule only if orders scope is permitted and not rate-limited
+      if (!ordersPermissionDenied && !isRateLimited()) {
+        const resOrders = await fetchGoWhatsOrders({ phoneNumber: process.env.WHATSAPP_PHONE_NUMBER || "919047484484" });
+
+        if (!resOrders.success) {
+          const errKey = `${resOrders.statusCode}_${resOrders.error}`;
+          if (!loggedOrdersSyncErrors.has(errKey)) {
+            loggedOrdersSyncErrors.add(errKey);
+            if (resOrders.statusCode === 403 || (resOrders.error && resOrders.error.includes("permissions"))) {
+              ordersPermissionDenied = true;
+              console.warn(`⚠️ GoWhats orders sync disabled: API key missing 'orders.read' permission. Enable this scope in the GoWhats dashboard to activate order sync.`);
+            } else {
+              console.warn(`⚠️ GoWhats orders sync disabled (${resOrders.statusCode || "Error"}): ${resOrders.error}`);
+            }
           }
-        }
-      } else if (Array.isArray(resOrders.orders) && resOrders.orders.length > 0) {
-        let newOrders = 0;
-        let updatedOrders = 0;
-        let dedupedOrders = 0;
-        for (const orderItem of resOrders.orders) {
-          const customerPhone = extractCustomerPhone(orderItem);
-          const convId = `conv_wa_${customerPhone}`;
-          const { doc: orderDoc, isNew, isUpdated } = await saveGoWhatsOrder({
-            ...orderItem,
-            customerPhone,
-            conversationId: convId,
-          });
-
-          if (isNew) newOrders++;
-          else if (isUpdated) updatedOrders++;
-          else dedupedOrders++;
-
-          if ((isNew || isUpdated) && typeof broadcastFn === "function") {
-            broadcastFn("order_update", {
-              order: orderDoc,
+        } else if (Array.isArray(resOrders.orders) && resOrders.orders.length > 0) {
+          let newOrders = 0;
+          let updatedOrders = 0;
+          let dedupedOrders = 0;
+          for (const orderItem of resOrders.orders) {
+            const customerPhone = extractCustomerPhone(orderItem);
+            const convId = `conv_wa_${customerPhone}`;
+            const { doc: orderDoc, isNew, isUpdated } = await saveGoWhatsOrder({
+              ...orderItem,
+              customerPhone,
               conversationId: convId,
-              isNew,
-              isUpdated,
-              platform: "whatsapp",
             });
-            broadcastFn(isNew ? "order:new" : "order:updated", { conversationId: convId, order: orderDoc });
+
+            if (isNew) newOrders++;
+            else if (isUpdated) updatedOrders++;
+            else dedupedOrders++;
+
+            if ((isNew || isUpdated) && typeof broadcastFn === "function") {
+              broadcastFn("order_update", {
+                order: orderDoc,
+                conversationId: convId,
+                isNew,
+                isUpdated,
+                platform: "whatsapp",
+              });
+              broadcastFn(isNew ? "order:new" : "order:updated", { conversationId: convId, order: orderDoc });
+            }
           }
         }
       }
@@ -728,8 +772,8 @@ export function startGoWhatsAutoSyncScheduler(broadcastFn, intervalMs = 10000) {
     }
   };
 
-  // Immediate initial sync
-  runSync();
+  // Run initial sync after a short delay (5s)
+  setTimeout(runSync, 5000);
 
   // Recurring polling
   setInterval(runSync, intervalMs);

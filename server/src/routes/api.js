@@ -2227,7 +2227,21 @@ apiRouter.post("/instaxbot/connect", handleInstaxBotConnect);
 const handleInstaxBotStatus = async (req, res) => {
   try {
     const wsId = getWorkspaceId(req);
-    const config = await getInstaxBotConfig(wsId);
+    let config = await getInstaxBotConfig(wsId);
+
+    if (!config || !config.apiKey) {
+      const envKey = (process.env.INSTAXBOT_API_KEY || "").trim();
+      if (envKey && envKey.length >= 8) {
+        const maskedKey = "••••" + envKey.slice(-4);
+        config = {
+          workspaceId: wsId,
+          apiKey: envKey,
+          maskedKey,
+          accountName: `InstaxBot Account (${maskedKey})`,
+          connectedAt: new Date().toISOString(),
+        };
+      }
+    }
 
     if (!config || !config.apiKey) {
       return res.json({ connected: false, state: "Available" });
@@ -2720,8 +2734,8 @@ const handleChannelBotInStatus = async (req, res) => {
       connectedAt: new Date().toISOString(),
       remoteStatus: health.status || "200_OK",
       usageCountIncremented: true,
-      syncIntervalSeconds: Math.round((parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 120000) / 1000),
-      syncIntervalMinutes: Math.round((parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 120000) / 60000),
+      syncIntervalSeconds: Math.round((parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 300000) / 1000),
+      syncIntervalMinutes: Math.round((parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 300000) / 60000),
     });
   } catch (err) {
     res.status(500).json({ connected: false, state: "Needs attention", error: err.message });

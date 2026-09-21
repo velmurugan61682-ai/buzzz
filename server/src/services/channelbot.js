@@ -492,7 +492,7 @@ const DEMO_CHANNELBOT_COMMENTS = [
   },
 ];
 
-export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 120000) {
+export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 300000) {
   console.log(`⏰ Initializing ChannelBot.in YouTube background sync scheduler (polling every ${intervalMs / 1000}s / ${Math.round(intervalMs / 60000)}m)...`);
 
   const runSync = async () => {

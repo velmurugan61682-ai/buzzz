@@ -7474,10 +7474,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [conns, setConns] = useState(() => {
     const o = {};
     ["gowhats", "instaxbot", "mrassistant", "gmail", "gcontacts", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
-      o[id] = { on: !["instaxbot", "gcontacts"].includes(id), connectedAt: atDay(-20, 9), lastSync: atDay(0, 8), expiresAt: id === "gcal" ? atDay(2, 9) : null,
+      o[id] = { on: !["gcontacts"].includes(id), connectedAt: atDay(-20, 9), lastSync: atDay(0, 8), expiresAt: id === "gcal" ? atDay(2, 9) : null,
         direction: "Two way", conflict: "Newest wins", freq: "Realtime", mapping: DEFAULT_MAPPING[id] || [], error: null, paused: false, syncing: false,
-        account: id === "gowhats" ? "+91 9047484484" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
-        key: id === "gowhats" ? "EAAS9L0ST948BQUFPJxcHdsCHEfJSHfM8LGbUb1Sao05JTqjtaWmjW0aTo46yPAZAw4qF3avtzXjYSJLXDzR4L5ZBM45jWgYCwMOZCLYt7PtLwkNDC6LPJhZB1zgtBb52GmCtyLWGwttI0SQErdowM22aXXVlKO9mwlatSe8F763Uo0dpYpfaDv7nZBx6wUZB7c2wZDZD" : id === "linkedin" ? "li_live_connected" : "" };
+        account: id === "gowhats" ? "+91 9047484484" : id === "instaxbot" ? "InstaxBot Account (••••3fe6)" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
+        key: id === "gowhats" ? "gw_live_connected" : id === "instaxbot" ? "ib_live_connected" : id === "linkedin" ? "li_live_connected" : "" };
     });
     // ChannelBot.in / YouTube — starts as not-connected; real status fetched from backend on mount
     o["youtube"] = { on: false, connectedAt: null, lastSync: null, expiresAt: null,
@@ -7547,9 +7547,11 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             ...prev.instaxbot,
             on: true,
             status: "connected",
-            account: data.account || `InstaxBot Account (${data.maskedKey})`,
+            account: data.account || `InstaxBot Account (${data.maskedKey || "••••3fe6"})`,
             maskedKey: data.maskedKey,
-            connectedAt: data.connectedAt,
+            key: data.maskedKey || prev.instaxbot?.key || "ib_live_connected",
+            connectedAt: data.connectedAt || prev.instaxbot?.connectedAt,
+            lastSync: new Date().toISOString(),
             error: null,
           },
         }));
@@ -7647,18 +7649,45 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     }
   }, []);
 
+  /* Fetch real connected GoWhats WhatsApp status from backend */
+  const syncGoWhatsConnectionStatus = useCallback(async () => {
+    try {
+      const apiHost = getApiHost();
+      const data = await safeFetchJson(`${apiHost}/api/integrations/gowhats/status`);
+      if (data && data.connected) {
+        setConns((prev) => ({
+          ...prev,
+          gowhats: {
+            ...prev.gowhats,
+            on: true,
+            status: "connected",
+            account: data.account || "+91 9047484484",
+            maskedKey: data.maskedKey || "••••be0e",
+            connectedAt: data.connectedAt || prev.gowhats?.connectedAt,
+            lastSync: new Date().toISOString(),
+            error: null,
+          },
+        }));
+      }
+    } catch (e) {
+      console.warn("Failed to sync GoWhats connection status:", e);
+    }
+  }, []);
+
   /* Listen for OAuth redirect URL parameters & sync status on mount/focus */
   useEffect(() => {
     syncGoogleConnectionStatus();
     syncInstaxBotConnectionStatus();
     syncLinkedInConnectionStatus();
     syncChannelBotConnectionStatus();
+    syncGoWhatsConnectionStatus();
 
     const onFocus = () => {
       syncGoogleConnectionStatus();
       syncInstaxBotConnectionStatus();
       syncLinkedInConnectionStatus();
       syncChannelBotConnectionStatus();
+      syncGoWhatsConnectionStatus();
     };
     window.addEventListener("focus", onFocus);
 
@@ -23861,6 +23890,37 @@ function ConnectModal({ provider, onClose }) {
       } catch (e) {
         setStep("failed");
         setErr("Network error while verifying ChannelBot.in API key.");
+      }
+      return;
+    }
+
+    // GoWhats WhatsApp provider — verify and connect live against backend
+    if (provider.id === "gowhats") {
+      setErr(null); setStep("connecting");
+      try {
+        const res = await fetch(`${apiHost}/api/integrations/gowhats/connect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: key.trim() }),
+        });
+        const data = await res.json();
+        if (data && data.success) {
+          connectProvider("gowhats", {
+            key: data.maskedKey || "••••be0e",
+            account: data.account || "+91 9047484484",
+            maskedKey: data.maskedKey || "••••be0e",
+            connectedAt: data.connectedAt || new Date().toISOString(),
+            lastSync: new Date().toISOString(),
+          });
+          flash("GoWhats WhatsApp connected! Real-time messaging and contact sync active.");
+          onClose();
+        } else {
+          setStep("failed");
+          setErr(data.error || "GoWhats connection failed. Please check your API key.");
+        }
+      } catch (e) {
+        setStep("failed");
+        setErr("Network error while connecting GoWhats.");
       }
       return;
     }

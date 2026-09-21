@@ -106,11 +106,12 @@ process.on("uncaughtException", (err) => {
 const startServer = async () => {
   await connectDB();
 
-  // Start background auto-sync schedulers for all connected channels (polling every 30-60 seconds)
+  // Start background auto-sync schedulers for all connected channels (polling every 30-120 seconds)
   startGmailMessagesAutoSyncScheduler(broadcastSseEvent, 30000);
-  startGoWhatsAutoSyncScheduler(broadcastSseEvent, 10000);
+  const goWhatsSyncIntervalMs = parseInt(process.env.GOWHATS_SYNC_INTERVAL_MS, 10) || 120000;
+  startGoWhatsAutoSyncScheduler(broadcastSseEvent, goWhatsSyncIntervalMs);
   startInstaxBotAutoSyncScheduler(broadcastSseEvent, 45000);
-  const channelBotSyncIntervalMs = parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 120000; // 2 minutes auto-sync
+  const channelBotSyncIntervalMs = parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 300000; // 5 minutes auto-sync
   startChannelBotAutoSyncScheduler(broadcastSseEvent, channelBotSyncIntervalMs);
 
   const server = app.listen(PORT, () => {

@@ -152,7 +152,14 @@ export function UnifiedInbox() {
   // Filter messages by platform tab & search query
   const filteredMessages = useMemo(() => {
     return messages.filter((msg) => {
-      const matchPlatform = activePlatform === "all" || msg.platform === activePlatform;
+      const matchPlatform =
+        activePlatform === "all" ||
+        msg.platform === activePlatform ||
+        (activePlatform === "instagram" && (msg.platform === "instaxbot" || msg.integrationId === "instaxbot")) ||
+        (activePlatform === "instaxbot" && (msg.platform === "instagram" || msg.integrationId === "instaxbot")) ||
+        (activePlatform === "youtube" && (msg.platform === "channelbot" || msg.integrationId === "channelbot")) ||
+        (activePlatform === "channelbot" && (msg.platform === "youtube" || msg.integrationId === "channelbot")) ||
+        (activePlatform === "whatsapp" && (msg.platform === "gowhats" || msg.integrationId === "gowhats"));
       const matchSearch =
         !searchQuery.trim() ||
         (msg.text && msg.text.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -202,7 +209,16 @@ export function UnifiedInbox() {
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           {["all", "gmail", "instagram", "instaxbot", "whatsapp", "channelbot", "youtube", "linkedin", "telegram", "facebook", "custom_webhook"].map((pKey) => {
             const meta = pKey === "all" ? { name: "All Platforms", color: "#6366F1" } : getPlatformMeta(pKey);
-            const count = pKey === "all" ? messages.length : messages.filter((m) => m.platform === pKey || (pKey === "channelbot" && m.integrationId === "channelbot") || (pKey === "instaxbot" && m.integrationId === "instaxbot")).length;
+            const count = pKey === "all"
+              ? messages.length
+              : messages.filter((m) =>
+                  m.platform === pKey ||
+                  (pKey === "channelbot" && (m.integrationId === "channelbot" || m.platform === "youtube")) ||
+                  (pKey === "youtube" && (m.integrationId === "channelbot" || m.platform === "channelbot")) ||
+                  (pKey === "instaxbot" && (m.integrationId === "instaxbot" || m.platform === "instagram")) ||
+                  (pKey === "instagram" && (m.integrationId === "instaxbot" || m.platform === "instaxbot")) ||
+                  (pKey === "whatsapp" && (m.integrationId === "gowhats" || m.platform === "gowhats"))
+                ).length;
             const isActive = activePlatform === pKey;
 
             return (
