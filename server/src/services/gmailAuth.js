@@ -209,7 +209,8 @@ function parseEmailHeader(headerVal) {
 /**
  * Syncs/fetches recent emails from Gmail API and ingests them into MongoDB & Unified Inbox.
  */
-export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn = null) {
+export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn = null, options = {}) {
+  const { limit = 50, fetchAll = false } = (typeof options === "object" && options !== null) ? options : {};
   const validAccount = await getValidGoogleAccount(workspaceId);
   if (!validAccount || !validAccount.accessToken) {
     return {
@@ -227,138 +228,159 @@ export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn 
   }
 
   try {
-    const listRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=15", {
-      headers: { Authorization: `Bearer ${validAccount.accessToken}` },
-    });
+    let allMessageStubs = [];
+    let pageToken = null;
+    const maxToFetch = fetchAll ? Math.max(limit, 150) : Math.min(limit, 50);
 
-    const listData = await listRes.json().catch(() => ({}));
+    do {
+      const pageParam = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+      const pageSize = Math.min(maxToFetch - allMessageStubs.length, 50);
+      const listRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}${pageParam}`, {
+        headers: { Authorization: `Bearer ${validAccount.accessToken}` },
+      });
 
-    if (!listRes.ok) {
-      const errMsg = listData.error?.message || `HTTP ${listRes.status}`;
-      console.warn(`⚠️ Gmail API fetch messages failed: ${sanitizeMessage(errMsg)}`);
-      return { connected: true, error: sanitizeMessage(errMsg) };
-    }
+      const listData = await listRes.json().catch(() => ({}));
 
-    const messages = listData.messages || [];
+      if (!listRes.ok) {
+        const errMsg = listData.error?.message || `HTTP ${listRes.status}`;
+        console.warn(`⚠️ Gmail API fetch messages failed: ${sanitizeMessage(errMsg)}`);
+        if (allMessageStubs.length === 0) {
+          return { connected: true, error: sanitizeMessage(errMsg) };
+        }
+        break;
+      }
+
+      const pageMessages = listData.messages || [];
+      allMessageStubs.push(...pageMessages);
+      pageToken = listData.nextPageToken || null;
+    } while (fetchAll && pageToken && allMessageStubs.length < maxToFetch);
+
+    const messages = allMessageStubs;
     if (messages.length === 0) {
-      return { connected: true, count: 0, syncedAt: new Date().toISOString() };
+      return { connected: true, count: 0, totalChecked: 0, syncedAt: new Date().toISOString() };
     }
 
     let newCount = 0;
     const syncedAt = new Date().toISOString();
 
-    for (const m of messages) {
-      try {
-        const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`, {
-          headers: { Authorization: `Bearer ${validAccount.accessToken}` },
-        });
-
-        const detail = await detailRes.json().catch(() => ({}));
-        if (!detailRes.ok || !detail.id) continue;
-
-        const headers = detail.payload?.headers || [];
-        const getHeader = (name) => headers.find((h) => h.name && h.name.toLowerCase() === name.toLowerCase())?.value || "";
-
-        const fromVal = getHeader("From");
-        const toVal = getHeader("To");
-        const subject = getHeader("Subject") || "No Subject";
-        const snippet = detail.snippet || "";
-        const internalDate = detail.internalDate ? new Date(parseInt(detail.internalDate, 10)) : new Date();
-
-        const fromObj = parseEmailHeader(fromVal);
-        const toObj = parseEmailHeader(toVal);
-
-        const accountEmail = String(validAccount.email || "").toLowerCase();
-        const isOutbound = fromObj.email.toLowerCase() === accountEmail;
-
-        const customerEmail = isOutbound ? toObj.email : fromObj.email;
-        const customerName = isOutbound ? (toObj.name || toObj.email) : (fromObj.name || fromObj.email);
-
-        if (!customerEmail) continue;
-
-        // Auto-upsert Contact if inbound customer message
-        if (!isOutbound) {
-          const contacts = await fetchContacts(workspaceId);
-          const existingContact = contacts.find((c) => c.email && c.email.toLowerCase() === customerEmail);
-          if (!existingContact) {
-            await upsertContact({
-              id: `cnt_gmail_${customerEmail.replace(/[^a-zA-Z0-9]/g, "_")}`,
-              workspaceId,
-              name: customerName,
-              email: customerEmail,
-              source: "Gmail Ingestion",
-              stage: "New Lead",
-              status: "Lead",
-              channels: ["email"],
-              tags: ["Gmail", "Email"],
-            });
-          }
-        }
-
-        const convId = `conv_gmail_${detail.threadId}`;
-        const summaryText = subject ? `Subject: ${subject} — ${snippet}` : snippet;
-
-        const convDoc = {
-          id: convId,
-          workspaceId,
-          customerName,
-          channel: "Email",
-          platform: "gmail",
-          phone: customerEmail,
-          email: customerEmail,
-          unreadCount: isOutbound ? 0 : 1,
-          lastMessage: summaryText,
-          updatedAt: internalDate.toISOString(),
-        };
-        const conv = await upsertConversation(convDoc);
-
-        const fullText = subject ? `Subject: ${subject}\n\n${snippet}` : snippet;
-
-        const { doc: msgDoc, isNew } = await saveUnifiedMessage({
-          id: `msg_gmail_${detail.id}`,
-          workspaceId,
-          conversationId: conv.id,
-          integrationId: "gmail",
-          platform: "gmail",
-          externalMessageId: detail.id,
-          sender: {
-            name: isOutbound ? validAccount.name || "Agent" : customerName,
-            email: isOutbound ? accountEmail : customerEmail,
-            kind: isOutbound ? "agent" : "customer",
-          },
-          direction: isOutbound ? "outbound" : "inbound",
-          text: fullText,
-          status: "received",
-          receivedAt: internalDate,
-        });
-
-        if (isNew) {
-          newCount++;
+    const BATCH_SIZE = 8;
+    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+      const batch = messages.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        batch.map(async (m) => {
           try {
-            await saveMessage({
-              id: msgDoc.id,
-              conversationId: conv.id,
-              sender: isOutbound ? "agent" : "customer",
-              text: fullText,
-              timestamp: internalDate.toISOString(),
-              status: "received",
+            const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject`, {
+              headers: { Authorization: `Bearer ${validAccount.accessToken}` },
             });
-          } catch (e) {
-            // Legacy db non-fatal catch
-          }
 
-          if (broadcastFn && typeof broadcastFn === "function") {
-            broadcastFn("new_message", {
-              message: msgDoc,
-              conversation: conv,
+            const detail = await detailRes.json().catch(() => ({}));
+            if (!detailRes.ok || !detail.id) return;
+
+            const headers = detail.payload?.headers || [];
+            const getHeader = (name) => headers.find((h) => h.name && h.name.toLowerCase() === name.toLowerCase())?.value || "";
+
+            const fromVal = getHeader("From");
+            const toVal = getHeader("To");
+            const subject = getHeader("Subject") || "No Subject";
+            const snippet = detail.snippet || "";
+            const internalDate = detail.internalDate ? new Date(parseInt(detail.internalDate, 10)) : new Date();
+
+            const fromObj = parseEmailHeader(fromVal);
+            const toObj = parseEmailHeader(toVal);
+
+            const accountEmail = String(validAccount.email || "").toLowerCase();
+            const isOutbound = fromObj.email.toLowerCase() === accountEmail;
+
+            const customerEmail = isOutbound ? toObj.email : fromObj.email;
+            const customerName = isOutbound ? (toObj.name || toObj.email) : (fromObj.name || fromObj.email);
+
+            if (!customerEmail) return;
+
+            // Auto-upsert Contact if inbound customer message
+            if (!isOutbound) {
+              const contacts = await fetchContacts(workspaceId);
+              const existingContact = contacts.find((c) => c.email && c.email.toLowerCase() === customerEmail);
+              if (!existingContact) {
+                await upsertContact({
+                  id: `cnt_gmail_${customerEmail.replace(/[^a-zA-Z0-9]/g, "_")}`,
+                  workspaceId,
+                  name: customerName,
+                  email: customerEmail,
+                  source: "Gmail Ingestion",
+                  stage: "New Lead",
+                  status: "Lead",
+                  channels: ["email"],
+                  tags: ["Gmail", "Email"],
+                });
+              }
+            }
+
+            const convId = `conv_gmail_${detail.threadId}`;
+            const summaryText = subject ? `Subject: ${subject} — ${snippet}` : snippet;
+
+            const convDoc = {
+              id: convId,
+              workspaceId,
+              customerName,
+              channel: "Email",
               platform: "gmail",
+              phone: customerEmail,
+              email: customerEmail,
+              unreadCount: isOutbound ? 0 : 1,
+              lastMessage: summaryText,
+              updatedAt: internalDate.toISOString(),
+            };
+            const conv = await upsertConversation(convDoc);
+
+            const fullText = subject ? `Subject: ${subject}\n\n${snippet}` : snippet;
+
+            const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+              id: `msg_gmail_${detail.id}`,
+              workspaceId,
+              conversationId: conv.id,
+              integrationId: "gmail",
+              platform: "gmail",
+              externalMessageId: detail.id,
+              sender: {
+                name: isOutbound ? validAccount.name || "Agent" : customerName,
+                email: isOutbound ? accountEmail : customerEmail,
+                kind: isOutbound ? "agent" : "customer",
+              },
+              direction: isOutbound ? "outbound" : "inbound",
+              text: fullText,
+              status: "received",
+              receivedAt: internalDate,
             });
-            broadcastFn("message:new", { conversation: conv, message: msgDoc });
+
+            if (isNew) {
+              newCount++;
+              try {
+                await saveMessage({
+                  id: msgDoc.id,
+                  conversationId: conv.id,
+                  sender: isOutbound ? "agent" : "customer",
+                  text: fullText,
+                  timestamp: internalDate.toISOString(),
+                  status: "received",
+                });
+              } catch (e) {
+                // Legacy db non-fatal catch
+              }
+
+              if (broadcastFn && typeof broadcastFn === "function") {
+                broadcastFn("new_message", {
+                  message: msgDoc,
+                  conversation: conv,
+                  platform: "gmail",
+                });
+                broadcastFn("message:new", { conversation: conv, message: msgDoc });
+              }
+            }
+          } catch (itemErr) {
+            console.warn(`⚠️ Error processing Gmail message detail item: ${sanitizeMessage(itemErr.message)}`);
           }
-        }
-      } catch (itemErr) {
-        console.warn(`⚠️ Error processing Gmail message detail item: ${sanitizeMessage(itemErr.message)}`);
-      }
+        })
+      );
     }
 
     if (newCount > 0) {
@@ -422,6 +444,23 @@ export async function sendGmailMessage({ to, subject = "Message from BUZZZ", tex
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (body.threadId) {
+      console.warn("⚠️ Send failed with threadId, retrying without threadId...");
+      delete body.threadId;
+      const retryRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${validAccount.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const retryData = await retryRes.json().catch(() => ({}));
+      if (retryRes.ok) {
+        console.log(`✅ Outbound email sent successfully via Gmail API (fallback without threadId) to ${to} (id: ${retryData.id})`);
+        return { success: true, id: retryData.id, threadId: retryData.threadId };
+      }
+    }
     const errMsg = data.error?.message || `HTTP ${res.status}`;
     console.error("❌ Gmail Send API Error:", errMsg);
     throw new Error(errMsg);

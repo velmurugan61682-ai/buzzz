@@ -664,10 +664,20 @@ export const findConversationByPhone = async (phone, channel = "WhatsApp") => {
 };
 
 export const upsertConversation = async (data) => {
-  const cleanPhone = data.phone ? String(data.phone).replace(/\D/g, "") : "";
+  const isEmail =
+    String(data.channel || "").toLowerCase().includes("email") ||
+    String(data.platform || "").toLowerCase() === "gmail" ||
+    (data.phone && String(data.phone).includes("@")) ||
+    (data.id && String(data.id).startsWith("conv_gmail_"));
+
+  const cleanPhone = (data.phone && !isEmail) ? String(data.phone).replace(/\D/g, "") : (data.phone || "");
+  const resolvedEmail = data.email || (data.phone && String(data.phone).includes("@") ? data.phone : undefined);
   const payload = {
     ...data,
-    phone: cleanPhone || data.phone,
+    email: resolvedEmail,
+    phone: isEmail ? (resolvedEmail || data.phone) : (cleanPhone || data.phone),
+    channel: isEmail ? "Email" : (data.channel || "WhatsApp"),
+    platform: isEmail ? "gmail" : (data.platform || "whatsapp"),
     updatedAt: data.updatedAt ? new Date(data.updatedAt) : new Date(),
   };
 

@@ -13249,6 +13249,34 @@ function InboxView() {
   const [showPanel, setShowPanel] = useState(true);
   const [adv, setAdv] = useState(false);
   const [runningAutopilot, setRunningAutopilot] = useState(false);
+  const [syncingEmail, setSyncingEmail] = useState(false);
+
+  const fetchAllEmails = async () => {
+    setSyncingEmail(true);
+    try {
+      const apiHost = getApiHost();
+      const res = await fetch(`${apiHost}/api/gmail/messages/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: "ws_default", fetchAll: true, limit: 150 }),
+      });
+      const data = await res.json();
+      if (data && (data.success || data.connected)) {
+        flash(`Email sync complete: checked ${data.totalChecked || 0} emails (${data.count || 0} new).`, "ok");
+        const refreshed = await fetch(`${apiHost}/api/conversations`).then((r) => r.json());
+        if (Array.isArray(refreshed) && refreshed.length > 0) {
+          setConvs(refreshed);
+        }
+      } else {
+        flash(data?.error || data?.reason || "Failed to fetch emails from Gmail", "err");
+      }
+    } catch (err) {
+      console.warn("Gmail sync error:", err);
+      flash("Failed to fetch emails: " + err.message, "err");
+    } finally {
+      setSyncingEmail(false);
+    }
+  };
 
   const runAutopilot = async () => {
     setRunningAutopilot(true);
@@ -13331,8 +13359,26 @@ function InboxView() {
       {/* ============ list panel ============ */}
       <div className={`${conv ? "hidden md:flex" : "flex"} w-full md:w-72 xl:w-80 shrink-0 md:border-r flex-col min-h-0 ${T.border} ${T.panel}`}>
         <div className={`h-14 shrink-0 px-4 flex items-center justify-between border-b ${T.border}`}>
-          <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
-          <button onClick={() => setAdv(!adv)} title="More channel filters" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
+          <div className="flex items-center gap-2">
+            <h1 className="text-sm font-semibold bz-display tracking-tight">Inbox</h1>
+            {chFilter === "email" && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                Gmail
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={fetchAllEmails}
+              disabled={syncingEmail}
+              title="Fetch all emails from connected Gmail account"
+              className={`h-7 px-2 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${T.chip} ${T.hover} ${syncingEmail ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
+              <RefreshCw size={11} className={syncingEmail ? "animate-spin text-blue-600" : "text-blue-600"} />
+              <span className="hidden sm:inline">{syncingEmail ? "Fetching..." : "Fetch Mail"}</span>
+            </button>
+            <button onClick={() => setAdv(!adv)} title="More channel filters" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
+          </div>
         </div>
         <div className={`px-4 py-3 space-y-2.5 border-b ${T.border}`}>
           <div className={`h-9 flex items-center gap-2 px-3 rounded-lg ${T.input}`}>
@@ -13576,11 +13622,11 @@ function Thread({ conv, showPanel, setShowPanel }) {
   const [tone, setTone] = useState("Professional");
   const [note, setNote] = useState(false);
   const [menu, setMenu] = useState(null);         // "status" | "more" | "tone" | "template" | "quick" | "channel"
-  const [sendCh, setSendCh] = useState(conv.channel);
+  const [sendCh, setSendCh] = useState(() => resolveChannelKey(conv?.platform, conv?.channel) || conv?.channel || "email");
   const [dismissed, setDismissed] = useState({});
   const endRef = useRef(null);
   useEffect(() => { endRef.current && endRef.current.scrollIntoView({ behavior: "smooth" }); }, [(conv.msgs || []).length, conv.id]);
-  useEffect(() => { setSendCh(conv.channel); setMenu(null); }, [conv.id]);
+  useEffect(() => { setSendCh(resolveChannelKey(conv?.platform, conv?.channel) || "email"); setMenu(null); }, [conv.id]);
 
   useEffect(() => {
     if (!conv?.id) return;
@@ -13673,7 +13719,16 @@ function Thread({ conv, showPanel, setShowPanel }) {
     checkAndAutoBook(msgText);
     log("You", note ? "Internal note added" : "Reply sent", contact?.name || "Customer");
     if (!note) {
-      api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" }).catch((err) => console.warn("⚠️ Outbound send API error:", err));
+      api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" })
+        .then(() => {
+          if (["email", "Email", "gmail", "Gmail"].includes(conv.channel) || conv.platform === "gmail" || sendCh === "email") {
+            flash("Email reply sent successfully via Gmail!", "ok");
+          }
+        })
+        .catch((err) => {
+          console.warn("⚠️ Outbound send API error:", err);
+          flash("Failed to dispatch email reply: " + (err.message || "Delivery failed"), "err");
+        });
     }
     setText(""); setNote(false);
   };
@@ -13688,7 +13743,16 @@ function Thread({ conv, showPanel, setShowPanel }) {
         addMsg({ from: "ai", agent: handler ? agentFullName(handler) : "AI", text: msgText });
         patchConv({ state: "Waiting", unread: 0 });
         checkAndAutoBook(msgText);
-        api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" }).catch((err) => console.warn("⚠️ Outbound send API error:", err));
+        api.sendMessage("ws_default", conv.id, { text: msgText, sender: "agent" })
+          .then(() => {
+            if (["email", "Email", "gmail", "Gmail"].includes(conv.channel) || conv.platform === "gmail" || sendCh === "email") {
+              flash("Email reply sent successfully via Gmail!", "ok");
+            }
+          })
+          .catch((err) => {
+            console.warn("⚠️ Outbound send API error:", err);
+            flash("Failed to dispatch email reply: " + (err.message || "Delivery failed"), "err");
+          });
       } });
     if (r.ok) flash("Sent as " + (handler ? handler.name : "AI"));
     setText(""); setNote(false);
@@ -24422,16 +24486,16 @@ function GmailSyncWidget() {
     fetchStatus();
   }, []);
 
-  const handleSync = async () => {
+  const handleSync = async (fetchAll = false) => {
     setLoading(true);
     try {
       const res = await fetch(`${apiHost}/api/gmail/messages/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workspaceId: "ws_default" }),
+        body: JSON.stringify({ workspaceId: "ws_default", fetchAll, limit: fetchAll ? 150 : 50 }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (data.success || data.connected) {
         flash(`Gmail sync complete: checked ${data.totalChecked || 0} emails (${data.count || 0} new).`, "ok");
         fetchStatus();
       } else {
@@ -24483,20 +24547,30 @@ function GmailSyncWidget() {
           <button
             onClick={handleSimulate}
             disabled={simulating || !status?.connected}
-            className={`h-7 px-2.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${T.chip} ${T.hover} disabled:opacity-50`}
+            className={`h-7 px-2 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${T.chip} ${T.hover} disabled:opacity-50`}
             title="Create a test incoming email in the Unified Inbox"
           >
             {simulating ? <RefreshCw size={11} className="animate-spin" /> : <Mail size={11} />}
             <span>Test Inbound</span>
           </button>
           <button
-            onClick={handleSync}
+            onClick={() => handleSync(false)}
+            disabled={loading || !status?.connected}
+            className={`h-7 px-2.5 rounded-lg text-xs font-semibold border transition flex items-center gap-1 ${T.chip} ${T.hover} ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+            title="Sync recent 50 emails from Gmail"
+          >
+            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+            <span>Sync</span>
+          </button>
+          <button
+            onClick={() => handleSync(true)}
             disabled={loading || !status?.connected}
             className={`h-7 px-3 rounded-lg text-xs font-semibold text-white transition flex items-center gap-1.5 ${loading ? "opacity-60 cursor-not-allowed bg-zinc-500" : "hover:opacity-90 active:scale-95"}`}
             style={{ background: BRAND }}
+            title="Fetch all emails across pages from Gmail"
           >
             <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
-            <span>{loading ? "Syncing..." : "Sync Gmail"}</span>
+            <span>{loading ? "Fetching..." : "Fetch All Mail"}</span>
           </button>
         </div>
       </div>

@@ -1180,23 +1180,42 @@ apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
       } catch (err) {
         console.error(`❌ Failed to dispatch InstaxBot reply:`, err.message);
       }
-    } else if (["Email", "email", "Gmail", "gmail"].includes(conv.channel) && sender === "agent") {
-      try {
-        const recipientEmail = conv.email || conv.phone;
-        const threadId = conv.id ? conv.id.replace(/^conv_gmail_/, "") : null;
-        console.log(`📤 Outbound Email reply dispatched for conv ${convId} to ${recipientEmail}: "${text}"`);
-        initialStatus = "sent";
-        sendGmailMessage({
-          to: recipientEmail,
-          subject: conv.lastMessage?.startsWith("Subject: ") ? `Re: ${conv.lastMessage.split(" — ")[0].replace("Subject: ", "")}` : "Reply from BUZZZ",
-          text,
-          threadId: threadId?.startsWith("thread_sim_") ? undefined : threadId,
-          workspaceId: conv.workspaceId || "ws_default",
-        }).catch((e) =>
-          console.warn("⚠️ Outbound Gmail API send notice:", e.message)
-        );
-      } catch (err) {
-        console.error(`❌ Failed to dispatch Email reply:`, err.message);
+    } else if ((["Email", "email", "Gmail", "gmail"].includes(conv.channel) || conv.platform === "gmail" || (conv.id && String(conv.id).startsWith("conv_gmail_"))) && sender === "agent") {
+      let recipientEmail = conv.email;
+      if (!recipientEmail && conv.phone && String(conv.phone).includes("@")) {
+        recipientEmail = conv.phone;
+      }
+      if (!recipientEmail) {
+        try {
+          const prevMsgs = await fetchMessagesByConversationId(convId);
+          const found = (prevMsgs || []).find((m) => m.sender?.email || (m.sender === "customer" && m.email));
+          if (found) recipientEmail = found.sender?.email || found.email;
+        } catch (_) {}
+      }
+      if (!recipientEmail && conv.customerName && String(conv.customerName).includes("@")) {
+        recipientEmail = conv.customerName;
+      }
+
+      if (!recipientEmail) {
+        console.warn(`⚠️ Cannot send email: no recipient email address found for conv ${convId}`);
+        initialStatus = "failed";
+      } else {
+        try {
+          const threadId = conv.id ? conv.id.replace(/^conv_gmail_/, "") : null;
+          console.log(`📤 Outbound Email reply dispatched for conv ${convId} to ${recipientEmail}: "${text}"`);
+          const sendRes = await sendGmailMessage({
+            to: recipientEmail,
+            subject: conv.lastMessage?.startsWith("Subject: ") ? `Re: ${conv.lastMessage.split(" — ")[0].replace("Subject: ", "")}` : "Reply from BUZZZ",
+            text,
+            threadId: threadId?.startsWith("thread_sim_") ? undefined : threadId,
+            workspaceId: conv.workspaceId || "ws_default",
+          });
+          initialStatus = "sent";
+          console.log(`✅ Outbound email sent successfully via Gmail API to ${recipientEmail} (id: ${sendRes?.id})`);
+        } catch (err) {
+          console.error(`❌ Failed to dispatch Email reply:`, err.message);
+          initialStatus = "failed";
+        }
       }
     }
 
@@ -1980,7 +1999,14 @@ apiRouter.get("/gmail/status", handleGoogleStatus);
 const handleGmailSync = async (req, res) => {
   try {
     const wsId = getWorkspaceId(req);
-    const result = await syncGmailMessages(wsId, broadcastSseEvent);
+    const { limit, fetchAll } = req.body || req.query || {};
+    const isFetchAll = fetchAll === true || fetchAll === "true" || req.query?.fetchAll === "true";
+    const parsedLimit = parseInt(limit || req.query?.limit, 10) || (isFetchAll ? 150 : 50);
+
+    const result = await syncGmailMessages(wsId, broadcastSseEvent, {
+      limit: parsedLimit,
+      fetchAll: isFetchAll,
+    });
     res.json(result);
   } catch (err) {
     const safeMsg = sanitizeMessage(err.message);
@@ -1990,6 +2016,9 @@ const handleGmailSync = async (req, res) => {
 
 apiRouter.post("/google/messages/sync", handleGmailSync);
 apiRouter.post("/gmail/messages/sync", handleGmailSync);
+apiRouter.post("/gmail/sync", handleGmailSync);
+apiRouter.get("/gmail/messages/sync", handleGmailSync);
+apiRouter.get("/gmail/sync", handleGmailSync);
 
 // POST /api/gmail/simulate-incoming & /api/google/simulate-incoming - Simulates an incoming email for testing
 const handleGmailSimulate = async (req, res) => {
