@@ -7493,8 +7493,24 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
           gmail: {
             ...prev.gmail,
             on: true,
+            status: "connected",
             account: data.email,
+            email: data.email,
+            messagesTotal: data.messagesTotal,
+            threadsTotal: data.threadsTotal,
             connectedAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : prev.gmail?.connectedAt,
+            lastSync: new Date().toISOString(),
+            error: null,
+          },
+        }));
+      } else {
+        setConns((prev) => ({
+          ...prev,
+          gmail: {
+            ...prev.gmail,
+            on: false,
+            status: data?.expired ? "expired" : "available",
+            error: data?.error || null,
           },
         }));
       }
@@ -13197,7 +13213,7 @@ function InboxView() {
           (chFilter === "gowhats" && (c.channel === "WhatsApp" || c.channel === "whatsapp" || c.platform === "gowhats" || c.platform === "whatsapp")) ||
           (chFilter === "instaxbot" && (c.channel === "InstaxBot" || c.channel === "Instagram" || c.channel === "instagram" || c.platform === "instaxbot" || c.platform === "instagram")) ||
           (chFilter === "channelbot" && (c.channel === "YouTube" || c.channel === "youtube" || c.channel === "ChannelBot.in" || c.platform === "channelbot" || c.platform === "youtube")) ||
-          (chFilter === "email" && (c.channel === "Email" || c.channel === "email" || c.channel === "Gmail" || c.channel === "gmail"));
+          (chFilter === "email" && (["email", "Email", "gmail", "Gmail"].includes(c.channel) || ["email", "gmail"].includes(c.platform) || resolveChannelKey(c.platform, c.channel) === "email"));
         if (!isMatch) return false;
       }
       if (filter === "Unread" && !c.unread) return false;
@@ -13252,7 +13268,7 @@ function InboxView() {
               { id: "gowhats", label: "WhatsApp", brand: "gowhats", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "gowhats" || c.channel === "WhatsApp" || c.channel === "whatsapp" || c.platform === "gowhats").length },
               { id: "instaxbot", label: "Instagram", brand: "instaxbot", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "instaxbot" || c.channel === "InstaxBot" || c.channel === "Instagram" || c.channel === "instagram" || c.platform === "instaxbot").length },
               { id: "channelbot", label: "YouTube", brand: "channelbot", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "channelbot" || c.channel === "YouTube" || c.channel === "youtube" || c.channel === "ChannelBot.in" || c.platform === "channelbot").length },
-              { id: "email", label: "Email", brand: "gmail", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "email" || c.channel === "Email" || c.channel === "Gmail" || c.channel === "gmail").length },
+              { id: "email", label: "Email", brand: "gmail", count: convs.filter((c) => resolveChannelKey(c.platform, c.channel) === "email" || ["email", "Email", "gmail", "Gmail"].includes(c.channel) || ["email", "gmail"].includes(c.platform)).length },
             ].map((ch) => {
               const isSelected = chFilter === ch.id;
               return (
@@ -13313,7 +13329,7 @@ function InboxView() {
                 <div className="h-full flex items-center gap-3">
                   <div className="relative shrink-0">
                     <Avatar name={displayName} i={CONTACTS.indexOf(k) >= 0 ? CONTACTS.indexOf(k) : (c.id ? c.id.length : 0)} size="w-8 h-8 text-[11px]" />
-                    <span className={`absolute -bottom-1 -right-1 rounded-[5px] ring-2 ${dk ? "ring-zinc-950" : "ring-white"}`}><Brand id={c.channel === "email" ? "gmail" : c.channel} size={16} /></span>
+                    <span className={`absolute -bottom-1 -right-1 rounded-[5px] ring-2 ${dk ? "ring-zinc-950" : "ring-white"}`}><Brand id={["email", "Email", "gmail", "Gmail"].includes(c.channel) || ["email", "gmail"].includes(c.platform) ? "gmail" : c.channel} size={16} /></span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -13408,7 +13424,7 @@ function Msg({ m, contact, first = true, last = true, mt = "" }) {
           {m.note && <span className="font-semibold text-yellow-600">Internal note · invisible to customer</span>}
           {m.from === "ai" && !m.note && <span>{m.agent || "AI"} · sent as AI</span>}
           {m.from === "human" && !m.note && <span>{m.who || "You"}</span>}
-          {m.channel && !m.note && <Brand id={m.channel === "email" ? "gmail" : m.channel} size={10} />}
+          {m.channel && !m.note && <Brand id={["email", "Email", "gmail", "Gmail"].includes(m.channel) ? "gmail" : m.channel} size={10} />}
           <span>{timeAgo(msgAt(m))}</span>
         </div>}
       </div>
@@ -23100,7 +23116,7 @@ function ApprovalsView() {
                       <ChevronRight size={12} className={T.faint} />
                     </button>
                     {deals.filter((d) => d.contactId === contact.id).map((d) => (
-                      <div key={d.id} className={`text-[11px] mt-1.5 flex items-center gap-2 ${T.sub}`}><Target size={11} /> {d.name} · ₹${(d.value / 1000).toFixed(0)}k · {d.stage}</div>
+                      <div key={d.id} className={`text-[11px] mt-1.5 flex items-center gap-2 ${T.sub}`}><Target size={11} /> {d.name} · ₹{((d.value || 0) / 1000).toFixed(0)}k · {d.stage}</div>
                     ))}
                     {conv && (
                       <div className="mt-2">
@@ -24123,6 +24139,7 @@ function ProviderDetail({ provider, onClose }) {
 
       {tab === "Overview" && (
         <div className="space-y-3">
+          {provider.id === "gmail" && <GmailSyncWidget />}
           {provider.id === "linkedin" && <LinkedInShareWidget />}
           {provider.id === "gcontacts" && <GoogleContactsView />}
           {provider.id === "youtube" && <ChannelBotBackfillWidget />}
@@ -24241,6 +24258,122 @@ function ProviderDetail({ provider, onClose }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+function GmailSyncWidget() {
+  const { T, flash } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [simulating, setSimulating] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  const apiHost = getApiHost();
+
+  const fetchStatus = async () => {
+    try {
+      const res = await fetch(`${apiHost}/api/google/status`);
+      const data = await res.json();
+      setStatus(data);
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    fetchStatus();
+  }, []);
+
+  const handleSync = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiHost}/api/gmail/messages/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workspaceId: "ws_default" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`Gmail sync complete: checked ${data.totalChecked || 0} emails (${data.count || 0} new).`, "ok");
+        fetchStatus();
+      } else {
+        flash(data.error || "Gmail sync failed", "err");
+      }
+    } catch (e) {
+      flash("Failed to trigger Gmail sync", "err");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSimulate = async () => {
+    setSimulating(true);
+    try {
+      const res = await fetch(`${apiHost}/api/gmail/simulate-incoming`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sender_name: "Customer Support Inquiry",
+          sender_email: "client.test@enterprise.com",
+          subject: "Inquiry on BUZZZ Platform Services",
+          body: "Hello team, we are testing the live Gmail inbox pipeline integration with MongoDB.",
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        flash("Simulated incoming email created in Unified Inbox!", "ok");
+      } else {
+        flash(data.error || "Simulation failed", "err");
+      }
+    } catch (e) {
+      flash("Error triggering email simulation", "err");
+    } finally {
+      setSimulating(false);
+    }
+  };
+
+  return (
+    <div className={`rounded-xl p-3.5 space-y-2.5 border ${T.border} ${T.softcard}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold">Gmail Live Mailbox Sync</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${status?.connected ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800" : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"}`}>
+            {status?.connected ? "Connected / Active" : "Disconnected"}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleSimulate}
+            disabled={simulating || !status?.connected}
+            className={`h-7 px-2.5 rounded-lg text-xs font-medium border transition flex items-center gap-1 ${T.chip} ${T.hover} disabled:opacity-50`}
+            title="Create a test incoming email in the Unified Inbox"
+          >
+            {simulating ? <RefreshCw size={11} className="animate-spin" /> : <Mail size={11} />}
+            <span>Test Inbound</span>
+          </button>
+          <button
+            onClick={handleSync}
+            disabled={loading || !status?.connected}
+            className={`h-7 px-3 rounded-lg text-xs font-semibold text-white transition flex items-center gap-1.5 ${loading ? "opacity-60 cursor-not-allowed bg-zinc-500" : "hover:opacity-90 active:scale-95"}`}
+            style={{ background: BRAND }}
+          >
+            <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
+            <span>{loading ? "Syncing..." : "Sync Gmail"}</span>
+          </button>
+        </div>
+      </div>
+
+      <p className={`text-[11px] leading-relaxed ${T.sub}`}>
+        {status?.connected && status?.email
+          ? `Connected to ${status.email}. Real-time background sync polls your inbox every 30 seconds and pulls customer emails into Unified Inbox.`
+          : "Connect your Google account via OAuth to enable real-time 2-way Gmail integration."}
+      </p>
+
+      {status?.connected && (
+        <div className="grid grid-cols-3 gap-2 text-[10px] pt-1 border-t border-zinc-100 dark:border-zinc-800">
+          <div>Account: <span className="font-semibold">{status.email}</span></div>
+          <div>Total Emails: <span className="font-semibold">{status.messagesTotal?.toLocaleString() || "—"}</span></div>
+          <div>Threads: <span className="font-semibold">{status.threadsTotal?.toLocaleString() || "—"}</span></div>
+        </div>
+      )}
+    </div>
   );
 }
 

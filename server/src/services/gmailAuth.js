@@ -78,6 +78,8 @@ export async function refreshGoogleAccessToken(account) {
     accessToken: newAccessToken,
     refreshToken: newRefreshToken,
     expiresAt,
+    needsReauth: false,
+    isRevoked: false,
   });
 
   console.log(`✅ Access token refreshed successfully for ${account.email}. Expires at ${expiresAt.toISOString()}`);
@@ -94,18 +96,10 @@ export async function getValidGoogleAccount(workspaceId = "ws_default") {
     return null;
   }
 
-  if (account.needsReauth) {
-    return { ...account, isExpired: true, needsReauth: true };
-  }
-
   const expiresTime = new Date(account.expiresAt).getTime();
   const bufferMs = 5 * 60 * 1000; // 5 minute safety buffer
 
-  if (account.needsReauth || account.isRevoked) {
-    return { ...account, isExpired: true, needsReauth: true };
-  }
-
-  if (Date.now() + bufferMs >= expiresTime) {
+  if (Date.now() + bufferMs >= expiresTime || account.needsReauth || account.isRevoked) {
     if (account.refreshToken) {
       try {
         return await refreshGoogleAccessToken(account);
@@ -119,7 +113,7 @@ export async function getValidGoogleAccount(workspaceId = "ws_default") {
         return { ...account, isExpired: true, needsReauth: true };
       }
     } else {
-      return { ...account, isExpired: true };
+      return { ...account, isExpired: true, needsReauth: true };
     }
   }
 
@@ -135,26 +129,19 @@ export async function verifyGmailConnection(workspaceId = "ws_default") {
     return { connected: false, reason: "No Google account connected" };
   }
 
-  if (account.needsReauth || account.isRevoked) {
-    return { connected: false, expired: true, needsReauth: true, error: "Google access token has been revoked or expired. Re-authentication required." };
-  }
-
   let activeAccount = account;
-
-  // Check expiration & auto-refresh token if needed
   const expiresTime = new Date(account.expiresAt).getTime();
-  if (Date.now() >= expiresTime - 60000) {
+  if (Date.now() >= expiresTime - 60000 || account.needsReauth || account.isRevoked) {
     if (account.refreshToken) {
       try {
         activeAccount = await refreshGoogleAccessToken(account);
       } catch (e) {
         if (e.message.includes("invalid_grant") || e.message.includes("expired or revoked")) {
           await saveGoogleAccount({ ...account, needsReauth: true, isRevoked: true });
+          return { connected: false, expired: true, needsReauth: true, error: "Google access token has been revoked or expired. Re-authentication required." };
         }
-        return { connected: false, expired: true, needsReauth: true, error: sanitizeMessage(e.message) };
+        console.warn("⚠️ Token refresh warning in verifyGmailConnection:", sanitizeMessage(e.message));
       }
-    } else {
-      return { connected: false, expired: true, error: "Access token expired and no refresh token saved." };
     }
   }
 
@@ -166,6 +153,15 @@ export async function verifyGmailConnection(workspaceId = "ws_default") {
     const profileData = await profileRes.json().catch(() => ({}));
 
     if (profileRes.ok && profileData.emailAddress) {
+      if (account.needsReauth || account.isRevoked) {
+        await saveGoogleAccount({
+          ...account,
+          accessToken: activeAccount.accessToken,
+          expiresAt: activeAccount.expiresAt,
+          needsReauth: false,
+          isRevoked: false,
+        });
+      }
       return {
         connected: true,
         verified: true,
@@ -307,6 +303,7 @@ export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn 
           workspaceId,
           customerName,
           channel: "Email",
+          platform: "gmail",
           phone: customerEmail,
           email: customerEmail,
           unreadCount: isOutbound ? 0 : 1,
@@ -383,6 +380,55 @@ export async function syncGmailMessages(workspaceId = "ws_default", broadcastFn 
 }
 
 let isGmailSyncRunning = false;
+
+/**
+ * Sends an email via Gmail API
+ */
+export async function sendGmailMessage({ to, subject = "Message from BUZZZ", text, threadId, workspaceId = "ws_default" }) {
+  const validAccount = await getValidGoogleAccount(workspaceId);
+  if (!validAccount || !validAccount.accessToken) {
+    throw new Error("No active Google account connected for sending email.");
+  }
+  const fromEmail = validAccount.email;
+  const rawEmail = [
+    `From: ${fromEmail}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `MIME-Version: 1.0`,
+    "",
+    text,
+  ].join("\r\n");
+
+  const base64EncodedEmail = Buffer.from(rawEmail)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  const body = { raw: base64EncodedEmail };
+  if (threadId && !String(threadId).includes("sim")) {
+    body.threadId = threadId;
+  }
+
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${validAccount.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const errMsg = data.error?.message || `HTTP ${res.status}`;
+    console.error("❌ Gmail Send API Error:", errMsg);
+    throw new Error(errMsg);
+  }
+  console.log(`✅ Outbound email sent successfully via Gmail API to ${to} (id: ${data.id})`);
+  return { success: true, id: data.id, threadId: data.threadId };
+}
 
 export function startGmailMessagesAutoSyncScheduler(broadcastFn, intervalMs = 30000) {
   console.log(`⏰ Initializing Gmail background email sync scheduler (polling every ${intervalMs / 1000}s)...`);

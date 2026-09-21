@@ -40,7 +40,7 @@ import {
 
 import { getGoWhatsConfigStatus, verifyGoWhatsConnection, sendWhatsAppMessage, fetchGoWhatsMessages, syncGoWhatsMessages, clearGoWhatsMessages, fetchGoWhatsOrders, syncGoWhatsContacts, updateGoWhatsContact } from "../services/gowhats.js";
 import { isChannelBotInConfigured, getChannelBotInConfigStatus, verifyChannelBotInConnection, fetchYouTubeComments, fetchAllYouTubeComments, syncChannelBotLeads, updateChannelBotLeadStatus, updateYouTubeMessageStatus, runChannelBotHistoricalBackfill, getChannelBotBackfillStatus } from "../services/channelbot.js";
-import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages } from "../services/gmailAuth.js";
+import { sanitizeMessage, verifyGmailConnection, getValidGoogleAccount, refreshGoogleAccessToken, fetchGooglePeopleContacts, syncGooglePeopleContacts, syncGmailMessages, sendGmailMessage } from "../services/gmailAuth.js";
 import { fetchInstaxBotOrders, fetchAllInstaxBotOrders, syncInstaxBotContacts, registerInstaxBotWebhook, fetchInstaxBotMessages, fetchInstaxBotTemplates, updateInstaxBotContact, sendInstaxBotBroadcast, sendInstaxBotMessage, runInstaxBotHistoricalBackfill, getInstaxBotBackfillStatus } from "../services/instaxbot.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
@@ -1179,6 +1179,24 @@ apiRouter.post("/conversations/:convId/messages", async (req, res, next) => {
         );
       } catch (err) {
         console.error(`❌ Failed to dispatch InstaxBot reply:`, err.message);
+      }
+    } else if (["Email", "email", "Gmail", "gmail"].includes(conv.channel) && sender === "agent") {
+      try {
+        const recipientEmail = conv.email || conv.phone;
+        const threadId = conv.id ? conv.id.replace(/^conv_gmail_/, "") : null;
+        console.log(`📤 Outbound Email reply dispatched for conv ${convId} to ${recipientEmail}: "${text}"`);
+        initialStatus = "sent";
+        sendGmailMessage({
+          to: recipientEmail,
+          subject: conv.lastMessage?.startsWith("Subject: ") ? `Re: ${conv.lastMessage.split(" — ")[0].replace("Subject: ", "")}` : "Reply from BUZZZ",
+          text,
+          threadId: threadId?.startsWith("thread_sim_") ? undefined : threadId,
+          workspaceId: conv.workspaceId || "ws_default",
+        }).catch((e) =>
+          console.warn("⚠️ Outbound Gmail API send notice:", e.message)
+        );
+      } catch (err) {
+        console.error(`❌ Failed to dispatch Email reply:`, err.message);
       }
     }
 
