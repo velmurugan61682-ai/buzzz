@@ -8283,7 +8283,10 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   };
   const syncCalls = async (silent = false) => {
     try {
-      await fetch("/api/v1/gowhats/sync").catch(() => ({}));
+      await Promise.allSettled([
+        fetch("/api/v1/gowhats/sync").catch(() => ({})),
+        fetch("/api/integrations/instaxbot/sync").catch(() => ({})),
+      ]);
       const apiRes = await fetch("/api/v1/calls").then((r) => r.json()).catch(() => null);
       
       let voiceRows = [];
@@ -13250,6 +13253,7 @@ function InboxView() {
   const [adv, setAdv] = useState(false);
   const [runningAutopilot, setRunningAutopilot] = useState(false);
   const [syncingEmail, setSyncingEmail] = useState(false);
+  const [syncingInstagram, setSyncingInstagram] = useState(false);
 
   const fetchAllEmails = async () => {
     setSyncingEmail(true);
@@ -13275,6 +13279,29 @@ function InboxView() {
       flash("Failed to fetch emails: " + err.message, "err");
     } finally {
       setSyncingEmail(false);
+    }
+  };
+
+  const fetchAllInstagram = async () => {
+    setSyncingInstagram(true);
+    try {
+      const apiHost = getApiHost();
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/inbox?limit=500`);
+      const data = await res.json();
+      if (data && data.success) {
+        flash(`Instagram sync complete: ${data.totalFetched || 0} items (${data.totalNew || 0} new).`, "ok");
+        const refreshed = await fetch(`${apiHost}/api/conversations`).then((r) => r.json());
+        if (Array.isArray(refreshed) && refreshed.length > 0) {
+          setConvs(refreshed);
+        }
+      } else {
+        flash(data?.message || data?.error || "Failed to sync Instagram / InstaxBot", "err");
+      }
+    } catch (err) {
+      console.warn("InstaxBot sync error:", err);
+      flash("Failed to fetch Instagram: " + err.message, "err");
+    } finally {
+      setSyncingInstagram(false);
     }
   };
 
@@ -13366,6 +13393,11 @@ function InboxView() {
                 Gmail
               </span>
             )}
+            {(chFilter === "instaxbot" || chFilter === "instagram") && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300">
+                Instagram (InstaxBot)
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -13376,6 +13408,15 @@ function InboxView() {
             >
               <RefreshCw size={11} className={syncingEmail ? "animate-spin text-blue-600" : "text-blue-600"} />
               <span className="hidden sm:inline">{syncingEmail ? "Fetching..." : "Fetch Mail"}</span>
+            </button>
+            <button
+              onClick={fetchAllInstagram}
+              disabled={syncingInstagram}
+              title="Fetch all Instagram messages, chats, comments and orders from InstaxBot"
+              className={`h-7 px-2 rounded-lg border text-[11px] font-semibold flex items-center gap-1 transition ${T.chip} ${T.hover} ${syncingInstagram ? "opacity-60 cursor-not-allowed" : ""}`}
+            >
+              <RefreshCw size={11} className={syncingInstagram ? "animate-spin text-pink-600" : "text-pink-600"} />
+              <span className="hidden sm:inline">{syncingInstagram ? "Fetching..." : "Fetch Instagram"}</span>
             </button>
             <button onClick={() => setAdv(!adv)} title="More channel filters" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover} ${chFilter ? "" : T.faint}`} style={chFilter ? { color: BRAND } : {}}><Filter size={14} /></button>
           </div>

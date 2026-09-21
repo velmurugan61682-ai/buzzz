@@ -652,16 +652,25 @@ export async function syncGooglePeopleContacts(workspaceId = "ws_default") {
 }
 
 /**
- * Background scheduler to auto-sync Google Contacts every 24 hours
+ * Background scheduler to auto-sync Google Contacts (delta via syncToken).
+ * Uses importGoogleContacts() from contacts.js for full pagination + syncToken support.
+ * Falls back to the legacy syncGooglePeopleContacts() if contacts.js isn't importable.
  */
 export function startGoogleContactsAutoSyncScheduler(intervalMs = 86400000) {
-  console.log("⏰ Initializing Google Contacts 24-hour background auto-sync scheduler...");
+  console.log(`⏰ Initializing Google Contacts background delta-sync scheduler (every ${intervalMs / 1000}s)...`);
   setInterval(async () => {
     try {
-      console.log("🔄 Running 24h background auto-sync for Google Contacts...");
-      await syncGooglePeopleContacts("ws_default");
+      console.log("🔄 [GOOGLE CONTACTS SCHEDULER] Running delta-sync...");
+      // Lazy import to avoid circular dep at module load time
+      const { importGoogleContacts } = await import("./contacts.js");
+      const result = await importGoogleContacts("ws_default");
+      if (result.success) {
+        console.log(`✅ [GOOGLE CONTACTS SCHEDULER] imported=${result.imported} skipped=${result.skipped} errors=${result.errors}`);
+      } else {
+        console.warn("⚠️ [GOOGLE CONTACTS SCHEDULER] Sync returned error:", sanitizeMessage(result.message));
+      }
     } catch (e) {
-      console.warn("⚠️ Background Google Contacts auto-sync error:", sanitizeMessage(e.message));
+      console.warn("⚠️ [GOOGLE CONTACTS SCHEDULER] Error:", sanitizeMessage(e.message));
     }
   }, intervalMs);
 }

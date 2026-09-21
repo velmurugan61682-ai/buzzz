@@ -6,7 +6,7 @@
  * NEVER prints, logs, hardcodes, or exposes the raw API key anywhere.
  */
 
-import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveOrderRecord, syncDealsFromOrders } from "../data/db.js";
+import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, saveOrderRecord, syncDealsFromOrders, saveMissedCall } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 const getBaseUrl = () => {
@@ -387,76 +387,238 @@ export const fetchInstaxBotTemplates = async ({ overrideKey } = {}) => {
   }
 };
 
+// Helper: detect if a message item is a call/voice event
+const isCallEvent = (item) => {
+  const type = (item.type || item.event_type || item.message_type || "").toLowerCase();
+  const text = (item.message || item.text || item.body || item.caption || "").toLowerCase();
+  return (
+    type === "call" || type === "voice" || type === "missed_call" || type === "voice_call" || type === "audio_call" ||
+    /missed\s*call|voice\s*call|audio\s*call|video\s*call|ig\s*call|instagram\s*call|📞|🔔\s*call/i.test(text)
+  );
+};
+
 /**
  * 7. Scope: messages.read + messages.send
- * - messages.read: Ingest incoming comments/DMs from InstaxBot endpoint
- * - messages.send: Send outbound comment reply via InstaxBot
+ * Fetches ALL Instagram chats (DMs), comments, calls, and order messages from InstaxBot.
+ *
+ * - Comments:  fully paginated GET /api/external/v2/comments?page=N&limit=100
+ * - DMs/Chats: fully paginated GET /api/external/v2/dms (or /conversations, /chats) — graceful fallback if 404
+ * - Orders:    fully paginated via fetchAllInstaxBotOrders
+ * - Calls:     detected across comments, DMs, and orders by type/text; saved as MissedCall records
+ * - Safety cap: MAX_PAGES=50 per resource (up to 5,000 items each)
  */
-/**
- * 7. Scope: messages.read + messages.send
- * - messages.read: Ingest incoming comments/DMs and Instagram order messages from InstaxBot endpoint
- * - messages.send: Send outbound comment reply via InstaxBot
- */
-/**
- * 7. Scope: messages.read + messages.send
- * Ingest incoming Instagram order messages, comments and DMs from InstaxBot endpoint.
- */
-export const fetchInstaxBotMessages = async ({ limit = 50, all = false, overrideKey } = {}) => {
+export const fetchInstaxBotMessages = async ({ workspaceId = "ws_default", overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
-  if (!apiKey) return { success: false, messages: [] };
+  if (!apiKey) return { success: false, messages: [], comments: [], dms: [], orders: [], calls: [] };
 
   const baseUrl = getBaseUrl();
-  const messages = [];
+  const allComments = [];
+  const allDms = [];
+  const allOrderMessages = [];
+  const allCalls = [];
 
-  // 1. Attempt comments endpoint if accessible
-  try {
-    const commentsRes = await fetch(`${baseUrl}/api/external/v2/comments?limit=${limit}`, {
-      method: "GET",
-      headers: getAuthHeaders(apiKey),
-      signal: AbortSignal.timeout(4000),
-    });
-    if (commentsRes.ok) {
-      const data = await commentsRes.json().catch(() => ({}));
-      const raw = data.comments || data.messages || data.data || [];
-      if (Array.isArray(raw)) messages.push(...raw);
-    }
-  } catch (_e) {}
+  const PAGE_LIMIT = 100;
+  const MAX_PAGES = 50;
 
-  // 2. Ingest Instagram order messages & DMs from /orders endpoint
-  try {
-    const ordersRes = all
-      ? await fetchAllInstaxBotOrders({ overrideKey: apiKey, limit: 50 })
-      : await fetchInstaxBotOrders({ limit, overrideKey: apiKey });
+  // ── Generic paginated fetcher helper ──────────────────────────────────────
+  const fetchAllPages = async (resourceName, endpointCandidates) => {
+    const results = [];
+    let usedEndpoint = null;
 
-    const rawOrders = ordersRes.orders || (Array.isArray(ordersRes.raw?.data) ? ordersRes.raw.data : []);
-    if (Array.isArray(rawOrders) && rawOrders.length > 0) {
-      for (const order of rawOrders) {
-        const senderHandle = order.username || order.senderId || (order.orderId ? `guest_${order.orderId}` : (order.bill_no ? `guest_${order.bill_no}` : `guest_${order._id || Date.now()}`));
-        const senderName = order.name || order.customer_name || senderHandle;
-        const itemsText = Array.isArray(order.products) && order.products.length > 0
-          ? order.products.map((p) => `${p.product_name} (x${p.quantity || 1})`).join(", ")
-          : "Instagram Products";
-        const textBody = `🛍️ InstaxBot Order #${order.orderId || order.bill_no || "N/A"}: ${itemsText} - Total: ${order.currency || "INR"} ${order.total_amount || order.amount || 0} [Status: ${order.status || "CREATED"}]`;
-
-        messages.push({
-          _id: order._id || `instax_ord_${order.orderId || order.bill_no || Date.now()}`,
-          sender_handle: senderHandle,
-          sender_name: senderName,
-          phone: order.phone_number,
-          message: textBody,
-          receivedAt: order.created_at || new Date().toISOString(),
-          rawOrder: order,
+    // Try each candidate endpoint with a fast 2000ms probe
+    for (const endpoint of endpointCandidates) {
+      try {
+        const testRes = await fetch(`${baseUrl}${endpoint}?page=1&limit=1`, {
+          method: "GET",
+          headers: getAuthHeaders(apiKey),
+          signal: AbortSignal.timeout(2000),
         });
+        if (testRes.ok || testRes.status === 200) {
+          usedEndpoint = endpoint;
+          break;
+        } else if (testRes.status === 403) {
+          console.warn(`ℹ️ [INSTAXBOT] '${resourceName}' endpoint '${endpoint}' returned 403 (read permission not granted in InstaxBot account dashboard).`);
+          break; // Don't try other candidates if 403 forbidden
+        }
+      } catch (_) {}
+    }
+
+    if (!usedEndpoint) {
+      console.log(`ℹ️ [INSTAXBOT FETCH ALL] Endpoint for '${resourceName}' not available on current plan/permissions. Extracting customer interactions from Orders.`);
+      return results;
+    }
+
+    console.log(`📸 [INSTAXBOT FETCH ALL] Fetching '${resourceName}' via ${usedEndpoint} (limit=${PAGE_LIMIT}, maxPages=${MAX_PAGES})...`);
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore && page <= MAX_PAGES) {
+      try {
+        const res = await fetch(`${baseUrl}${usedEndpoint}?page=${page}&limit=${PAGE_LIMIT}`, {
+          method: "GET",
+          headers: getAuthHeaders(apiKey),
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (!res.ok) {
+          console.warn(`⚠️ [INSTAXBOT FETCH ALL] '${resourceName}' page ${page} failed (HTTP ${res.status}). Stopping at ${results.length}.`);
+          break;
+        }
+
+        const data = await res.json().catch(() => ({}));
+        // Normalise across different response shapes
+        const raw =
+          data[resourceName] ||
+          data.comments || data.dms || data.messages || data.conversations || data.chats || data.data || [];
+        const batch = Array.isArray(raw) ? raw : [];
+
+        if (batch.length === 0) {
+          console.log(`✅ [INSTAXBOT FETCH ALL] '${resourceName}' page ${page} empty — done.`);
+          break;
+        }
+
+        results.push(...batch);
+        console.log(`📄 [INSTAXBOT FETCH ALL] '${resourceName}' page ${page}: ${batch.length} items (total: ${results.length})`);
+
+        const totalPages = data.pagination?.totalPages || data.totalPages || data.meta?.totalPages;
+        const apiHasMore = data.pagination?.hasMore ?? data.hasMore ?? data.meta?.hasMore;
+
+        if (apiHasMore === false || (totalPages && page >= totalPages) || batch.length < PAGE_LIMIT) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      } catch (err) {
+        console.warn(`⚠️ [INSTAXBOT FETCH ALL] '${resourceName}' page ${page} error:`, err.message);
+        break;
       }
     }
+
+    if (page > MAX_PAGES) {
+      console.warn(`⚠️ [INSTAXBOT FETCH ALL] Reached page cap for '${resourceName}'. Fetched ${results.length}.`);
+    }
+
+    return results;
+  };
+
+  // ── 1. COMMENTS ───────────────────────────────────────────────────────────
+  const rawComments = await fetchAllPages("comments", [
+    "/api/external/v2/comments",
+  ]);
+  allComments.push(...rawComments);
+
+  // ── 2. DMs / CHATS ────────────────────────────────────────────────────────
+  // Try multiple possible endpoint names — graceful fallback if none available
+  const rawDms = await fetchAllPages("dms", [
+    "/api/external/v2/dms",
+    "/api/external/v2/conversations",
+    "/api/external/v2/chats",
+    "/api/external/v2/messages",
+  ]);
+  allDms.push(...rawDms);
+
+  // ── 3. ORDERS / Instagram Order DMs ───────────────────────────────────────
+  console.log(`📸 [INSTAXBOT FETCH ALL] Fetching all orders...`);
+  try {
+    const ordersRes = await fetchAllInstaxBotOrders({ overrideKey: apiKey, limit: 100, throttleMs: 150 });
+    const rawOrders = ordersRes.orders || [];
+    console.log(`✅ [INSTAXBOT FETCH ALL] Orders: ${rawOrders.length} across ${ordersRes.pagesRead} page(s).`);
+
+    for (const order of rawOrders) {
+      const senderHandle =
+        order.username ||
+        order.senderId ||
+        (order.orderId ? `guest_${order.orderId}` : order.bill_no ? `guest_${order.bill_no}` : `guest_${order._id || Date.now()}`);
+      const senderName = order.name || order.customer_name || senderHandle;
+      const itemsText =
+        Array.isArray(order.products) && order.products.length > 0
+          ? order.products.map((p) => `${p.product_name} (x${p.quantity || 1})`).join(", ")
+          : "Instagram Products";
+      const textBody = `🛍️ InstaxBot Order #${order.orderId || order.bill_no || "N/A"}: ${itemsText} - Total: ${order.currency || "INR"} ${order.total_amount || order.amount || 0} [Status: ${order.status || "CREATED"}]`;
+
+      allOrderMessages.push({
+        _id: order._id || `instax_ord_${order.orderId || order.bill_no || Date.now()}`,
+        type: "order",
+        sender_handle: senderHandle,
+        sender_name: senderName,
+        phone: order.phone_number,
+        message: textBody,
+        receivedAt: order.created_at || new Date().toISOString(),
+        rawOrder: order,
+      });
+    }
   } catch (err) {
-    console.warn("⚠️ [fetchInstaxBotMessages] Orders parse notice:", err.message);
+    console.warn("⚠️ [INSTAXBOT FETCH ALL] Orders fetch error:", err.message);
   }
+
+  // ── 4. CALL DETECTION: scan comments + DMs + orders for call-type events ──
+  // Instagram does not have a dedicated calls API; calls arrive as webhook events
+  // or are embedded as special message types inside comments/DMs.
+  const allRawItems = [
+    ...allComments.map((c) => ({ ...c, _source: "comment" })),
+    ...allDms.map((d) => ({ ...d, _source: "dm" })),
+    ...allOrderMessages.map((o) => ({ ...o, _source: "order" })),
+  ];
+
+  for (const item of allRawItems) {
+    if (!isCallEvent(item)) continue;
+
+    const handle = item.sender_handle || item.handle || item.username || item.from || item.senderId || "ig_user";
+    const name = item.sender_name || item.name || handle;
+    const phone = item.phone ? String(item.phone).replace(/\D/g, "") : "";
+    const calledAt = item.receivedAt || item.created_at || item.timestamp || new Date().toISOString();
+    const extCallId = `instax_call_${item._id || handle}_${new Date(calledAt).getTime()}`;
+
+    const callRecord = {
+      _id: extCallId,
+      type: "call",
+      call_type: item.type || "missed_call",
+      sender_handle: handle,
+      sender_name: name,
+      phone,
+      message: item.message || item.text || "📞 Instagram Call",
+      receivedAt: calledAt,
+      _source: item._source,
+    };
+
+    allCalls.push(callRecord);
+
+    // Persist as MissedCall record
+    try {
+      await saveMissedCall({
+        id: extCallId,
+        userId: "usr_default",
+        deviceId: "dev_instaxbot",
+        phoneNumber: phone || handle,
+        contactName: name,
+        calledAt,
+        syncSource: "instaxbot",
+        externalCallId: extCallId,
+        type: "MISSED",
+      });
+    } catch (_e) {}
+  }
+
+  if (allCalls.length > 0) {
+    console.log(`📞 [INSTAXBOT FETCH ALL] Detected and saved ${allCalls.length} call event(s).`);
+  }
+
+  const allMessages = [...allComments, ...allDms, ...allOrderMessages];
+
+  console.log(`✅ [INSTAXBOT FETCH ALL] Complete — ${allComments.length} comment(s) + ${allDms.length} DM(s) + ${allOrderMessages.length} order(s) + ${allCalls.length} call(s) = ${allMessages.length} messages total.`);
 
   return {
     success: true,
-    total: messages.length,
-    messages,
+    total: allMessages.length,
+    totalComments: allComments.length,
+    totalDms: allDms.length,
+    totalOrders: allOrderMessages.length,
+    totalCalls: allCalls.length,
+    messages: allMessages,
+    comments: allComments,
+    dms: allDms,
+    orders: allOrderMessages,
+    calls: allCalls,
   };
 };
 
@@ -742,7 +904,7 @@ export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000)
     isInstaxBotSyncRunning = true;
     try {
       if (!isInstaxBotConfigured()) return;
-      const res = await fetchInstaxBotMessages({ limit: 50 });
+      const res = await fetchInstaxBotMessages();
       if (res.success && Array.isArray(res.messages) && res.messages.length > 0) {
         let newCount = 0;
         for (const msg of res.messages) {
@@ -811,7 +973,7 @@ export function startInstaxBotAutoSyncScheduler(broadcastFn, intervalMs = 45000)
           }
         }
         if (newCount > 0) {
-          console.log(`📸 [INSTAXBOT AUTO-SYNC] Synced ${res.messages.length} Instagram DM/Order(s) (${newCount} new, ${res.messages.length - newCount} duplicate(s) skipped).`);
+          console.log(`📸 [INSTAXBOT AUTO-SYNC] Synced ${res.messages.length} Instagram message(s) (${res.totalComments ?? 0} comment(s), ${res.totalDms ?? 0} DM(s), ${res.totalOrders ?? 0} order(s), ${res.totalCalls ?? 0} call(s)) — ${newCount} new, ${res.messages.length - newCount} duplicate(s) skipped.`);
         }
       }
       try {

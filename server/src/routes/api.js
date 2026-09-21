@@ -1288,28 +1288,11 @@ apiRouter.get("/contacts", async (req, res, next) => {
   }
 });
 
-apiRouter.get("/contacts/:id", async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const contact = await fetchContactById(id);
-    if (!contact) {
-      return res.json({ success: true, contact: null, code: "not_found", message: `Contact '${id}' not found` });
-    }
-    res.json({ success: true, contact });
-  } catch (err) {
-    next(err);
-  }
-});
+// NOTE: GET /api/contacts/:phone and DELETE /api/contacts/:phone are handled
+// by contactsRouter (src/routes/contactsRouter.js) with richer responses
+// (missed-call history, E.164 normalisation, soft-archive).
+// They have been removed from here to prevent route conflicts.
 
-apiRouter.delete("/contacts/:id", async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const result = await deleteContactById(id);
-    res.json({ success: true, deleted: (result?.deletedCount || 0) > 0, id });
-  } catch (err) {
-    next(err);
-  }
-});
 
 apiRouter.post("/contacts", async (req, res, next) => {
   try {
@@ -2445,6 +2428,261 @@ apiRouter.post("/instaxbot/sync", handleInstaxBotSync);
 apiRouter.get("/integrations/instaxbot/sync", handleInstaxBotSync);
 
 // ==============================================================================
+// INSTAXBOT UNIFIED INBOX — Fetch ALL chats, comments, calls & orders
+// GET /api/integrations/instaxbot/inbox
+// GET /api/instaxbot/inbox
+// ==============================================================================
+
+/**
+ * handleInstaxBotInbox
+ *
+ * Fetches ALL InstaxBot Instagram activity (DMs/chats, comments, calls, orders)
+ * from the live InstaxBot API, persists each item as a Conversation + UnifiedMessage
+ * in the local DB, broadcasts SSE for new items, and returns a structured inbox
+ * response broken down by type.
+ *
+ * Query params:
+ *   ?type=all|chats|comments|calls|orders  (default: all)
+ *   ?limit=N                               (default: 100, max 500)
+ *   ?page=N                                (default: 1, only relevant for single-type)
+ */
+const handleInstaxBotInbox = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+
+    // Resolve API key: prefer DB config, then env var
+    const envKey = (process.env.INSTAXBOT_API_KEY || "").trim();
+    const apiKey = config?.apiKey || envKey;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: "not_configured",
+        message: "InstaxBot is not connected. Please go to Integrations → InstaxBot and connect your API key first.",
+      });
+    }
+
+    const filterType = (req.query.type || "all").toLowerCase(); // all | chats | comments | calls | orders
+    const limit = Math.min(parseInt(req.query.limit || "100", 10), 500);
+
+    console.log(`📸 [INSTAXBOT INBOX] Fetching inbox for workspace '${wsId}' (type=${filterType}, limit=${limit})...`);
+
+    // ── 1. Fetch all message types from the live InstaxBot API ─────────────────
+    const fetchResult = await fetchInstaxBotMessages({ workspaceId: wsId, overrideKey: apiKey });
+
+    const {
+      comments: rawComments = [],
+      dms: rawDms = [],
+      orders: rawOrders = [],
+      calls: rawCalls = [],
+    } = fetchResult;
+
+    console.log(
+      `📸 [INSTAXBOT INBOX] Live fetch complete: ${rawComments.length} comment(s), ${rawDms.length} DM(s), ${rawOrders.length} order(s), ${rawCalls.length} call(s)`
+    );
+
+    // ── 2. Persist helper — upsert contact + conversation + unified message ────
+    const persistItem = async ({ type, item, workspaceId }) => {
+      try {
+        const senderHandle =
+          item.sender_handle || item.handle || item.username || item.from ||
+          item.senderId || item.sender?.handle || "instagram_user";
+
+        const senderName =
+          item.sender_name || item.name || item.sender?.name ||
+          item.author || senderHandle;
+
+        const textBody =
+          item.message || item.text || item.caption || item.body ||
+          (type === "call" ? "📞 Instagram Call" : "New Instagram message");
+
+        const extId =
+          item._id || item.id || item.commentId || item.msgId ||
+          `ig_${type}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+        const receivedAt = item.receivedAt || item.created_at || item.timestamp || new Date().toISOString();
+
+        const phone = item.phone ? String(item.phone).replace(/\D/g, "") : null;
+
+        // Resolve or create unified contact
+        const contact = await resolveOrCreateContact({
+          workspaceId,
+          name: senderName,
+          phone: phone || undefined,
+          identities: [
+            { type: "instagram", value: senderHandle },
+            { type: "custom", value: senderHandle },
+            ...(phone ? [{ type: "phone", value: phone }] : []),
+          ],
+          source: `InstaxBot ${type.charAt(0).toUpperCase() + type.slice(1)} Sync`,
+          channel: "instagram",
+        });
+
+        // Build type-specific conversation ID
+        const convId = `conv_ig_${String(senderHandle).replace(/\W/g, "_")}`;
+
+        // Upsert conversation
+        const convDoc = {
+          id: convId,
+          workspaceId,
+          customerName: contact?.name || senderName,
+          channel: "Instagram",
+          platform: "instaxbot",
+          phone: phone || senderHandle,
+          type,
+          unreadCount: 1,
+          lastMessage: textBody,
+          updatedAt: receivedAt,
+          metadata: {
+            messageType: type,
+            instagramHandle: senderHandle,
+          },
+        };
+        const conv = await upsertConversation(convDoc);
+
+        // Save to unified message model (atomic dedup via externalMessageId)
+        const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+          id: `msg_${extId}_${workspaceId}`,
+          workspaceId,
+          conversationId: conv?.id || convId,
+          integrationId: "instaxbot",
+          platform: "instagram",
+          externalMessageId: extId,
+          sender: {
+            name: contact?.name || senderName,
+            handle: senderHandle,
+            phone: phone || "",
+            contactId: contact?.id || null,
+            kind: "customer",
+          },
+          direction: "inbound",
+          text: textBody,
+          status: "received",
+          receivedAt: new Date(receivedAt),
+          metadata: {
+            messageType: type,
+            source: "instaxbot",
+            instagramHandle: senderHandle,
+            rawExtId: extId,
+          },
+        });
+
+        // Broadcast SSE for genuinely new messages
+        if (isNew) {
+          broadcastSseEvent("new_message", {
+            message: msgDoc,
+            conversation: conv,
+            platform: "instagram",
+            platformMeta: PLATFORM_META.instagram,
+          });
+          broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+        }
+
+        return {
+          type,
+          isNew,
+          conversationId: conv?.id || convId,
+          messageId: msgDoc?.id,
+          senderHandle,
+          senderName: contact?.name || senderName,
+          text: textBody,
+          receivedAt,
+          extId,
+        };
+      } catch (itemErr) {
+        console.warn(`⚠️ [INSTAXBOT INBOX] Failed to persist ${type} item:`, itemErr.message);
+        return null;
+      }
+    };
+
+    // ── 3. Normalise & persist based on requested filter type ─────────────────
+    const results = { chats: [], comments: [], calls: [], orders: [] };
+    let totalNew = 0;
+
+    // Helper to process a batch
+    const processBatch = async (items, type) => {
+      const limited = items.slice(0, limit);
+      const processed = await Promise.allSettled(
+        limited.map((item) => persistItem({ type, item, workspaceId: wsId }))
+      );
+      const fulfilled = processed
+        .filter((r) => r.status === "fulfilled" && r.value !== null)
+        .map((r) => r.value);
+      const newCount = fulfilled.filter((r) => r.isNew).length;
+      totalNew += newCount;
+      return fulfilled;
+    };
+
+    if (filterType === "all" || filterType === "chats" || filterType === "dms") {
+      results.chats = await processBatch(rawDms, "chat");
+    }
+    if (filterType === "all" || filterType === "comments") {
+      results.comments = await processBatch(rawComments, "comment");
+    }
+    if (filterType === "all" || filterType === "calls") {
+      results.calls = await processBatch(rawCalls, "call");
+    }
+    if (filterType === "all" || filterType === "orders") {
+      results.orders = await processBatch(rawOrders, "order");
+    }
+
+    const totalFetched =
+      results.chats.length + results.comments.length +
+      results.calls.length + results.orders.length;
+
+    console.log(
+      `✅ [INSTAXBOT INBOX] Persisted ${totalFetched} item(s) (${totalNew} new) → ` +
+      `chats:${results.chats.length}, comments:${results.comments.length}, ` +
+      `calls:${results.calls.length}, orders:${results.orders.length}`
+    );
+
+    return res.json({
+      success: true,
+      workspaceId: wsId,
+      filterType,
+      totalFetched,
+      totalNew,
+      counts: {
+        chats: results.chats.length,
+        comments: results.comments.length,
+        calls: results.calls.length,
+        orders: results.orders.length,
+      },
+      rawCounts: {
+        chats: rawDms.length,
+        comments: rawComments.length,
+        calls: rawCalls.length,
+        orders: rawOrders.length,
+      },
+      inbox: {
+        chats: results.chats,
+        comments: results.comments,
+        calls: results.calls,
+        orders: results.orders,
+      },
+      message: totalFetched === 0
+        ? "No InstaxBot messages found. Ensure your Instagram account is connected to InstaxBot and has recent activity."
+        : `Fetched and synced ${totalFetched} Instagram item(s) into Unified Inbox (${totalNew} new).`,
+    });
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    console.error("❌ [INSTAXBOT INBOX] Error:", safeMsg);
+    return res.status(500).json({
+      success: false,
+      error: "server_error",
+      message: safeMsg,
+    });
+  }
+};
+
+// Register all route aliases for the inbox endpoint
+apiRouter.get("/integrations/instaxbot/inbox", handleInstaxBotInbox);
+apiRouter.get("/instaxbot/inbox", handleInstaxBotInbox);
+apiRouter.post("/integrations/instaxbot/inbox", handleInstaxBotInbox); // POST alias for clients that prefer POST
+apiRouter.post("/instaxbot/inbox", handleInstaxBotInbox);
+
+// ==============================================================================
 // GOWHATS (WHATSAPP) INTEGRATION ROUTES
 // ==============================================================================
 
@@ -2738,6 +2976,385 @@ const handleGoWhatsWebhook = async (req, res) => {
 apiRouter.post("/integrations/gowhats/webhook", handleGoWhatsWebhook);
 apiRouter.post("/webhooks/gowhats", handleGoWhatsWebhook);
 apiRouter.post("/gowhats/webhook", handleGoWhatsWebhook);
+
+// ==============================================================================
+// GOWHATS UNIFIED INBOX — Fetch ALL chats (messages), calls & orders
+// GET  /api/integrations/gowhats/inbox
+// GET  /api/gowhats/inbox
+// POST /api/integrations/gowhats/inbox  (POST alias)
+// POST /api/gowhats/inbox
+// ==============================================================================
+
+/**
+ * handleGoWhatsInbox
+ *
+ * Fetches ALL GoWhats WhatsApp activity (DM chats, calls, orders) from the live
+ * GoWhats API, persists each item as a Contact + Conversation + UnifiedMessage
+ * in MongoDB (atomically deduplicated), broadcasts SSE for new items, and returns
+ * a structured inbox response broken down by type.
+ *
+ * Query params:
+ *   ?type=all|chats|calls|orders   (default: all)
+ *   ?limit=N                       (default: 200, max 1000)
+ *   ?phone=<e164>                  optional: filter to a single phone number
+ */
+const handleGoWhatsInbox = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const apiKey = (process.env.GOWHATS_API_KEY || "").trim();
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: "not_configured",
+        message: "GoWhats is not configured. Please set GOWHATS_API_KEY in server/.env first.",
+      });
+    }
+
+    if (isRateLimited()) {
+      return res.status(429).json({
+        success: false,
+        error: "rate_limited",
+        message: "GoWhats API is currently rate-limited. Please retry in a moment.",
+        retryAfterMs: Math.max(0, rateLimitedUntil - Date.now()),
+      });
+    }
+
+    const filterType = (req.query.type || req.body?.type || "all").toLowerCase();
+    const limit = Math.min(parseInt(req.query.limit || req.body?.limit || "200", 10), 1000);
+    const filterPhone = (req.query.phone || req.body?.phone || "").replace(/\D/g, "") || null;
+
+    console.log(`📲 [GOWHATS INBOX] Fetching inbox for workspace '${wsId}' (type=${filterType}, limit=${limit}${filterPhone ? `, phone=${filterPhone}` : ""})...`);
+
+    // ── 1. Fetch messages, orders from the live GoWhats API in parallel ────────
+    const [msgFetch, orderFetch] = await Promise.allSettled([
+      fetchGoWhatsMessages({ phoneNumber: filterPhone || undefined }),
+      fetchGoWhatsOrders({ phoneNumber: filterPhone || undefined }),
+    ]);
+
+    const rawMessages = msgFetch.status === "fulfilled" && msgFetch.value?.success
+      ? (msgFetch.value.messages || [])
+      : [];
+
+    const rawOrders = orderFetch.status === "fulfilled" && orderFetch.value?.success
+      ? (orderFetch.value.orders || [])
+      : [];
+
+    console.log(`📲 [GOWHATS INBOX] Live fetch: ${rawMessages.length} message(s), ${rawOrders.length} order(s)`);
+
+    // ── 2. Separate messages into chats and calls ──────────────────────────────
+    const isCallMsg = (msg) => {
+      const type = (msg.type || "").toLowerCase();
+      const text = (msg.text || msg.message || msg.body || "").toLowerCase();
+      return (
+        type === "call" || type === "missed_call" || type === "voice" ||
+        /missed.*call|voice.*call|call.*missed|video.*call|ig.*call|📞/i.test(text)
+      );
+    };
+
+    const rawChats = rawMessages.filter((m) => !isCallMsg(m));
+    const rawCalls = rawMessages.filter((m) => isCallMsg(m));
+
+    // ── 3. Persist helper — contact + conversation + unified message ───────────
+    const persistItem = async ({ type, item, workspaceId }) => {
+      try {
+        const extId = getGoWhatsMessageExtId(item);
+        const customerPhone = extractCustomerPhone(item);
+        const senderName = item.sender_name || item.name || `WhatsApp User (+${customerPhone})`;
+        const textBody =
+          item.text || item.message || item.body ||
+          (type === "call" ? "📞 WhatsApp Call" : "New WhatsApp message");
+        const rawTs = item.timestamp || item.createdAt || item.created_at || item.date || new Date().toISOString();
+
+        const fromPhone = String(item.from || item.phoneNumber || item.number || "").replace(/\D/g, "");
+        const bizPhone = String(process.env.WHATSAPP_PHONE_NUMBER || "919047484484").replace(/\D/g, "");
+        const isOutbound =
+          item.sentFromWABA === true ||
+          item.status === "sent" ||
+          fromPhone === "804376366097834" ||
+          fromPhone.length > 13 ||
+          fromPhone === bizPhone;
+
+        // Resolve / create unified contact by phone
+        const contact = await resolveOrCreateContact({
+          workspaceId,
+          name: senderName,
+          phone: customerPhone,
+          identities: [
+            { type: "phone", value: customerPhone },
+            { type: "whatsapp", value: customerPhone },
+          ],
+          source: `GoWhats WhatsApp ${type.charAt(0).toUpperCase() + type.slice(1)} Sync`,
+          channel: "whatsapp",
+        });
+
+        // Upsert Conversation
+        const convId = `conv_wa_${customerPhone}`;
+        const convDoc = {
+          id: convId,
+          workspaceId,
+          customerName: contact?.name || `+${customerPhone}`,
+          channel: "WhatsApp",
+          platform: "whatsapp",
+          phone: customerPhone,
+          type,
+          unreadCount: isOutbound ? 0 : 1,
+          lastMessage: textBody,
+          updatedAt: rawTs,
+          metadata: { messageType: type, whatsappPhone: customerPhone },
+        };
+        const conv = await upsertConversation(convDoc);
+
+        // If it's a call, also persist as MissedCall record
+        if (type === "call") {
+          await saveMissedCall({
+            id: `mc_gw_${extId}`,
+            userId: "usr_default",
+            deviceId: "dev_gowhats",
+            phoneNumber: customerPhone,
+            contactName: contact?.name || `+${customerPhone}`,
+            calledAt: rawTs,
+            syncSource: "gowhats_inbox",
+            externalCallId: `gw_call_${extId}`,
+            contactId: contact?.id || "",
+            type: "MISSED",
+          }).catch(() => null);
+        }
+
+        // Upsert unified message (atomic dedup)
+        const sender = isOutbound
+          ? { name: "BUZZZ Agent", handle: "agent", kind: "agent" }
+          : {
+            name: contact?.name || `+${customerPhone}`,
+            handle: customerPhone,
+            contactId: contact?.id || null,
+            kind: "customer",
+          };
+
+        const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+          id: `msg_${extId}`,
+          workspaceId,
+          conversationId: conv.id,
+          integrationId: "gowhats",
+          platform: "whatsapp",
+          externalMessageId: extId,
+          sender,
+          direction: isOutbound ? "outbound" : "inbound",
+          text: textBody,
+          status: isOutbound ? "sent" : "received",
+          receivedAt: new Date(rawTs),
+          metadata: {
+            messageType: type,
+            source: "gowhats_inbox",
+            whatsappPhone: customerPhone,
+          },
+        });
+
+        // Broadcast SSE for genuinely new messages
+        if (isNew) {
+          broadcastSseEvent("new_message", {
+            message: msgDoc,
+            conversation: conv,
+            platform: "whatsapp",
+            platformMeta: PLATFORM_META.whatsapp,
+          });
+          broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+          broadcastSseEvent("conversation:updated", { conversation: conv });
+          if (type === "call") {
+            broadcastSseEvent("call:new", { call: { phoneNumber: customerPhone, calledAt: rawTs } });
+          }
+        }
+
+        return {
+          type,
+          isNew,
+          conversationId: conv.id,
+          messageId: msgDoc?.id,
+          phone: customerPhone,
+          senderName: contact?.name || senderName,
+          text: textBody,
+          direction: isOutbound ? "outbound" : "inbound",
+          receivedAt: rawTs,
+          extId,
+        };
+      } catch (itemErr) {
+        console.warn(`⚠️ [GOWHATS INBOX] Failed to persist ${type} item:`, itemErr.message);
+        return null;
+      }
+    };
+
+    // Order-type persist helper (orders are a different shape from messages)
+    const persistOrder = async ({ item, workspaceId }) => {
+      try {
+        const customerPhone = extractCustomerPhone(item);
+        const orderId = item.orderId || item.order_id || item._id || `gw_ord_${Date.now()}`;
+        const extId = `gw_ord_${orderId}`;
+        const senderName = item.sender_name || item.name || `WhatsApp User (+${customerPhone})`;
+        const rawTs = item.timestamp || item.createdAt || item.created_at || new Date().toISOString();
+
+        const itemLines = Array.isArray(item.items) && item.items.length > 0
+          ? item.items.map((i) => `${i.name || "Product"} (x${i.quantity || 1})`).join(", ")
+          : "WhatsApp Order Items";
+        const textBody = `🛒 GoWhats Order #${orderId}: ${itemLines} — Total: ${item.currency || "INR"} ${item.total || item.totalAmount || item.amount || 0} [${item.status || "CREATED"}]`;
+
+        const contact = await resolveOrCreateContact({
+          workspaceId,
+          name: senderName,
+          phone: customerPhone,
+          identities: [
+            { type: "phone", value: customerPhone },
+            { type: "whatsapp", value: customerPhone },
+          ],
+          source: "GoWhats Order Sync",
+          channel: "whatsapp",
+        });
+
+        const convId = `conv_wa_${customerPhone}`;
+        const convDoc = {
+          id: convId,
+          workspaceId,
+          customerName: contact?.name || `+${customerPhone}`,
+          channel: "WhatsApp",
+          platform: "whatsapp",
+          phone: customerPhone,
+          type: "order",
+          unreadCount: 1,
+          lastMessage: textBody,
+          updatedAt: rawTs,
+          metadata: { messageType: "order", whatsappPhone: customerPhone },
+        };
+        const conv = await upsertConversation(convDoc);
+
+        const { doc: msgDoc, isNew } = await saveUnifiedMessage({
+          id: `msg_${extId}`,
+          workspaceId,
+          conversationId: conv.id,
+          integrationId: "gowhats",
+          platform: "whatsapp",
+          externalMessageId: extId,
+          sender: {
+            name: contact?.name || senderName,
+            handle: customerPhone,
+            contactId: contact?.id || null,
+            kind: "customer",
+          },
+          direction: "inbound",
+          text: textBody,
+          status: "received",
+          receivedAt: new Date(rawTs),
+          metadata: {
+            messageType: "order",
+            orderId,
+            totalAmount: item.total || item.totalAmount || item.amount,
+            currency: item.currency || "INR",
+            orderStatus: item.status,
+            source: "gowhats_inbox",
+          },
+        });
+
+        if (isNew) {
+          broadcastSseEvent("new_message", {
+            message: msgDoc,
+            conversation: conv,
+            platform: "whatsapp",
+            platformMeta: PLATFORM_META.whatsapp,
+          });
+          broadcastSseEvent("message:new", { conversation: conv, message: msgDoc });
+          broadcastSseEvent("order:new", { conversationId: conv.id, order: item });
+        }
+
+        return {
+          type: "order",
+          isNew,
+          conversationId: conv.id,
+          messageId: msgDoc?.id,
+          phone: customerPhone,
+          senderName: contact?.name || senderName,
+          text: textBody,
+          orderId,
+          receivedAt: rawTs,
+          extId,
+        };
+      } catch (itemErr) {
+        console.warn(`⚠️ [GOWHATS INBOX] Failed to persist order:`, itemErr.message);
+        return null;
+      }
+    };
+
+    // ── 4. Apply limit and type filter, then persist ───────────────────────────
+    const results = { chats: [], calls: [], orders: [] };
+    let totalNew = 0;
+
+    const processBatch = async (items, type, persistFn) => {
+      const limited = items.slice(0, limit);
+      const settled = await Promise.allSettled(
+        limited.map((item) => persistFn({ type, item, workspaceId: wsId }))
+      );
+      const fulfilled = settled
+        .filter((r) => r.status === "fulfilled" && r.value !== null)
+        .map((r) => r.value);
+      totalNew += fulfilled.filter((r) => r.isNew).length;
+      return fulfilled;
+    };
+
+    if (filterType === "all" || filterType === "chats" || filterType === "messages") {
+      results.chats = await processBatch(rawChats, "chat", persistItem);
+    }
+    if (filterType === "all" || filterType === "calls") {
+      results.calls = await processBatch(rawCalls, "call", persistItem);
+    }
+    if (filterType === "all" || filterType === "orders") {
+      results.orders = await processBatch(rawOrders, "order", persistOrder);
+    }
+
+    const totalFetched = results.chats.length + results.calls.length + results.orders.length;
+
+    console.log(
+      `✅ [GOWHATS INBOX] Persisted ${totalFetched} item(s) (${totalNew} new) → ` +
+      `chats:${results.chats.length}, calls:${results.calls.length}, orders:${results.orders.length}`
+    );
+
+    return res.json({
+      success: true,
+      workspaceId: wsId,
+      filterType,
+      totalFetched,
+      totalNew,
+      counts: {
+        chats: results.chats.length,
+        calls: results.calls.length,
+        orders: results.orders.length,
+      },
+      rawCounts: {
+        chats: rawChats.length,
+        calls: rawCalls.length,
+        orders: rawOrders.length,
+      },
+      inbox: {
+        chats: results.chats,
+        calls: results.calls,
+        orders: results.orders,
+      },
+      message: totalFetched === 0
+        ? "No GoWhats WhatsApp messages found. Ensure your WhatsApp instance is connected and has recent activity."
+        : `Fetched and synced ${totalFetched} WhatsApp item(s) into Unified Inbox (${totalNew} new).`,
+    });
+  } catch (err) {
+    const safeMsg = sanitizeMessage(err.message);
+    console.error("❌ [GOWHATS INBOX] Error:", safeMsg);
+    return res.status(500).json({
+      success: false,
+      error: "server_error",
+      message: safeMsg,
+    });
+  }
+};
+
+// Register all route aliases for the GoWhats inbox endpoint
+apiRouter.get("/integrations/gowhats/inbox", handleGoWhatsInbox);
+apiRouter.get("/gowhats/inbox", handleGoWhatsInbox);
+apiRouter.post("/integrations/gowhats/inbox", handleGoWhatsInbox);
+apiRouter.post("/gowhats/inbox", handleGoWhatsInbox);
 
 // ==============================================================================
 // CHANNELBOT.IN (YOUTUBE COMMENT & LEAD AUTOMATION) INTEGRATION ROUTES

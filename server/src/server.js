@@ -4,8 +4,9 @@ import dotenv from "dotenv";
 
 
 import { apiRouter, broadcastSseEvent } from "./routes/api.js";
+import { contactsRouter } from "./routes/contactsRouter.js";
 import { connectDB } from "./data/db.js";
-import { startGmailMessagesAutoSyncScheduler } from "./services/gmailAuth.js";
+import { startGmailMessagesAutoSyncScheduler, startGoogleContactsAutoSyncScheduler } from "./services/gmailAuth.js";
 import { startGoWhatsAutoSyncScheduler } from "./services/gowhats.js";
 import { startInstaxBotAutoSyncScheduler } from "./services/instaxbot.js";
 import { startChannelBotAutoSyncScheduler } from "./services/channelbot.js";
@@ -43,6 +44,10 @@ if (!hasMongoUri || !hasApiKey || !hasBaseUrl || !hasLinkedInKeys || !hasGoogleK
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Trust first proxy hop (required for express-rate-limit to read real client IPs
+// when running behind nginx, Cloudflare, or any reverse proxy)
+app.set("trust proxy", 1);
+
 // CORS configuration
 app.use(
   cors({
@@ -72,6 +77,12 @@ app.use((req, res, next) => {
 // Mount API router on both /api/v1 and /api
 app.use("/api/v1", apiRouter);
 app.use("/api", apiRouter);
+
+// Mount Contacts + Missed-calls router
+// The contactsRouter also handles /webhooks/* so it must be mounted on root too
+app.use("/api/v1", contactsRouter);
+app.use("/api", contactsRouter);
+app.use("/", contactsRouter); // for POST /webhooks/missed-call
 
 // 404 Handler
 app.use((req, res) => {
@@ -113,6 +124,9 @@ const startServer = async () => {
   startInstaxBotAutoSyncScheduler(broadcastSseEvent, 45000);
   const channelBotSyncIntervalMs = parseInt(process.env.CHANNELBOT_SYNC_INTERVAL_MS, 10) || 300000; // 5 minutes auto-sync
   startChannelBotAutoSyncScheduler(broadcastSseEvent, channelBotSyncIntervalMs);
+  // Google Contacts delta-sync: every 24 h by default, configurable via env
+  const googleContactsSyncIntervalMs = parseInt(process.env.GOOGLE_CONTACTS_SYNC_INTERVAL_MS, 10) || 86400000;
+  startGoogleContactsAutoSyncScheduler(googleContactsSyncIntervalMs);
 
   const server = app.listen(PORT, () => {
     console.log(`=======================================================`);

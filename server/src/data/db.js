@@ -254,7 +254,11 @@ const ContactSchema = new mongoose.Schema(
     workspaceId: { type: String, default: "ws_default", index: true },
     name: { type: String, required: true },
     email: { type: String, default: "" },
+    // Raw digit-only phone (legacy field, kept for backward compat)
     phone: { type: String, default: "" },
+    // Canonical E.164 form: +<country><number> e.g. +919876543210
+    // Set by the contacts service normalizePhone(); null when unknown.
+    phone_e164: { type: String, default: null },
     identities: {
       type: [
         {
@@ -281,12 +285,42 @@ const ContactSchema = new mongoose.Schema(
     aiSummary: { type: String, default: "" },
     engagement: { type: Number, default: 50 },
     owner: { type: String, default: "Unassigned" },
-    source: { type: String, default: "Manual entry" },
+    // Extended source enum to cover all ingest channels
+    source: {
+      type: String,
+      default: "manual",
+      enum: [
+        "google",
+        "whatsapp",
+        "missed_call",
+        "android_sync",
+        "csv",
+        "vcard",
+        "manual",
+        "Manual entry",        // legacy
+        "Google Contacts",     // legacy
+        "GoWhats WhatsApp Contact Sync", // legacy
+        "Android Missed Call Sync",      // legacy
+        "GoWhats WhatsApp Auto-Sync",    // legacy
+        "InstaxBot Instagram DM",        // legacy
+        "InstaxBot Instagram Auto-Sync", // legacy
+        "InstaxBot Contact Sync",        // legacy
+        "GoWhats WhatsApp Chat Sync",
+        "GoWhats WhatsApp Call Sync",
+        "GoWhats WhatsApp Order Sync",
+        "GoWhats Order Sync",
+        "channelbot.in YouTube Ingestion",
+        "Gmail Ingestion",
+      ],
+    },
     archived: { type: Boolean, default: false },
     notes: { type: Array, default: [] },
     cf: { type: Object, default: {} },
     created: { type: String, default: () => new Date().toISOString().slice(0, 10) },
     lastContact: { type: Number, default: 0 },
+    // GDPR / privacy consent tracking
+    consentGiven: { type: Boolean, default: false },
+    consentAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
@@ -299,6 +333,11 @@ ContactSchema.index(
 ContactSchema.index(
   { workspaceId: 1, "identities.type": 1, "identities.value": 1 },
   { unique: true, partialFilterExpression: { "identities.value": { $type: "string", $gt: "" } }, name: "uniq_workspace_identity" }
+);
+// E.164 phone uniqueness per workspace (null values excluded by partialFilterExpression)
+ContactSchema.index(
+  { workspaceId: 1, phone_e164: 1 },
+  { unique: true, partialFilterExpression: { phone_e164: { $type: "string" } }, name: "uniq_workspace_phone_e164" }
 );
 
 const MissedCallSchema = new mongoose.Schema(
@@ -1811,4 +1850,48 @@ export const fetchOrdersByPhoneOrConv = async (arg = {}) => {
 
 export const fetchOrdersByPhone = fetchOrdersByPhoneOrConv;
 
+// ==============================================================================
+// PHONE E.164 BACKFILL HELPER
+// Called by scripts/backfill-phone-e164.js — reads all contacts that have a
+// non-empty `phone` but no `phone_e164`, attempts E.164 normalisation, and
+// saves the result.  Depends on the contacts service; imported lazily to avoid
+// a circular dependency at server boot time.
+// ==============================================================================
+export const backfillPhoneE164 = async () => {
+  if (!isDbConnected || mongoose.connection.readyState !== 1) {
+    throw new Error("MongoDB not connected — backfill requires an active DB connection.");
+  }
 
+  // Lazy import to avoid circular dep at startup
+  const { normalizePhone } = await import("../services/contacts.js");
+
+  const cursor = ContactModel.find({ phone: { $gt: "" }, phone_e164: null }).cursor();
+  let processed = 0;
+  let updated = 0;
+
+  for await (const doc of cursor) {
+    processed++;
+    const e164 = normalizePhone(doc.phone);
+    if (e164) {
+      try {
+        await ContactModel.updateOne(
+          { _id: doc._id, phone_e164: null },  // guard against concurrent writes
+          { $set: { phone_e164: e164 } }
+        );
+        updated++;
+      } catch (err) {
+        if (err.code === 11000) {
+          // Another contact in this workspace already has this E.164 — merge by
+          // keeping the older record and removing the duplicate.
+          console.warn(`[backfill] E.164 duplicate for ${e164} in workspace ${doc.workspaceId}. Archiving duplicate id=${doc.id}`);
+          await ContactModel.updateOne({ _id: doc._id }, { $set: { archived: true, phone_e164: null } });
+        } else {
+          console.warn(`[backfill] Skipped contact id=${doc.id}:`, err.message);
+        }
+      }
+    }
+  }
+
+  console.log(`[backfill] phone_e164 backfill complete: ${processed} contacts processed, ${updated} updated.`);
+  return { processed, updated };
+};

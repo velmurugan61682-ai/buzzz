@@ -195,7 +195,8 @@ export const sendWhatsAppMessage = async ({ to, text, overrideKey }) => {
 
 /**
  * 3. Scope: Read Messages
- * Queries messages from GoWhats API: GET /api/v1/messages
+ * Queries ALL messages from GoWhats API using full pagination: GET /api/v1/messages?page=N&limit=100
+ * Iterates all pages until exhausted (up to MAX_PAGES safety cap) to ensure no messages are missed.
  */
 export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) => {
   const apiKey = overrideKey || getApiKey();
@@ -235,39 +236,110 @@ export const fetchGoWhatsMessages = async ({ phoneNumber, overrideKey } = {}) =>
       return { success: true, messages: msgs };
     }
 
-    // 1. Try single generic messages request first (single API call)
-    try {
-      const genRes = await fetch(`${baseUrl}/messages?limit=50`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-      });
-      checkRateLimit(genRes);
-      if (genRes.ok) {
-        const genData = await genRes.json().catch(() => ({}));
-        const rawList = genData.data?.messages || genData.messages || genData.data?.data || (Array.isArray(genData.data) ? genData.data : (Array.isArray(genData) ? genData : []));
-        if (Array.isArray(rawList) && rawList.length > 0) {
-          return { success: true, messages: rawList, totalContactsChecked: 1 };
-        }
+    // Paginated fetch — pull ALL messages across all pages
+    const PAGE_LIMIT = 100; // messages per page (max allowed by GoWhats API)
+    const MAX_PAGES = 50;   // safety cap: prevents infinite loop (covers up to 5,000 messages)
+    let page = 1;
+    let allMessages = [];
+    let hasMore = true;
+    let totalContactsChecked = 0;
+
+    console.log(`📥 [GOWHATS FETCH ALL] Starting full paginated message fetch (limit=${PAGE_LIMIT}, maxPages=${MAX_PAGES})...`);
+
+    while (hasMore && page <= MAX_PAGES) {
+      if (isRateLimited()) {
+        console.warn(`⚠️ [GOWHATS FETCH ALL] Rate limited at page ${page}. Stopping pagination.`);
+        break;
       }
-    } catch (_e) {}
 
-    if (isRateLimited()) return { success: true, messages: [], rateLimited: true };
+      const url = `${baseUrl}/messages?limit=${PAGE_LIMIT}&page=${page}`;
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+        });
 
-    // 2. Fallback: only check the default business phone number
-    const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
-    const msgs = await fetchForSinglePhone(defaultPhone);
+        checkRateLimit(response);
+
+        if (!response.ok) {
+          if (page === 1) {
+            // First page failed — fall back to default phone lookup
+            console.warn(`⚠️ [GOWHATS FETCH ALL] Page 1 failed (HTTP ${response.status}). Falling back to default phone.`);
+            const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
+            const msgs = await fetchForSinglePhone(defaultPhone);
+            return { success: true, messages: msgs, totalContactsChecked: 1 };
+          }
+          // Subsequent page failure — stop and return what we have
+          console.warn(`⚠️ [GOWHATS FETCH ALL] Page ${page} failed (HTTP ${response.status}). Stopping at ${allMessages.length} messages.`);
+          break;
+        }
+
+        const data = await response.json().catch(() => ({}));
+
+        // Normalise response envelope (handles various GoWhats response shapes)
+        const rawList =
+          data.data?.messages ||
+          data.messages ||
+          data.data?.data ||
+          (Array.isArray(data.data) ? data.data : (Array.isArray(data) ? data : []));
+
+        const pageMessages = Array.isArray(rawList) ? rawList : [];
+        totalContactsChecked++;
+
+        if (pageMessages.length === 0) {
+          // Empty page → no more results
+          hasMore = false;
+          console.log(`✅ [GOWHATS FETCH ALL] Page ${page} returned 0 messages — done.`);
+          break;
+        }
+
+        allMessages = allMessages.concat(pageMessages);
+        console.log(`📄 [GOWHATS FETCH ALL] Page ${page}: fetched ${pageMessages.length} messages (running total: ${allMessages.length})`);
+
+        // Determine if more pages exist from API response metadata
+        const totalPages = data.data?.totalPages || data.totalPages || data.meta?.totalPages;
+        const apiHasMore = data.data?.hasMore ?? data.hasMore ?? data.meta?.hasMore;
+
+        if (apiHasMore === false || (totalPages && page >= totalPages) || pageMessages.length < PAGE_LIMIT) {
+          // API says no more, or we've hit the last declared page, or got a partial page
+          hasMore = false;
+        } else {
+          page++;
+        }
+
+      } catch (pageErr) {
+        console.warn(`⚠️ [GOWHATS FETCH ALL] Error fetching page ${page}:`, pageErr.message);
+        if (page === 1) {
+          // First page threw — fallback to phone-specific lookup
+          const defaultPhone = process.env.WHATSAPP_PHONE_NUMBER || "919047484484";
+          const msgs = await fetchForSinglePhone(defaultPhone);
+          return { success: true, messages: msgs, totalContactsChecked: 1 };
+        }
+        break;
+      }
+    }
+
+    if (page > MAX_PAGES) {
+      console.warn(`⚠️ [GOWHATS FETCH ALL] Reached max page cap (${MAX_PAGES}). Fetched ${allMessages.length} messages. Increase MAX_PAGES in gowhats.js if needed.`);
+    }
+
+    console.log(`✅ [GOWHATS FETCH ALL] Complete — ${allMessages.length} total messages fetched across ${Math.min(page, MAX_PAGES)} page(s).`);
+
     return {
       success: true,
-      messages: msgs,
-      totalContactsChecked: 1,
+      messages: allMessages,
+      totalFetched: allMessages.length,
+      totalPages: page,
+      totalContactsChecked,
     };
   } catch (err) {
     return { success: false, messages: [], error: err.message };
   }
 };
+
 
 const loggedOrdersSyncErrors = new Set();
 

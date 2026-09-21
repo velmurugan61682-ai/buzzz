@@ -12,23 +12,21 @@ console.log("Base URL:", baseUrl);
 console.log("Key length:", key.length, "Prefix:", key.slice(0, 5));
 
 const endpoints = [
-  "/api/external/v2/me",
-  "/api/external/v2/account",
-  "/api/external/v2/profile",
-  "/api/external/v2/keys",
-  "/api/external/v2/webhooks",
-  "/api/external/v2/threads",
-  "/api/external/v2/conversations",
-  "/api/external/v2/livechat",
-  "/api/external/v2/instagram",
-  "/api/external/v2/bot",
+  "/api/external/v2/orders?limit=1",
+  "/api/external/v2/comments?limit=1",
+  "/api/external/v2/messages?limit=1",
+  "/api/external/v2/conversations?limit=1",
+  "/api/external/v2/dms?limit=1",
+  "/api/external/v2/chats?limit=1",
+  "/api/external/v2/clients?limit=1",
+  "/api/external/v2/templates?limit=1"
 ];
 
 for (const ep of endpoints) {
   const url = `${baseUrl}${ep}`;
   try {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 2000);
+    const t = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(url, {
       method: "GET",
       headers: {
