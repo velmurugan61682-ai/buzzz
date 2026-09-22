@@ -133,7 +133,8 @@ const startServer = async () => {
   const googleContactsSyncIntervalMs = parseInt(process.env.GOOGLE_CONTACTS_SYNC_INTERVAL_MS, 10) || 86400000;
   startGoogleContactsAutoSyncScheduler(googleContactsSyncIntervalMs);
 
-  const server = app.listen(PORT, () => {
+  const HOST = process.env.HOST || "0.0.0.0";
+  const server = app.listen(PORT, HOST, () => {
     console.log(`=======================================================`);
     console.log(`🚀 BUZZZ Express Server running on http://localhost:${PORT}`);
     console.log(`📡 API Base URL: http://localhost:${PORT}/api/v1`);

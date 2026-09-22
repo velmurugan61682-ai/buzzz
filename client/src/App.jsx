@@ -13,7 +13,7 @@ import {
   Target, Wand2, Mic, Home, Smartphone, Command as CommandIcon, Circle, Lock, Eye,
   RefreshCw, Upload, Link2, IndianRupee, DollarSign, Calendar, ListChecks, Headphones, Radio,
   Share2, Image as ImageIcon, CalendarDays, ArrowLeft, KeyRound, LogOut
-, Download, CheckSquare, Activity , ChevronLeft , Image , PhoneIncoming, PhoneOutgoing, PhoneMissed, Pause , TrendingDown , ArrowLeftRight , Paperclip, Volume2, Video, Menu, Trash2, Trash, ShieldAlert, Server, Cpu, Database, UserPlus } from "lucide-react";
+, Download, CheckSquare, Activity , ChevronLeft , Image , PhoneIncoming, PhoneOutgoing, PhoneMissed, Pause , TrendingDown , ArrowLeftRight , Paperclip, Volume2, Video, Menu, Trash2, Trash, ShieldAlert, Server, Cpu, Database, UserPlus, Play, ExternalLink } from "lucide-react";
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   CartesianGrid, PieChart, Pie, Cell, AreaChart, Area
@@ -373,7 +373,7 @@ const AVA = [
 
 const LEAD_SOURCES = ["Website", "WhatsApp", "Phone", "Email", "Social media", "Form", "Campaign", "Manual entry", "API", "AI Agent"];
 const LEAD_STATUS = ["New", "Working", "Qualified", "Unqualified", "Converted"];
-const TEAM_USERS = ["Jordan Lee", "Rina Sato", "Maya Ortiz", "Ken Watanabe", "Unassigned"];
+const TEAM_USERS = ["Tech Vaseegrah", "Rina Sato", "Maya Ortiz", "Ken Watanabe", "Unassigned"];
 const TASK_TYPES = ["Task", "Call", "Meeting", "Follow up", "Reminder"];
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const FIELD_TYPES = ["Text", "Number", "Currency", "Date", "Dropdown", "Multi select", "Checkbox", "URL", "Email", "Phone", "Rating"];
@@ -904,7 +904,7 @@ const AGENTS = [
     tools: ["Publisher", "InstaxBot", "CRM", "Knowledge base"],
     perms: permsFor(["CAN_READ_CRM", "CAN_WRITE_CRM", "CAN_REPLY_SOCIAL", "CAN_CREATE_TASK"]),
     rules: ["Never argue publicly", "Escalate sensitive comments", "Never share other customers' information"],
-    escalation: { when: ["Complaint or anger", "Legal or compliance topic", "Customer asks for a human"], who: "Jordan Lee", include: ["Transcript", "Reason"] },
+    escalation: { when: ["Complaint or anger", "Legal or compliance topic", "Customer asks for a human"], who: "Tech Vaseegrah", include: ["Transcript", "Reason"] },
     knowledge: ["Pricing", "Opening hours and locations"], memory: ["Current conversation"],
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: "2026-07-18" },
 ];
@@ -2741,7 +2741,7 @@ Customers may request a refund within 30 days of purchase under the old terms th
 const mkSource = (o) => {
   const chunks = chunkText(o.text, { source: o.name });
   return { id: o.id, name: o.name, type: o.type, status: "Indexed", text: o.text, chunks,
-    docs: 1, owner: o.owner || "Jordan Lee", priority: o.priority || 3, collection: o.collection || "General",
+    docs: 1, owner: o.owner || "Tech Vaseegrah", priority: o.priority || 3, collection: o.collection || "General",
     createdAt: o.createdAt, indexedAt: o.indexedAt, version: 1, versions: [], archived: false,
     url: o.url || "", refresh: o.refresh || "Manual", uses: 0, citations: 0, lastUsed: null, error: null };
 };
@@ -2780,10 +2780,22 @@ const PROVIDERS = [
     objects: [], events: ["message.received", "message.delivered", "message.read", "template.approved"],
     limits: "20 messages per second · template window 24h", scopes: ["messages:send", "messages:read"] },
   { id: "instaxbot", name: "InstaxBot", logo: "instaxbot", cat: "Your ecosystem", auth: "apikey", core: true,
-    d: "Instagram DMs, comments and story replies.",
-    caps: { messaging: true, sync: false, webhooks: true, actions: ["Send DM", "Reply to comment"] },
-    objects: [], events: ["dm.received", "comment.received", "mention.received"],
-    limits: "10 sends per second · 24h messaging window", scopes: ["instagram:messaging"] },
+    d: "Instagram comments, DMs, orders, chats transfer, CRM contacts & inventory sync.",
+    caps: { messaging: true, sync: true, webhooks: true, actions: ["Send DM", "Reply to comment", "Read/Write chats", "Read/Write comments", "Transfer chat", "Contacts sync", "Inventory sync", "Templates", "Broadcasts"] },
+    objects: ["order", "comment", "dm", "contact", "product"], events: ["dm.received", "comment.received", "mention.received", "order.created", "chat.transferred"],
+    limits: "10 sends per second · 24h messaging window", scopes: [
+      "orders.read",
+      "messages.send",
+      "chats.transfer",
+      "contacts.write",
+      "messages.read",
+      "contacts.read",
+      "inventory.read",
+      "templates.read",
+      "webhooks.manage",
+      "broadcasts.send",
+      "inventory.write"
+    ] },
   { id: "mrassistant", name: "MrAssistant.ai", logo: "mrassistant", cat: "Your ecosystem", auth: "apikey", core: true,
     d: "Voice agents, inbound and outbound calling, transcripts and recordings.",
     caps: { messaging: true, sync: true, webhooks: true, actions: ["Place call", "Transfer call", "End call", "Fetch transcript"] },
@@ -7733,7 +7745,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const [delegations, setDelegations] = useState([]);
 
   const sessionUser = session?.user;
-  const initialName = sessionUser?.name || (sessionUser?.email ? sessionUser.email.split("@")[0] : "Jordan Lee");
+  const initialName = sessionUser?.name || (sessionUser?.email ? sessionUser.email.split("@")[0] : "Tech Vaseegrah");
   const [me, setMe] = useState({ name: initialName, email: sessionUser?.email || "", role: "Owner" });
 
   useEffect(() => {
@@ -8267,7 +8279,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     ["gowhats", "instaxbot", "mrassistant", "gmail", "gcontacts", "gcal", "slack", "zoom", "linkedin"].forEach((id) => {
       o[id] = { on: !["gcontacts"].includes(id), connectedAt: atDay(-20, 9), lastSync: atDay(0, 8), expiresAt: id === "gcal" ? atDay(2, 9) : null,
         direction: "Two way", conflict: "Newest wins", freq: "Realtime", mapping: DEFAULT_MAPPING[id] || [], error: null, paused: false, syncing: false,
-        account: id === "gowhats" ? "+91 9047484484" : id === "instaxbot" ? "InstaxBot Account (••••3fe6)" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
+        account: id === "gowhats" ? "+91 9047484484" : id === "instaxbot" ? "InstaxBot Account (••••4018)" : id === "linkedin" ? "Official LinkedIn Profile" : id === "gmail" ? "ops@acme.com" : id === "gcal" ? "Acme Calendar" : "Acme workspace", 
         key: id === "gowhats" ? "gw_live_connected" : id === "instaxbot" ? "ib_live_connected" : id === "linkedin" ? "li_live_connected" : "" };
     });
     // ChannelBot.in / YouTube — starts as not-connected; real status fetched from backend on mount
@@ -8354,7 +8366,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             ...prev.instaxbot,
             on: true,
             status: "connected",
-            account: data.account || `InstaxBot Account (${data.maskedKey || "••••3fe6"})`,
+            account: data.account || `InstaxBot Account (${data.maskedKey || "••••4018"})`,
             maskedKey: data.maskedKey,
             key: data.maskedKey || prev.instaxbot?.key || "ib_live_connected",
             connectedAt: data.connectedAt || prev.instaxbot?.connectedAt,
@@ -8484,7 +8496,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
             on: true,
             status: "connected",
             account: data.account || "+91 9047484484",
-            maskedKey: data.maskedKey || "••••be0e",
+            maskedKey: data.maskedKey || "••••4018",
             connectedAt: data.connectedAt || prev.gowhats?.connectedAt,
             lastSync: new Date().toISOString(),
             error: null,
@@ -8774,7 +8786,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     }
     return { ok: true, count };
   };
-  const addNote = (id, text, who = "Jordan Lee") => {
+  const addNote = (id, text, who = "Tech Vaseegrah") => {
     const c = CONTACTS.find((x) => x.id === id); if (!c) return;
     c.notes = [{ id: Date.now(), text, who, at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) }, ...(c.notes || [])];
     trail("Note added", c.name, "", text.slice(0, 40)); bumpContacts();
@@ -8784,7 +8796,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
   const createDeal = (d) => {
     const defaultStage = pipelines?.[0]?.stages?.[0]?.name || "New";
     const defaultPipeId = pipelines?.[0]?.id || "p1";
-    const deal = { id: "d" + Date.now(), stage: d.stage || defaultStage, pipelineId: d.pipelineId || defaultPipeId, next: "Qualify the opportunity and confirm the decision maker.", owner: "Jordan Lee", prob: 30, close: "", ...d };
+    const deal = { id: "d" + Date.now(), stage: d.stage || defaultStage, pipelineId: d.pipelineId || defaultPipeId, next: "Qualify the opportunity and confirm the decision maker.", owner: "Tech Vaseegrah", prob: 30, close: "", ...d };
     setDeals((ds) => [deal, ...ds]);
     trail("Deal created", deal.name, "", "₹" + (deal.value || 0).toLocaleString());
     log("You", "Deal created", deal.name);
@@ -9305,7 +9317,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
       return { ok: true };
     }
     if (op.kind === "handoff") {
-      if (!test && c) { const v = convs.find((x) => x.contactId === c.id); if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, ai: false, assignee: op.node.assignee || "Jordan Lee", state: "Escalated" } : x)); }
+      if (!test && c) { const v = convs.find((x) => x.contactId === c.id); if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, ai: false, assignee: op.node.assignee || "Tech Vaseegrah", state: "Escalated" } : x)); }
       return { ok: true };
     }
     if (op.kind === "action") {
@@ -9324,13 +9336,13 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
         case "create_deal": createDeal({ name: (c ? c.name : "New") + " · from workflow", contactId: c ? c.id : null, value: 5000 }); break;
         case "move_deal": { const d = deals.find((x) => x.contactId === (c || {}).id); if (d) moveDeal(d.id, op.node.stage || "Qualified"); break; }
         case "book_appt": bookAppointment(c.id, op.body || "Booked by a workflow", "Chat AI"); break;
-        case "assign_conv": { const v = convs.find((x) => x.contactId === (c || {}).id); if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, ai: false, assignee: op.node.assignee || "Jordan Lee" } : x)); break; }
+        case "assign_conv": { const v = convs.find((x) => x.contactId === (c || {}).id); if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, ai: false, assignee: op.node.assignee || "Tech Vaseegrah" } : x)); break; }
         case "send_message": case "send_email": {
           const v = c ? convs.find((x) => x.contactId === c.id) : null;
           if (v) setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, msgs: [...(x.msgs || []), { from: "ai", agent: "Workflow", text: op.body, at: new Date().toISOString(), channel: op.node.channel || x.channel }], last: (op.body || "").slice(0, 60) } : x));
           break;
         }
-        case "notify": createTask({ txt: op.body || "Workflow notification", who: op.node.assignee || "Jordan Lee", contactId: c ? c.id : null, type: "Task", ai: true }); break;
+        case "notify": createTask({ txt: op.body || "Workflow notification", who: op.node.assignee || "Tech Vaseegrah", contactId: c ? c.id : null, type: "Task", ai: true }); break;
         default: break;
       }
       return { ok: true, note: `${spec.label} executed${op.body ? " · " + op.body.slice(0, 50) : ""}` };
@@ -9379,7 +9391,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     if (!gate("knowledge", kb.filter((x) => !x.archived).length).ok) return null;
     const id = "n" + Date.now();
     const src = { id, name: draft.name.trim(), type: draft.type, status: "Queued", text: draft.text || "", chunks: [],
-      docs: 1, owner: "Jordan Lee", priority: draft.priority || 3, collection: draft.collection || "General",
+      docs: 1, owner: "Tech Vaseegrah", priority: draft.priority || 3, collection: draft.collection || "General",
       createdAt: new Date().toISOString(), indexedAt: null, version: 1, versions: [], archived: false,
       url: draft.url || "", refresh: draft.refresh || "Manual", uses: 0, citations: 0, lastUsed: null, error: null, agents: draft.agents || [] };
     setKb((k) => [src, ...k]);
@@ -9417,7 +9429,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     const src = kb.find((x) => x.id === id);
     if (!src) return;
     setKb((k) => k.map((x) => x.id !== id ? x : {
-      ...x, versions: [{ v: x.version, text: x.text, at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), who: "Jordan Lee" }, ...(x.versions || [])].slice(0, 10),
+      ...x, versions: [{ v: x.version, text: x.text, at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), who: "Tech Vaseegrah" }, ...(x.versions || [])].slice(0, 10),
       version: x.version + 1, text: newText, chunks: chunkText(newText, { source: x.name }), indexedAt: new Date().toISOString(), status: "Indexed",
     }));
     kbLog("Knowledge version published", src.name, "v" + src.version, "v" + (src.version + 1));
@@ -9429,7 +9441,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
     const ver = src && (src.versions || []).find((x) => x.v === v);
     if (!ver) return;
     setKb((k) => k.map((x) => x.id !== id ? x : { ...x, text: ver.text, chunks: chunkText(ver.text, { source: x.name }), version: x.version + 1, indexedAt: new Date().toISOString(),
-      versions: [{ v: x.version, text: x.text, at: new Date().toLocaleString([], { month: "short", day: "numeric" }), who: "Jordan Lee" }, ...(x.versions || [])] }));
+      versions: [{ v: x.version, text: x.text, at: new Date().toLocaleString([], { month: "short", day: "numeric" }), who: "Tech Vaseegrah" }, ...(x.versions || [])] }));
     kbLog("Knowledge rolled back", src.name, "v" + src.version, "v" + v + " content");
     flash("Rolled back to the v" + v + " text and re-indexed.");
   };
@@ -9816,7 +9828,7 @@ function AppShell({ __initialView, __openAI, route, onSignOut, session }) {
           langs: ["English"], channels: a.channels || defaults.channels, goals: a.goals || [], tools: a.tools && a.tools.length ? a.tools : defaults.tools,
           perms: permsFor(defaults.perms), rules: a.rules || ["Escalate angry customers"], knowledge: a.knowledge || [],
           memory: ["Current conversation", "Customer history"],
-          escalation: { when: ["Customer asks for a human", "Complaint or anger"], who: "Jordan Lee", include: ["Transcript", "AI summary", "CRM record", "Reason"] },
+          escalation: { when: ["Customer asks for a human", "Complaint or anger"], who: "Tech Vaseegrah", include: ["Transcript", "AI summary", "CRM record", "Reason"] },
           instr: { objective: "", responsibilities: a.role || "", dos: "", donts: "", success: "" },
           conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: new Date().toISOString().slice(0, 10),
         });
@@ -10797,7 +10809,7 @@ function BuzzzAI({ close }) {
     scoreOf, healthOf, nbaOf, memories, duplicates, contactGate, handOff, learnFrom,
   } = useApp();
   const [msgs, setMsgs] = useState([
-    { from: "ai", text: `Hi Jordan. I am BUZZZ AI, the operating layer of ${wsName}. Tell me what you want done: show, create or update contacts and deals, schedule follow ups, build agents and workflows, run campaigns, or ask why a number moved. I execute for real, and if I cannot, I say why.` },
+    { from: "ai", text: `Hi Tech Vaseegrah. I am BUZZZ AI, the operating layer of ${wsName}. Tell me what you want done: show, create or update contacts and deals, schedule follow ups, build agents and workflows, run campaigns, or ask why a number moved. I execute for real, and if I cannot, I say why.` },
   ]);
   const [q, setQ] = useState("");
   const [lastContact, setLastContact] = useState(null);
@@ -10978,7 +10990,7 @@ function BuzzzAI({ close }) {
       if (!c) return { text: "I could not find that conversation. Nothing was assigned." };
       const v = convs.find((x) => x.contactId === c.id);
       if (!v) return { text: `${c.name} has no open conversation right now.` };
-      const who = m[2] === "me" ? "Jordan Lee" : m[2] === "support" ? "Maya Ortiz" : "Rina Sato";
+      const who = m[2] === "me" ? "Tech Vaseegrah" : m[2] === "support" ? "Maya Ortiz" : "Rina Sato";
       return { text: `Assign ${c.name}'s ${CH[v.channel].label} conversation to ${who}?`, action: { label: "Assign", run: () => { setConvs((cs) => cs.map((x) => x.id === v.id ? { ...x, ai: false, assignee: who, state: "Human Handling" } : x)); log("BUZZZ AI", "Conversation assigned", c.name + " → " + who); return { text: `Assigned to ${who}. The AI steps back until it is handed over again.`, nav: ["Open the thread", "inbox", () => openConv(v.id)] }; } } };
     }
 
@@ -11629,7 +11641,7 @@ function BuzzzAI({ close }) {
       const c = findContact(sm2[1]);
       if (!c) return { text: "I could not match that name, so nobody was added to the suppression list." };
       return { text: `Add ${c.name} to the global suppression list? No campaign on any channel will message them again until you remove them.`,
-        action: { label: "Suppress " + c.name.split(" ")[0], run: () => { optOut(c.id, "all", "Stopped by " + "Jordan Lee"); return { text: `${c.name} is suppressed across every channel. Existing conversations are untouched.`, nav: ["Open campaigns", "campaigns"] }; } } };
+        action: { label: "Suppress " + c.name.split(" ")[0], run: () => { optOut(c.id, "all", "Stopped by " + "Tech Vaseegrah"); return { text: `${c.name} is suppressed across every channel. Existing conversations are untouched.`, nav: ["Open campaigns", "campaigns"] }; } } };
     }
     /* best campaign */
     if (/which campaign|best campaign|most appointments|most conversions/.test(s) && camps.length) {
@@ -14918,7 +14930,7 @@ function Dashboard() {
         {/* hero: greeting, live narrative, command bar */}
         <div>
           <div className="flex items-baseline gap-3 flex-wrap">
-            <h1 className="text-2xl font-semibold bz-display tracking-tight">{greeting()}{me?.name && me.name !== "Jordan Lee" ? `, ${me.name.split(" ")[0]}` : ""}</h1>
+            <h1 className="text-2xl font-semibold bz-display tracking-tight">{greeting()}{me?.name && me.name !== "Tech Vaseegrah" ? `, ${me.name.split(" ")[0]}` : ""}</h1>
             <div className="flex-1" />
             <div className={`flex rounded-full border p-0.5 ${T.border}`}>
               {[[1, "Today"], [7, "7 days"], [30, "30 days"]].map(([d, l]) => (
@@ -15069,7 +15081,7 @@ function Dashboard() {
 }
 
 function InboxView() {
-  const { T, dk, convs, setConvs, selConv, setSelConv, flash, log, agents, syncAppointmentsWithAna } = useApp();
+  const { T, dk, convs, setConvs, selConv, setSelConv, flash, log, agents, syncAppointmentsWithAna, me } = useApp();
   const [qy, setQy] = useState("");
   const [filter, setFilter] = useState("All");
   const [chFilter, setChFilter] = useState(null);
@@ -15080,7 +15092,23 @@ function InboxView() {
   /* Automatically fetch and sync inbox from Gmail, InstaxBot Instagram & GoWhats */
   useEffect(() => {
     let active = true;
-    const autoFetchInbox = async () => {
+    let isSyncing = false;
+
+    // Fast local refresh: updates the UI from local DB cache without hammering external APIs
+    const refreshLocalConversations = async () => {
+      try {
+        const apiHost = getApiHost();
+        const refreshed = await fetch(`${apiHost}/api/conversations`).then((r) => r.json()).catch(() => null);
+        if (active && Array.isArray(refreshed) && refreshed.length > 0) {
+          setConvs(refreshed);
+        }
+      } catch (_) {}
+    };
+
+    // Periodic remote sync: gracefully queries providers in background without flooding sockets
+    const syncRemoteProviders = async () => {
+      if (isSyncing || !active) return;
+      isSyncing = true;
       try {
         const apiHost = getApiHost();
         await Promise.allSettled([
@@ -15089,24 +15117,31 @@ function InboxView() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ workspaceId: "ws_default", limit: 50 }),
           }).catch(() => {}),
-          fetch(`${apiHost}/api/integrations/instaxbot/inbox?limit=200`).catch(() => {}),
-          fetch(`${apiHost}/api/integrations/gowhats/inbox?limit=200`).catch(() => {}),
+          fetch(`${apiHost}/api/integrations/instaxbot/inbox?limit=100`).catch(() => {}),
+          fetch(`${apiHost}/api/integrations/gowhats/inbox?limit=100`).catch(() => {}),
         ]);
-        if (!active) return;
-        const refreshed = await fetch(`${apiHost}/api/conversations`).then((r) => r.json()).catch(() => null);
-        if (active && Array.isArray(refreshed) && refreshed.length > 0) {
-          setConvs(refreshed);
+        if (active) {
+          await refreshLocalConversations();
         }
       } catch (err) {
-        console.warn("Auto inbox fetch:", err);
+        console.warn("Auto inbox sync notice:", err);
+      } finally {
+        isSyncing = false;
       }
     };
 
-    autoFetchInbox();
-    const interval = setInterval(autoFetchInbox, 3000);
+    // Initial sync and initial local load
+    refreshLocalConversations();
+    syncRemoteProviders();
+
+    // Fast local poll every 5s, remote provider sync every 30s
+    const localInterval = setInterval(refreshLocalConversations, 5000);
+    const remoteInterval = setInterval(syncRemoteProviders, 30000);
+
     return () => {
       active = false;
-      clearInterval(interval);
+      clearInterval(localInterval);
+      clearInterval(remoteInterval);
     };
   }, [setConvs]);
 
@@ -15141,7 +15176,7 @@ function InboxView() {
     fetch(`/api/conversations/${encodeURIComponent(id)}/read`, { method: "PATCH" }).catch(() => {});
   };
 
-  const FILTERS = ["All", "Unread", "Mine", "AI", "Human", "Priority", "Waiting", "Resolved"];
+  const FILTERS = ["All", "Unread", "Mine", "AI", "Human", "Comments", "Priority", "Waiting", "Resolved"];
   const matches = (c) => {
     try {
       if (chFilter) {
@@ -15150,15 +15185,28 @@ function InboxView() {
         if (cChanNorm !== fChanNorm) return false;
       }
       if (filter === "Unread" && !c.unread) return false;
-      if (filter === "Mine" && (c.assignee || "") !== "Jordan Lee") return false;
+      const myName = me?.name || "Tech Vaseegrah";
+      if (filter === "Mine" && (c.assignee || "") !== myName) return false;
       if (filter === "AI" && !c.ai) return false;
       if (filter === "Human" && c.ai) return false;
+      if (filter === "Comments") {
+        const cChanNorm = resolveChannelKey(c.platform, c.channel, c.id);
+        const isCommentThread = cChanNorm === "channelbot" ||
+          c.channel === "youtube" ||
+          c.platform === "channelbot" ||
+          (c.id && c.id.startsWith("conv_yt_")) ||
+          c.type === "comment" ||
+          Boolean(c.metadata?.videoId || c.metadata?.isComment);
+        if (!isCommentThread) return false;
+      }
       if (filter === "Priority" && !["high", "critical"].includes((c.priority || "").toLowerCase())) return false;
       if (filter === "Waiting" && typeof statusOf === "function" && statusOf(c) !== "Waiting") return false;
       if (filter === "Resolved" && typeof statusOf === "function" && statusOf(c) !== "Resolved") return false;
       if (qy.trim()) {
         const t = qy.toLowerCase();
         const chLabel = (CH[c.channel] || {}).label || c.channel || "";
+        const prevText = c.lastMessage || c.preview || c.text || "";
+        const msgTexts = Array.isArray(c.messages) ? c.messages.map((m) => m.text || m.body || "") : [];
         const hay = [c.customerName || c.name || "", c.phone || "", c.channel, chLabel, prevText, ...msgTexts].join(" ").toLowerCase();
         if (!hay.includes(t)) return false;
       }
@@ -15177,7 +15225,19 @@ function InboxView() {
     return true;
   });
   const conv = convs.find((c) => c.id === selConv);
-  const counts = { Unread: convs.filter((c) => c.unread > 0).length, Priority: convs.filter((c) => ["high", "critical"].includes(c.priority)).length };
+  const counts = {
+    Unread: convs.filter((c) => c.unread > 0).length,
+    Priority: convs.filter((c) => ["high", "critical"].includes((c.priority || "").toLowerCase())).length,
+    Comments: convs.filter((c) => {
+      const cChanNorm = resolveChannelKey(c.platform, c.channel, c.id);
+      return cChanNorm === "channelbot" ||
+        c.channel === "youtube" ||
+        c.platform === "channelbot" ||
+        (c.id && c.id.startsWith("conv_yt_")) ||
+        c.type === "comment" ||
+        Boolean(c.metadata?.videoId || c.metadata?.isComment);
+    }).length,
+  };
 
   return (
     <div className="h-full flex">
@@ -15256,6 +15316,7 @@ function InboxView() {
             const isWa = chNorm === "gowhats";
             const isYt = chNorm === "channelbot";
             const isEm = chNorm === "email";
+            const isComment = isYt || c.type === "comment" || (c.id && c.id.startsWith("conv_yt_")) || Boolean(c.metadata?.videoId);
             const fallbackName = isInsta ? "Instagram User" : isWa ? "WhatsApp User" : isYt ? "YouTube User" : isEm ? "Email Contact" : "Customer";
             const displayName = k.name || c.customerName || c.name || c.phone || fallbackName;
             const active = selConv === c.id;
@@ -15275,6 +15336,11 @@ function InboxView() {
                     </div>
                     <div className="flex items-center gap-1.5 mt-[3px]">
                       <span className={`text-[11px] leading-tight truncate flex-1 ${c.unread ? T.strong + " font-medium" : T.faint}`}>{previewOf(c)}</span>
+                      {isComment && (
+                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 font-medium inline-flex items-center gap-0.5 border border-red-200 dark:border-red-900/60" title="YouTube / Video Comment">
+                          <MessageSquare size={9} /> Comment
+                        </span>
+                      )}
                       {c.agent && (
                         <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-medium inline-flex items-center gap-0.5 border border-emerald-200 dark:border-emerald-800">
                           <Bot size={9} /> {c.agent.split(" ")[0]}
@@ -15354,6 +15420,21 @@ function Msg({ m, contact, first = true, last = true, mt = "" }) {
       <div className={`max-w-[78%] sm:max-w-[72%] min-w-0 ${you ? "text-right" : ""}`}>
         <div className={`inline-block text-left px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${m.note ? (dk ? "bg-yellow-950 border border-yellow-900" : "bg-yellow-50 border border-yellow-200") : you ? (dk ? "bg-zinc-800" : "bg-zinc-100") : `${T.card}`}`}>
           {m.attachment && <span className={`flex items-center gap-1.5 font-medium ${m.text ? "mb-1" : ""}`}><FileText size={13} style={{ color: BRAND }} /> {m.attachment}</span>}
+          {(m.metadata?.videoTitle || m.metadata?.videoId) && (
+            <div className="mb-2 pb-1.5 border-b border-red-500/20 flex items-center justify-between gap-2 text-[11px]">
+              <a
+                href={m.metadata.videoUrl || `https://www.youtube.com/watch?v=${m.metadata.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={m.metadata.videoTitle}
+                className="flex items-center gap-1.5 font-semibold text-red-600 dark:text-red-400 hover:underline min-w-0"
+              >
+                <Youtube size={12} className="shrink-0 text-red-600" />
+                <span className="truncate">Video: {m.metadata.videoTitle || "YouTube Video"}</span>
+              </a>
+              <ExternalLink size={10} className="shrink-0 text-red-500/70" />
+            </div>
+          )}
           {m.text}
         </div>
         {last && <div className={`flex items-center gap-1.5 mt-1 px-0.5 text-[10px] tabular-nums ${T.faint} ${you ? "justify-end" : ""}`}>
@@ -15461,6 +15542,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
             time: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
             at: m.timestamp || m.receivedAt || m.createdAt || new Date().toISOString(),
             channel: resolveChannelKey(m.platform, channelKey),
+            metadata: m.metadata || {},
           }));
           setThreadMsgs(normMsgs);
           setConvs((cs) => cs.map((x) => (x.id === conv.id || x._id === conv.id || (conv._id && x.id === conv._id)) ? { ...x, msgs: normMsgs, last: normMsgs[normMsgs.length - 1]?.text || x.last } : x));
@@ -15475,6 +15557,69 @@ function Thread({ conv, showPanel, setShowPanel }) {
       clearInterval(interval);
     };
   }, [conv?.id]);
+
+  const isYtConv =
+    conv.channel === "ChannelBot.in" ||
+    conv.channel === "YouTube" ||
+    conv.channel === "ChannelBot" ||
+    conv.platform === "channelbot" ||
+    conv.platform === "youtube" ||
+    (conv.id && conv.id.startsWith("conv_yt_"));
+
+  const [activeVideo, setActiveVideo] = useState(null);
+
+  useEffect(() => {
+    if (!isYtConv) {
+      setActiveVideo(null);
+      return;
+    }
+
+    // 1. Direct from conversation metadata
+    if (conv.metadata?.videoId || conv.metadata?.videoTitle) {
+      setActiveVideo({
+        videoId: conv.metadata.videoId,
+        title: conv.metadata.videoTitle || "YouTube Video",
+        thumbnail: conv.metadata.videoThumbnail || (conv.metadata.videoId ? `https://i.ytimg.com/vi/${conv.metadata.videoId}/mqdefault.jpg` : ""),
+        url: conv.metadata.videoUrl || `https://www.youtube.com/watch?v=${conv.metadata.videoId}`,
+        statistics: conv.metadata.statistics || null,
+        publishedAt: conv.metadata.publishedAt || null,
+      });
+      return;
+    }
+
+    // 2. From thread messages metadata
+    const msgWithVideo = (threadMsgs || []).find((m) => m.metadata?.videoId || m.metadata?.videoTitle);
+    if (msgWithVideo?.metadata) {
+      setActiveVideo({
+        videoId: msgWithVideo.metadata.videoId,
+        title: msgWithVideo.metadata.videoTitle || "YouTube Video",
+        thumbnail: msgWithVideo.metadata.videoThumbnail || (msgWithVideo.metadata.videoId ? `https://i.ytimg.com/vi/${msgWithVideo.metadata.videoId}/mqdefault.jpg` : ""),
+        url: msgWithVideo.metadata.videoUrl || `https://www.youtube.com/watch?v=${msgWithVideo.metadata.videoId}`,
+        statistics: msgWithVideo.metadata.statistics || null,
+        publishedAt: msgWithVideo.metadata.publishedAt || null,
+      });
+      return;
+    }
+
+    // 3. Fallback: fetch videos from /api/channelbot/videos
+    let active = true;
+    safeFetchJson("/api/channelbot/videos?page=1&limit=50")
+      .then((res) => {
+        if (!active) return;
+        const videos = res?.videos || [];
+        const lastTxt = conv.lastMessage || conv.last || "";
+        const matched = videos.find((v) => (v.title && lastTxt.includes(v.title)) || (conv.metadata?.videoId && v.videoId === conv.metadata.videoId));
+        if (matched) {
+          setActiveVideo(matched);
+        } else if (videos.length > 0) {
+          const vidWithComments = videos.find((v) => v.commentStats?.total > 0) || videos[0];
+          setActiveVideo(vidWithComments);
+        }
+      })
+      .catch((e) => console.warn("Video fetch warning:", e.message));
+
+    return () => { active = false; };
+  }, [conv.id, isYtConv, (threadMsgs || []).length]);
 
   const st = statusOf(conv);
   const pendingAp = (approvals || []).filter((a) => a && apState(a) === "Pending" && (a.contactId === conv.contactId || (contact?.name && a.to === contact.name)));
@@ -15544,7 +15689,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
     if (contact?.id) recordTouch(contact.id, sendCh);
     if (!text.trim()) return;
     const msgText = text;
-    addMsg(note ? { from: "human", who: "Jordan Lee", text: msgText, note: true, channel: null } : { from: "human", who: "Jordan Lee", text: msgText });
+    addMsg(note ? { from: "human", who: (me?.name || "Tech Vaseegrah"), text: msgText, note: true, channel: null } : { from: "human", who: (me?.name || "Tech Vaseegrah"), text: msgText });
     if (!note) patchConv({ state: "Waiting", unread: 0 });
     checkAndAutoBook(msgText);
     log("You", note ? "Internal note added" : "Reply sent", contact?.name || "Customer");
@@ -15589,7 +15734,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
   };
   const attach = () => {
     const cName = contact?.name || conv.customerName || "Customer";
-    addMsg({ from: "human", who: "Jordan Lee", text: "", attachment: "quotation_" + cName.split(" ")[0].toLowerCase() + ".pdf" });
+    addMsg({ from: "human", who: (me?.name || "Tech Vaseegrah"), text: "", attachment: "quotation_" + cName.split(" ")[0].toLowerCase() + ".pdf" });
     log("You", "Attachment sent", cName); flash("Attachment sent");
   };
 
@@ -15642,13 +15787,13 @@ function Thread({ conv, showPanel, setShowPanel }) {
           {menu === "more" && (
             <div className={`absolute right-0 top-10 z-30 w-56 rounded-xl border shadow-xl overflow-hidden ${T.border} ${dk ? "bg-zinc-900" : "bg-white"}`}>
               {conv.ai
-                ? <button onClick={() => { patchConv({ ai: false, assignee: "Jordan Lee", state: "Open" }, "Took over conversation"); addMsg({ from: "system", text: "Jordan Lee took over from the AI." }); setMenu(null); flash("You have the conversation. The AI steps back."); }} className={`w-full text-left px-3 py-2.5 text-xs font-medium ${T.hover}`}>Take over from AI</button>
+                ? <button onClick={() => { patchConv({ ai: false, assignee: "Tech Vaseegrah", state: "Open" }, "Took over conversation"); addMsg({ from: "system", text: "Tech Vaseegrah took over from the AI." }); setMenu(null); flash("You have the conversation. The AI steps back."); }} className={`w-full text-left px-3 py-2.5 text-xs font-medium ${T.hover}`}>Take over from AI</button>
                 : <button onClick={() => { patchConv({ ai: true, assignee: null, state: "Open" }, "Returned to AI"); addMsg({ from: "system", text: "Conversation handed back to BUZZZ AI with full context." }); setMenu(null); flash("BUZZZ AI resumes with full context."); }} className={`w-full text-left px-3 py-2.5 text-xs font-medium ${T.hover}`}>Return to AI</button>}
               <div className={`px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest ${T.faint}`}>Assign to</div>
               {TEAM.map((p) => (
                 <button key={p} onClick={() => { patchConv({ ai: false, assignee: p, state: "Open" }, "Assigned to " + p); addMsg({ from: "system", text: "Assigned to " + p + " with an AI handoff summary." }); setMenu(null); flash("Assigned to " + p); }} className={`w-full text-left px-3 py-2 text-xs ${T.hover} ${conv.assignee === p ? "font-bold" : ""}`}>{p}</button>
               ))}
-              <button onClick={() => { patchConv({ state: "Pending", priority: "critical" }, "Escalated"); addMsg({ from: "system", text: "Escalated by Jordan Lee. AI handoff summary attached: context, sentiment, last actions." }); setMenu(null); flash("Escalated with a full handoff summary."); }} className={`w-full text-left px-3 py-2.5 text-xs font-medium border-t ${T.border} ${T.hover} text-amber-600`}>Escalate</button>
+              <button onClick={() => { patchConv({ state: "Pending", priority: "critical" }, "Escalated"); addMsg({ from: "system", text: "Escalated by Tech Vaseegrah. AI handoff summary attached: context, sentiment, last actions." }); setMenu(null); flash("Escalated with a full handoff summary."); }} className={`w-full text-left px-3 py-2.5 text-xs font-medium border-t ${T.border} ${T.hover} text-amber-600`}>Escalate</button>
             </div>
           )}
         </div>
@@ -15717,6 +15862,74 @@ function Thread({ conv, showPanel, setShowPanel }) {
         }
         return null;
       })()}
+
+      {/* YouTube Video Context Banner */}
+      {isYtConv && activeVideo && (
+        <div className={`shrink-0 px-4 py-2.5 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${dk ? "bg-red-950/20 border-red-900/30" : "bg-red-50/70 border-red-200/70"}`}>
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <a
+              href={activeVideo.url || `https://www.youtube.com/watch?v=${activeVideo.videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative w-16 h-10 sm:w-20 sm:h-12 rounded-lg overflow-hidden bg-black shrink-0 border border-red-500/40 shadow-xs group block cursor-pointer"
+            >
+              {activeVideo.thumbnail ? (
+                <img src={activeVideo.thumbnail} alt={activeVideo.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-red-500"><Youtube size={20} /></div>
+              )}
+              <div className="absolute inset-0 bg-black/25 flex items-center justify-center group-hover:bg-black/10 transition">
+                <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
+                  <Play size={9} className="ml-0.5 fill-white text-white" />
+                </div>
+              </div>
+            </a>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-red-600 text-white inline-flex items-center gap-1">
+                  <Youtube size={10} /> YouTube Video
+                </span>
+                <span className={`text-[10px] ${T.faint}`}>
+                  • Comments under this video
+                </span>
+                {activeVideo.statistics?.viewCount > 0 && (
+                  <span className={`text-[10px] ${T.faint}`}>
+                    • {Number(activeVideo.statistics.viewCount).toLocaleString()} views
+                  </span>
+                )}
+                {activeVideo.statistics?.commentCount > 0 && (
+                  <span className={`text-[10px] ${T.faint}`}>
+                    • {Number(activeVideo.statistics.commentCount).toLocaleString()} comments
+                  </span>
+                )}
+              </div>
+              <a
+                href={activeVideo.url || `https://www.youtube.com/watch?v=${activeVideo.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={activeVideo.title}
+                className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 hover:text-red-600 dark:hover:text-red-400 line-clamp-1 mt-0.5 transition block"
+              >
+                {activeVideo.title || "YouTube Video"}
+              </a>
+              <div className={`text-[10px] ${T.faint} mt-0.5`}>
+                User comments in this chat thread are posted under this video
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 self-start sm:self-center">
+            <a
+              href={activeVideo.url || `https://www.youtube.com/watch?v=${activeVideo.videoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold flex items-center gap-1.5 shadow-xs transition"
+            >
+              <ExternalLink size={11} />
+              <span>Watch on YouTube</span>
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* messages */}
       <div className="flex-1 overflow-y-auto bz-scroll px-6 py-6">
@@ -15818,7 +16031,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
               <button onClick={() => setMenu(menu === "quick" ? null : "quick")} title="Quick actions" className={`w-8 h-8 grid place-items-center rounded-lg ${T.hover}`}><Zap size={14} className={T.faint} /></button>
               {menu === "quick" && (
                 <MenuPop>
-                  <button onClick={() => { addTask("Follow up with " + displayName, "Jordan Lee"); setMenu(null); flash("Task created and visible in CRM → Tasks"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Create task</button>
+                  <button onClick={() => { addTask("Follow up with " + displayName, "Tech Vaseegrah"); setMenu(null); flash("Task created and visible in CRM → Tasks"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Create task</button>
                   <button onClick={() => { if (contact?.id) bookAppointment(contact.id, "Meeting with " + displayName.split(" ")[0], "Booked from thread", "Tomorrow · 10:00"); setMenu(null); flash("Appointment created for tomorrow 10:00"); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Schedule appointment</button>
                   <button onClick={() => { log("You", "Workflow triggered", "24 hour lead follow up · " + displayName); setMenu(null); flash("Workflow triggered for " + displayName.split(" ")[0]); }} className={`w-full text-left px-3 py-2.5 text-xs ${T.hover}`}>Trigger follow up workflow</button>
                 </MenuPop>
@@ -15881,6 +16094,45 @@ function ContextPanel({ conv, close }) {
   const [customerOrders, setCustomerOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [tagIn, setTagIn] = useState("");
+
+  const isYtConv =
+    conv?.channel === "ChannelBot.in" ||
+    conv?.channel === "YouTube" ||
+    conv?.channel === "ChannelBot" ||
+    conv?.platform === "channelbot" ||
+    conv?.platform === "youtube" ||
+    (conv?.id && conv.id.startsWith("conv_yt_"));
+
+  const [panelVideo, setPanelVideo] = useState(null);
+
+  useEffect(() => {
+    if (!isYtConv) {
+      setPanelVideo(null);
+      return;
+    }
+    if (conv?.metadata?.videoId || conv?.metadata?.videoTitle) {
+      setPanelVideo({
+        videoId: conv.metadata.videoId,
+        title: conv.metadata.videoTitle || "YouTube Video",
+        thumbnail: conv.metadata.videoThumbnail || (conv.metadata.videoId ? `https://i.ytimg.com/vi/${conv.metadata.videoId}/mqdefault.jpg` : ""),
+        url: conv.metadata.videoUrl || `https://www.youtube.com/watch?v=${conv.metadata.videoId}`,
+        statistics: conv.metadata.statistics || null,
+      });
+      return;
+    }
+    safeFetchJson("/api/channelbot/videos?page=1&limit=50")
+      .then((res) => {
+        const videos = res?.videos || [];
+        const lastTxt = conv?.lastMessage || conv?.last || "";
+        const matched = videos.find((v) => (v.title && lastTxt.includes(v.title)) || (conv?.metadata?.videoId && v.videoId === conv.metadata.videoId));
+        if (matched) setPanelVideo(matched);
+        else if (videos.length > 0) {
+          const vidWithComments = videos.find((v) => v.commentStats?.total > 0) || videos[0];
+          setPanelVideo(vidWithComments);
+        }
+      })
+      .catch(() => {});
+  }, [conv?.id, isYtConv]);
 
   if (!conv) return null;
 
@@ -16078,6 +16330,67 @@ function ContextPanel({ conv, close }) {
           <div className="text-[13px] font-semibold mt-2.5 truncate">{c.name || conv.customerName || "Customer"}</div>
           <div className={`text-[11px] mt-1 truncate ${T.faint}`}>{c.title ? c.title + " · " : ""}{c.company || "Unified Contact"}</div>
         </div>
+
+        {/* YOUTUBE VIDEO CONTEXT PANEL SECTION */}
+        {isYtConv && panelVideo && (
+          <PanelSection title="YouTube Video Context" defaultOpen>
+            <div className={`p-2.5 rounded-xl border ${T.border} ${T.softcard} space-y-2`}>
+              <a
+                href={panelVideo.url || `https://www.youtube.com/watch?v=${panelVideo.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative w-full aspect-video rounded-lg overflow-hidden bg-black group border border-red-500/30 block cursor-pointer"
+              >
+                {panelVideo.thumbnail ? (
+                  <img src={panelVideo.thumbnail} alt={panelVideo.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-red-500"><Youtube size={24} /></div>
+                )}
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/10 transition">
+                  <div className="w-7 h-7 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg">
+                    <Play size={12} className="ml-0.5 fill-white text-white" />
+                  </div>
+                </div>
+              </a>
+              <div>
+                <a
+                  href={panelVideo.url || `https://www.youtube.com/watch?v=${panelVideo.videoId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold hover:text-red-500 transition line-clamp-2 block leading-snug"
+                >
+                  {panelVideo.title || "YouTube Video"}
+                </a>
+                <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                  {panelVideo.statistics?.viewCount !== undefined && (
+                    <span className="text-[10px] text-zinc-400 font-medium">
+                      👁️ {Number(panelVideo.statistics.viewCount).toLocaleString()} views
+                    </span>
+                  )}
+                  {panelVideo.statistics?.likeCount !== undefined && (
+                    <span className="text-[10px] text-zinc-400 font-medium">
+                      👍 {Number(panelVideo.statistics.likeCount).toLocaleString()}
+                    </span>
+                  )}
+                  {panelVideo.statistics?.commentCount !== undefined && (
+                    <span className="text-[10px] text-zinc-400 font-medium">
+                      💬 {Number(panelVideo.statistics.commentCount).toLocaleString()} comments
+                    </span>
+                  )}
+                </div>
+              </div>
+              <a
+                href={panelVideo.url || `https://www.youtube.com/watch?v=${panelVideo.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-1.5 px-3 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 shadow-xs transition"
+              >
+                <ExternalLink size={11} />
+                <span>Watch on YouTube</span>
+              </a>
+            </div>
+          </PanelSection>
+        )}
 
         {/* LINKED CHANNELS & IDENTITIES PANEL SECTION */}
         <PanelSection title="Linked Channels & Identities" defaultOpen>
@@ -16278,7 +16591,7 @@ function ContextPanel({ conv, close }) {
         <PanelSection title="Quick actions">
           <div className="space-y-1">
             {[
-              ["Create task", () => { addTask("Follow up with " + (c.name || conv.customerName), "Jordan Lee"); flash("Task created"); }],
+              ["Create task", () => { addTask("Follow up with " + (c.name || conv.customerName), "Tech Vaseegrah"); flash("Task created"); }],
               ["Schedule appointment", () => { bookAppointment(c.id || "temp", "Meeting with " + (c.name || conv.customerName).split(" ")[0], "Booked from panel", "Tomorrow · 10:00"); flash("Appointment created for tomorrow 10:00"); }],
               ["Trigger follow up workflow", () => { log("You", "Workflow triggered", "24 hour lead follow up · " + (c.name || conv.customerName)); flash("Workflow triggered"); }],
             ].map(([l, fn]) => (
@@ -16814,7 +17127,7 @@ function DealForm({ initial, pipelineId, stage, onClose }) {
   const safePipelines = Array.isArray(pipelines) && pipelines.length > 0 ? pipelines : [{ id: "p1", name: "Sales Pipeline", stages: [{ id: "s1", name: "Lead" }, { id: "s2", name: "Qualified" }] }];
   const pipe = safePipelines.find((p) => p.id === (initial ? initial.pipelineId : pipelineId)) || safePipelines[0];
   const safeContacts = Array.isArray(CONTACTS) && CONTACTS.length > 0 ? CONTACTS : [{ id: "c1", name: "Default Customer" }];
-  const [f, setF] = useState(initial ? { ...initial } : { name: "", contactId: safeContacts[0]?.id || "", value: 5000, stage: stage || pipe?.stages?.[0]?.name || "Lead", pipelineId: pipe?.id || "p1", owner: "Jordan Lee", prob: 40, close: "", next: "" });
+  const [f, setF] = useState(initial ? { ...initial } : { name: "", contactId: safeContacts[0]?.id || "", value: 5000, stage: stage || pipe?.stages?.[0]?.name || "Lead", pipelineId: pipe?.id || "p1", owner: "Tech Vaseegrah", prob: 40, close: "", next: "" });
   const [err, setErr] = useState({});
   const save = () => {
     const e = {};
@@ -17117,7 +17430,7 @@ function TasksView() {
   const [view, setView] = useState("List");
   const [f, setF] = useState({ who: "", type: "", pri: "", done: "open" });
   const [form, setForm] = useState(null);
-  const [nf, setNf] = useState({ txt: "", who: "Jordan Lee", due: "Today", type: "Task", pri: "Medium", contactId: "" });
+  const [nf, setNf] = useState({ txt: "", who: "Tech Vaseegrah", due: "Today", type: "Task", pri: "Medium", contactId: "" });
   const list = tasks.filter((t) => {
     if (f.done === "open" && t.done) return false;
     if (f.done === "done" && !t.done) return false;
@@ -17130,7 +17443,7 @@ function TasksView() {
   const save = () => {
     if (!nf.txt.trim()) { flash("Describe the task first", "err"); return; }
     createTask({ ...nf, contactId: nf.contactId || null });
-    flash("Task created"); setForm(null); setNf({ txt: "", who: "Jordan Lee", due: "Today", type: "Task", pri: "Medium", contactId: "" });
+    flash("Task created"); setForm(null); setNf({ txt: "", who: "Tech Vaseegrah", due: "Today", type: "Task", pri: "Medium", contactId: "" });
   };
   const Row = ({ t }) => {
     const c = t.contactId ? CONTACTS.find((x) => x.id === t.contactId) : null;
@@ -17958,7 +18271,7 @@ function AgentBuilder() {
     id: "a" + Date.now(), name: "", title: "", type: "custom", status: "Draft", autonomy: 1, allowDestructive: false,
     role: "", purpose: "", dept: "", tone: "Professional", tones: ["Professional"], langs: ["English"], channels: [],
     goals: [], tools: ["CRM"], perms: permsFor(["CAN_READ_CRM"]), rules: [], knowledge: [], memory: ["Current conversation"],
-    escalation: { when: ["Customer asks for a human"], who: "Jordan Lee", include: ["Transcript", "AI summary", "CRM record", "Reason"] },
+    escalation: { when: ["Customer asks for a human"], who: "Tech Vaseegrah", include: ["Transcript", "AI summary", "CRM record", "Reason"] },
     instr: { objective: "", responsibilities: "", dos: "", donts: "", success: "" },
     conv: 0, res: 0, esc: 0, cvr: 0, csat: 0, rt: "—", versions: [], activity: [], created: new Date().toISOString().slice(0, 10),
   };
@@ -17986,7 +18299,7 @@ SUCCESS: ${f.instr.success || (f.goals || []).join(", ") || "resolve the request
     if (f.autonomy > autonomy) { flash(`Your workspace allows a maximum autonomy of Level ${autonomy}. Raise the ceiling in Settings first.`, "err"); setSec("Autonomy"); return; }
     const rec = { ...f, status: activate ? "Active" : (editing ? f.status : "Draft") };
     if (editing) {
-      const version = { id: Date.now(), at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), who: "Jordan Lee",
+      const version = { id: Date.now(), at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }), who: "Tech Vaseegrah",
         snap: { autonomy: editing.autonomy, tools: editing.tools, perms: editing.perms, rules: editing.rules, channels: editing.channels, role: editing.role } };
       rec.versions = [version, ...(editing.versions || [])].slice(0, 10);
       setAgents((ag) => ag.map((a) => a.id === editing.id ? rec : a));
@@ -23240,7 +23553,7 @@ function BookModal({ initial, prefillDate, onClose }) {
       updateAppt(initial.id, { durMin: svc.dur || 30, title: svc.name || "Appointment" }, "Service changed");
       flash("Appointment updated");
     } else {
-      const a = createAppt({ contactId: f.contactId, serviceId: svc.id, staffId: assigned.id, locationId: loc.id, room: f.room, durMin: svc.dur || 30, title: svc.name || "Appointment", source: f.source, start: slot.toISOString(), confirmChannel: (contact?.channels || ["whatsapp"])[0], notes: f.note ? [{ id: 1, who: "Jordan Lee", text: f.note, at: "just now" }] : [] });
+      const a = createAppt({ contactId: f.contactId, serviceId: svc.id, staffId: assigned.id, locationId: loc.id, room: f.room, durMin: svc.dur || 30, title: svc.name || "Appointment", source: f.source, start: slot.toISOString(), confirmChannel: (contact?.channels || ["whatsapp"])[0], notes: f.note ? [{ id: 1, who: "Tech Vaseegrah", text: f.note, at: "just now" }] : [] });
       flash(svc.approval ? "Requested. It sits in Pending until a manager approves." : "Booked and confirmed. Reminders scheduled from your rules.");
     }
     onClose();
@@ -23368,7 +23681,7 @@ function ApptDetail({ appt, onClose }) {
           </div>
           <div className="flex gap-2">
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add an internal note…" className={inputCls(T)} />
-            <button onClick={() => { if (!note.trim()) return; updateAppt(appt.id, { notes: [{ id: Date.now(), who: "Jordan Lee", text: note.trim(), at: "just now" }, ...(appt.notes || [])] }, "Note added"); setNote(""); flash("Note added"); }}
+            <button onClick={() => { if (!note.trim()) return; updateAppt(appt.id, { notes: [{ id: Date.now(), who: "Tech Vaseegrah", text: note.trim(), at: "just now" }, ...(appt.notes || [])] }, "Note added"); setNote(""); flash("Note added"); }}
               className={`px-3 rounded-xl border text-xs font-semibold ${T.chip}`}>Add</button>
           </div>
         </div>
@@ -24220,7 +24533,7 @@ function CallDetail({ call, onClose }) {
           </div>
           <div className="flex gap-2">
             <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Internal note…" className={inputCls(T)} />
-            <button onClick={() => { if (!note.trim()) return; updateCall(k.id, { notes: [{ id: Date.now(), who: "Jordan Lee", text: note.trim(), at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) }, ...(k.notes || [])] }, "Call note added"); setNote(""); flash("Note added"); }}
+            <button onClick={() => { if (!note.trim()) return; updateCall(k.id, { notes: [{ id: Date.now(), who: "Tech Vaseegrah", text: note.trim(), at: new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) }, ...(k.notes || [])] }, "Call note added"); setNote(""); flash("Note added"); }}
               className={`px-3 rounded-xl border text-xs font-semibold ${T.chip}`}>Add</button>
           </div>
         </div>
@@ -25926,16 +26239,13 @@ function ConnectModal({ provider, onClose }) {
       return;
     }
     if (provider.id === "instaxbot") {
-      if (!key.trim() || key.trim().length < 8) {
-        setErr("API key is too short or missing. Please enter a valid InstaxBot API key.");
-        return;
-      }
+      const keyToUse = key.trim() || "gw_80a8be4a702f3beb217795806e2d43de5657d831b5a5009688513cdfeeee4018";
       setErr(null); setStep("connecting");
       try {
         const res = await fetch(`${apiHost}/api/integrations/instaxbot/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: key.trim() }),
+          body: JSON.stringify({ apiKey: keyToUse }),
         });
         const data = await res.json();
         if (res.ok && data.success) {
@@ -26002,9 +26312,9 @@ function ConnectModal({ provider, onClose }) {
         const data = await res.json();
         if (data && data.success) {
           connectProvider("gowhats", {
-            key: data.maskedKey || "••••be0e",
+            key: data.maskedKey || "••••4018",
             account: data.account || "+91 9047484484",
-            maskedKey: data.maskedKey || "••••be0e",
+            maskedKey: data.maskedKey || "••••4018",
             connectedAt: data.connectedAt || new Date().toISOString(),
             lastSync: new Date().toISOString(),
           });
@@ -26542,8 +26852,36 @@ function InstaxBotBackfillWidget() {
   const { T, flash } = useApp();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
+  const [activeTab, setActiveTab] = useState("sync"); // sync | comment | chat | transfer | inventory | broadcast
+
+  // Forms state
+  const [commentText, setCommentText] = useState("");
+  const [commentTarget, setCommentTarget] = useState("priya_sharma");
+  const [chatHandle, setChatHandle] = useState("ananya_r");
+  const [chatText, setChatText] = useState("");
+  const [transferConvId, setTransferConvId] = useState("conv_ig_ananya_r");
+  const [targetAgent, setTargetAgent] = useState("agent_human_lead");
+  const [transferReason, setTransferReason] = useState("Customer requested senior specialist");
+  const [inventoryList, setInventoryList] = useState([]);
+  const [stockEditSku, setStockEditSku] = useState("IB-SUMMER-01");
+  const [stockEditQty, setStockEditQty] = useState(45);
+  const [broadcastMsg, setBroadcastMsg] = useState("🔥 Weekend Flash Sale! 20% off on all items with code INSTA20");
 
   const apiHost = getApiHost();
+
+  const SCOPES = [
+    { id: "orders.read", label: "orders.read", desc: "Read live orders & deals" },
+    { id: "messages.read", label: "messages.read", desc: "Read comments & chats" },
+    { id: "messages.send", label: "messages.send", desc: "Send DMs & comment replies" },
+    { id: "chats.transfer", label: "chats.transfer", desc: "Transfer chats to team" },
+    { id: "contacts.read", label: "contacts.read", desc: "Sync customer profiles" },
+    { id: "contacts.write", label: "contacts.write", desc: "Update customer tags & CRM" },
+    { id: "inventory.read", label: "inventory.read", desc: "Read products & stock" },
+    { id: "inventory.write", label: "inventory.write", desc: "Update stock counts & prices" },
+    { id: "templates.read", label: "templates.read", desc: "Fetch message templates" },
+    { id: "webhooks.manage", label: "webhooks.manage", desc: "Real-time webhook listener" },
+    { id: "broadcasts.send", label: "broadcasts.send", desc: "Send bulk marketing messages" },
+  ];
 
   const pollStatus = async () => {
     try {
@@ -26553,8 +26891,19 @@ function InstaxBotBackfillWidget() {
     } catch (e) {}
   };
 
+  const loadInventory = async () => {
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/inventory`);
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.inventory)) {
+        setInventoryList(data.inventory);
+      }
+    } catch (e) {}
+  };
+
   useEffect(() => {
     pollStatus();
+    loadInventory();
     const interval = setInterval(pollStatus, 3000);
     return () => clearInterval(interval);
   }, []);
@@ -26569,7 +26918,7 @@ function InstaxBotBackfillWidget() {
       });
       const data = await res.json();
       if (data.success) {
-        flash("InstaxBot Instagram sync started in background.");
+        flash("InstaxBot omnichannel sync across all 11 scopes started in background.");
         setStatus(data.status);
       } else {
         flash(data.error || "Could not start InstaxBot sync", "err");
@@ -26581,53 +26930,456 @@ function InstaxBotBackfillWidget() {
     }
   };
 
+  // 1. Post comment reply (messages.send)
+  const handleSendComment = async (e) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: commentText, targetHandle: commentTarget, mediaId: "media_summer_drop" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`Comment reply sent to @${commentTarget}!`);
+        setCommentText("");
+        pollStatus();
+      } else {
+        flash(data.error || "Failed to post comment", "err");
+      }
+    } catch (err) {
+      flash("Comment dispatch failed", "err");
+    }
+  };
+
+  // 2. Send Direct Message / Chat (messages.send)
+  const handleSendChat = async (e) => {
+    e.preventDefault();
+    if (!chatText.trim()) return;
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: chatHandle, handle: chatHandle, text: chatText }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`Direct Message dispatched to @${chatHandle}!`);
+        setChatText("");
+        pollStatus();
+      } else {
+        flash(data.error || "Failed to send chat", "err");
+      }
+    } catch (err) {
+      flash("Chat message dispatch failed", "err");
+    }
+  };
+
+  // 3. Transfer Chat (chats.transfer)
+  const handleTransferChat = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/chats/transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: transferConvId, targetAgentId: targetAgent, reason: transferReason }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`Chat ${transferConvId} transferred to ${targetAgent}!`);
+      } else {
+        flash(data.error || "Transfer failed", "err");
+      }
+    } catch (err) {
+      flash("Chat transfer failed", "err");
+    }
+  };
+
+  // 4. Update Inventory (inventory.write)
+  const handleUpdateStock = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/inventory`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sku: stockEditSku, stock: stockEditQty }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`Inventory stock updated for SKU ${stockEditSku} to ${stockEditQty}!`);
+        loadInventory();
+      } else {
+        flash(data.error || "Inventory update failed", "err");
+      }
+    } catch (err) {
+      flash("Stock update failed", "err");
+    }
+  };
+
+  // 5. Send Broadcast (broadcasts.send)
+  const handleSendBroadcast = async (e) => {
+    e.preventDefault();
+    if (!broadcastMsg.trim()) return;
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/broadcast`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageText: broadcastMsg, segmentId: "all_followers" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash("Promotional broadcast dispatched via InstaxBot!");
+      } else {
+        flash(data.error || "Broadcast failed", "err");
+      }
+    } catch (err) {
+      flash("Broadcast dispatch failed", "err");
+    }
+  };
+
   const isRunning = status?.status === "running";
 
   return (
-    <div className={`rounded-xl p-3.5 space-y-2.5 border ${T.border} ${T.softcard}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold">InstaxBot Orders & DMs Sync</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300 font-medium">orders:read</span>
+    <div className={`rounded-xl p-3.5 space-y-3 border ${T.border} ${T.softcard}`}>
+      {/* Header & Primary Sync Trigger */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-pink-600 dark:text-pink-400">InstaxBot Omnichannel Suite</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+              11 Scopes Active
+            </span>
+          </div>
+          <p className={`text-[11px] mt-0.5 ${T.sub}`}>
+            Full bidirectional Instagram integration for Comments, DMs, Orders, Inventory, Contacts, Transfers & Broadcasts.
+          </p>
         </div>
+
         <button
           onClick={handleStartBackfill}
           disabled={loading || isRunning}
-          className={`h-7 px-3 rounded-lg text-xs font-semibold text-white transition flex items-center gap-1.5 ${isRunning ? "opacity-60 cursor-not-allowed bg-zinc-500" : "hover:opacity-90 active:scale-95"}`}
-          style={{ background: isRunning ? undefined : "#E63800" }}
+          className={`h-8 px-3 rounded-lg text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-sm ${
+            isRunning ? "opacity-60 cursor-not-allowed bg-zinc-500" : "hover:opacity-95 active:scale-95 bg-gradient-to-r from-pink-600 to-orange-600"
+          }`}
         >
           {isRunning ? (
             <>
-              <RefreshCw size={11} className="animate-spin" />
-              <span>Syncing (Page {status?.currentPage || 1})…</span>
+              <RefreshCw size={12} className="animate-spin" />
+              <span>Syncing 11 Scopes (Page {status?.currentPage || 1})…</span>
             </>
           ) : (
             <>
-              <RefreshCw size={11} />
-              <span>Sync All 150+ Orders</span>
+              <RefreshCw size={12} />
+              <span>Sync All 11 Scopes (Fetch Everything)</span>
             </>
           )}
         </button>
       </div>
 
-      <p className={`text-[11px] leading-relaxed ${T.sub}`}>
-        Fetch and paginate through all 150+ live Instagram orders and customer DMs via InstaxBot API. Automatically creates contacts, conversations, inbox messages, and pipeline deals.
-      </p>
+      {/* 11 Active Scopes Badges Grid */}
+      <div className="flex flex-wrap gap-1">
+        {SCOPES.map((sc) => (
+          <span
+            key={sc.id}
+            title={sc.desc}
+            className="text-[10px] font-mono px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700/60"
+          >
+            ✓ {sc.label}
+          </span>
+        ))}
+      </div>
 
+      {/* Live Omnichannel Progress Details */}
       {status && status.status !== "idle" && (
-        <div className={`rounded-lg p-2.5 text-[11px] space-y-1.5 ${status.status === "completed" ? "bg-emerald-50/70 border border-emerald-200 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-800" : status.status === "failed" ? "bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/20 dark:text-red-300" : "bg-orange-50/70 border border-orange-200 text-orange-900 dark:bg-orange-950/20 dark:text-orange-300"}`}>
+        <div
+          className={`rounded-lg p-3 text-[11px] space-y-2 border ${
+            status.status === "completed"
+              ? "bg-emerald-50/70 border-emerald-200 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300 dark:border-emerald-800"
+              : status.status === "failed"
+              ? "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/20 dark:text-red-300"
+              : "bg-orange-50/70 border-orange-200 text-orange-900 dark:bg-orange-950/20 dark:text-orange-300"
+          }`}
+        >
           <div className="flex items-center justify-between font-semibold">
-            <span>Status: {status.status === "running" ? "Backfill in progress…" : status.status === "completed" ? "Orders & Contacts Synced" : "Failed"}</span>
+            <span>
+              Status: {status.status === "running" ? "Syncing omnichannel resources…" : status.status === "completed" ? "All 11 Scopes Synchronized" : "Sync Fault"}
+            </span>
             {status.completedAt && <span className="text-[10px] font-normal">{new Date(status.completedAt).toLocaleTimeString()}</span>}
           </div>
-          <div className="grid grid-cols-3 gap-2 text-[10px] pt-1">
-            <div>Orders Read: <span className="font-semibold">{status.recordsProcessed || 0}</span></div>
-            <div>New Ingested: <span className="font-semibold text-emerald-600 dark:text-emerald-400">+{status.newlyInserted || 0}</span></div>
-            <div>Duplicates Skipped: <span className="font-semibold">{status.duplicatesSkipped || 0}</span></div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 text-[10px] pt-1">
+            <div className="p-1.5 rounded bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="block text-zinc-500 text-[9px] uppercase">Orders</span>
+              <span className="font-bold text-xs">{status.ordersCount || 0}</span>
+            </div>
+            <div className="p-1.5 rounded bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="block text-zinc-500 text-[9px] uppercase">Comments</span>
+              <span className="font-bold text-xs">{status.commentsCount || 0}</span>
+            </div>
+            <div className="p-1.5 rounded bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="block text-zinc-500 text-[9px] uppercase">Chats / DMs</span>
+              <span className="font-bold text-xs">{status.chatsCount || 0}</span>
+            </div>
+            <div className="p-1.5 rounded bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="block text-zinc-500 text-[9px] uppercase">Contacts</span>
+              <span className="font-bold text-xs">{status.contactsCount || 0}</span>
+            </div>
+            <div className="p-1.5 rounded bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="block text-zinc-500 text-[9px] uppercase">Inventory</span>
+              <span className="font-bold text-xs">{status.inventoryCount || 0}</span>
+            </div>
+            <div className="p-1.5 rounded bg-white/60 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800">
+              <span className="block text-emerald-600 dark:text-emerald-400 text-[9px] uppercase">New Ingested</span>
+              <span className="font-bold text-xs text-emerald-600 dark:text-emerald-400">+{status.newlyInserted || 0}</span>
+            </div>
           </div>
           {status.error && <p className="text-[10px] text-red-600 font-medium">{status.error}</p>}
         </div>
       )}
+
+      {/* Interactive Scope Operations Navigation */}
+      <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="flex gap-1 overflow-x-auto pb-1 mb-2 scrollbar-none">
+          {[
+            { id: "sync", label: "Overview & Sync" },
+            { id: "comment", label: "💬 Reply Comment (messages.send)" },
+            { id: "chat", label: "✉️ Send DM / Chat (messages.send)" },
+            { id: "transfer", label: "🔀 Transfer Chat (chats.transfer)" },
+            { id: "inventory", label: "📦 Inventory (inventory.read/write)" },
+            { id: "broadcast", label: "📢 Broadcast (broadcasts.send)" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition ${
+                activeTab === tab.id
+                  ? "bg-pink-600 text-white shadow-sm"
+                  : "bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* TAB 1: REPLY TO COMMENT */}
+        {activeTab === "comment" && (
+          <form onSubmit={handleSendComment} className="space-y-2 p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Reply to Instagram Comment</span>
+              <span className="text-[10px] font-mono text-zinc-500">Scope: messages.send</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Target Follower Handle</label>
+                <input
+                  type="text"
+                  value={commentTarget}
+                  onChange={(e) => setCommentTarget(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  placeholder="e.g. priya_sharma"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Reply Comment Message</label>
+                <input
+                  type="text"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  placeholder="Type your Instagram comment reply..."
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="h-7 px-3 rounded-md text-xs font-semibold bg-pink-600 text-white hover:bg-pink-700 transition flex items-center gap-1"
+            >
+              <span>Post Comment Reply</span>
+            </button>
+          </form>
+        )}
+
+        {/* TAB 2: SEND DIRECT MESSAGE / CHAT */}
+        {activeTab === "chat" && (
+          <form onSubmit={handleSendChat} className="space-y-2 p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Send Direct Instagram Message (DM)</span>
+              <span className="text-[10px] font-mono text-zinc-500">Scope: messages.send</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Recipient Instagram Handle</label>
+                <input
+                  type="text"
+                  value={chatHandle}
+                  onChange={(e) => setChatHandle(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  placeholder="e.g. ananya_r"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Direct Message Body</label>
+                <input
+                  type="text"
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  placeholder="Type direct message text..."
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="h-7 px-3 rounded-md text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition flex items-center gap-1"
+            >
+              <span>Send Instagram DM</span>
+            </button>
+          </form>
+        )}
+
+        {/* TAB 3: TRANSFER CHAT */}
+        {activeTab === "transfer" && (
+          <form onSubmit={handleTransferChat} className="space-y-2 p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Transfer Instagram Chat to Agent</span>
+              <span className="text-[10px] font-mono text-zinc-500">Scope: chats.transfer</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Conversation ID</label>
+                <input
+                  type="text"
+                  value={transferConvId}
+                  onChange={(e) => setTransferConvId(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  placeholder="e.g. conv_ig_ananya_r"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Target Agent</label>
+                <select
+                  value={targetAgent}
+                  onChange={(e) => setTargetAgent(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                >
+                  <option value="agent_human_lead">Human Support Lead</option>
+                  <option value="agent_sales_specialist">Sales Specialist</option>
+                  <option value="agent_returns_dept">Returns & Exchange</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Transfer Reason</label>
+                <input
+                  type="text"
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  placeholder="Reason for reassignment..."
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="h-7 px-3 rounded-md text-xs font-semibold bg-amber-600 text-white hover:bg-amber-700 transition flex items-center gap-1"
+            >
+              <span>Execute Chat Transfer</span>
+            </button>
+          </form>
+        )}
+
+        {/* TAB 4: INVENTORY MANAGEMENT */}
+        {activeTab === "inventory" && (
+          <div className="space-y-2 p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Instagram Product Inventory & Stock</span>
+              <span className="text-[10px] font-mono text-zinc-500">Scopes: inventory.read & inventory.write</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[11px]">
+                <thead>
+                  <tr className="border-b border-zinc-200 dark:border-zinc-800 text-zinc-400">
+                    <th className="pb-1.5 font-medium">Product</th>
+                    <th className="pb-1.5 font-medium">SKU</th>
+                    <th className="pb-1.5 font-medium">Price</th>
+                    <th className="pb-1.5 font-medium">Stock</th>
+                    <th className="pb-1.5 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200/60 dark:divide-zinc-800/60">
+                  {inventoryList.map((item) => (
+                    <tr key={item.id || item.sku}>
+                      <td className="py-1 font-semibold">{item.name}</td>
+                      <td className="py-1 font-mono text-zinc-500">{item.sku}</td>
+                      <td className="py-1">₹{item.price}</td>
+                      <td className="py-1 font-bold text-emerald-600 dark:text-emerald-400">{item.stock} units</td>
+                      <td className="py-1">
+                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-700 font-medium">
+                          {item.status || "active"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <form onSubmit={handleUpdateStock} className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium">Update Stock:</span>
+              <select
+                value={stockEditSku}
+                onChange={(e) => setStockEditSku(e.target.value)}
+                className={`h-7 px-2 rounded text-xs outline-none ${T.input}`}
+              >
+                {inventoryList.map((i) => (
+                  <option key={i.sku} value={i.sku}>{i.name} ({i.sku})</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                value={stockEditQty}
+                onChange={(e) => setStockEditQty(Number(e.target.value))}
+                className={`w-20 h-7 px-2 rounded text-xs outline-none ${T.input}`}
+                placeholder="Qty"
+              />
+              <button
+                type="submit"
+                className="h-7 px-3 rounded text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition"
+              >
+                Save Stock
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* TAB 5: BROADCAST DISPATCH */}
+        {activeTab === "broadcast" && (
+          <form onSubmit={handleSendBroadcast} className="space-y-2 p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Dispatch Instagram Broadcast</span>
+              <span className="text-[10px] font-mono text-zinc-500">Scope: broadcasts.send</span>
+            </div>
+            <div>
+              <label className="text-[10px] text-zinc-400 block mb-1">Broadcast Message</label>
+              <textarea
+                rows={2}
+                value={broadcastMsg}
+                onChange={(e) => setBroadcastMsg(e.target.value)}
+                className={`w-full p-2 rounded-md text-xs outline-none ${T.input}`}
+                placeholder="Enter promotional or update broadcast text..."
+              />
+            </div>
+            <button
+              type="submit"
+              className="h-7 px-3 rounded-md text-xs font-semibold bg-purple-600 text-white hover:bg-purple-700 transition flex items-center gap-1"
+            >
+              <span>Dispatch to Active Followers</span>
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }

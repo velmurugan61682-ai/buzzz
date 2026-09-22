@@ -7,14 +7,14 @@
  * NEVER prints, logs, hardcodes, or exposes the raw API key anywhere in code, logs, or responses.
  */
 
-import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage } from "../data/db.js";
+import { resolveOrCreateContact, upsertConversation, saveUnifiedMessage, UnifiedMessageModel, ConversationModel } from "../data/db.js";
 import { PLATFORM_META } from "../constants/platformMeta.js";
 
 const getBaseUrl = () => {
   return (
     process.env.CHANNELBOT_IN_BASE_URL ||
     process.env.CHANNELBOT_BASE_URL ||
-    "https://server-youtube-auto.onrender.com/api/v1/external"
+    "https://server-youtube-auto.onrender.com/api/external"
   ).replace(/\/$/, "");
 };
 
@@ -47,7 +47,7 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
   if (!apiKey) return { connected: false, error: "No channelbot.in API key configured" };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/messages?page=1&limit=10`;
+  const url = `${baseUrl}/techvaseegrah/comments?page=1&limit=10`;
 
   try {
     let response = await fetch(url, {
@@ -60,7 +60,7 @@ export const verifyChannelBotInConnection = async (overrideKey) => {
     });
 
     if (response.status === 404) {
-      response = await fetch(`${baseUrl}/leads`, {
+      response = await fetch(`${baseUrl}/techvaseegrah/comments`, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -97,7 +97,7 @@ export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50, 
   if (!apiKey) return { success: false, comments: [], total: 0, pages: 0, currentPage: page };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/messages?page=${page}&limit=${limit}`;
+  const url = `${baseUrl}/techvaseegrah/comments?page=${page}&limit=${limit}`;
 
   try {
     let response = await fetch(url, {
@@ -111,9 +111,9 @@ export const fetchYouTubeComments = async ({ overrideKey, page = 1, limit = 50, 
 
     let data = await response.json().catch(() => ({}));
 
-    // Fallback if endpoint is legacy /leads
+    // Fallback: try customers/details if channel-specific path fails
     if (response.status === 404) {
-      const fallbackRes = await fetch(`${baseUrl}/leads?page=${page}&limit=${limit}`, {
+      const fallbackRes = await fetch(`${baseUrl}/customers/details?page=${page}&limit=${limit}`, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -261,7 +261,7 @@ export const updateYouTubeMessageStatus = async ({ commentId, status = "approved
   if (!apiKey) return { success: false, error: "No channelbot.in API key configured" };
 
   const baseUrl = getBaseUrl();
-  const url = `${baseUrl}/messages/${commentId}`;
+  const url = `${baseUrl}/techvaseegrah/comments/${commentId}`;
 
   try {
     const response = await fetch(url, {
@@ -291,6 +291,174 @@ export const updateYouTubeMessageStatus = async ({ commentId, status = "approved
     return { success: false, error: err.message };
   }
 };
+
+/**
+ * 2c. Scope: comments:read (Fetch YouTube Videos with Statistics & Comment Counts)
+ * Endpoint: GET /api/external/techvaseegrah/videos?page={page}&limit={limit}
+ * Auth Header: x-api-key: <key>
+ */
+export const fetchYouTubeVideos = async ({ overrideKey, page = 1, limit = 50, search } = {}) => {
+  const apiKey = overrideKey || getApiKey();
+  if (!apiKey) return { success: false, videos: [], total: 0, pages: 0, currentPage: page };
+
+  const baseUrl = getBaseUrl();
+  let url = `${baseUrl}/techvaseegrah/videos?page=${page}&limit=${limit}`;
+  if (search) url += `&search=${encodeURIComponent(search)}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-api-key": apiKey,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+    const rawVideos = data.videos || data.data || (Array.isArray(data) ? data : []);
+
+    const videos = (Array.isArray(rawVideos) ? rawVideos : []).map((v) => ({
+      videoId: v.videoId || v.id || v._id,
+      channelId: v.channelId || "",
+      title: v.title || "YouTube Video",
+      thumbnail: v.thumbnail || (v.videoId ? `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg` : ""),
+      publishedAt: v.publishedAt || null,
+      duration: v.duration || "",
+      isLive: Boolean(v.isLive),
+      statistics: v.statistics || { viewCount: 0, likeCount: 0, commentCount: 0 },
+      commentStats: v.commentStats || null,
+      url: v.videoId ? `https://www.youtube.com/watch?v=${v.videoId}` : "",
+    }));
+
+    return {
+      success: response.ok,
+      videos,
+      total: data.total !== undefined ? Number(data.total) : videos.length,
+      pages: data.pages !== undefined ? Number(data.pages) : 1,
+      currentPage: data.currentPage || page,
+      raw: data,
+    };
+  } catch (err) {
+    return { success: false, videos: [], total: 0, pages: 0, currentPage: page, error: err.message };
+  }
+};
+
+let cachedVideosMap = null;
+let lastVideosFetchTime = 0;
+const VIDEOS_CACHE_TTL_MS = 60000;
+
+export const getVideosMap = async (forceRefresh = false) => {
+  const now = Date.now();
+  if (!forceRefresh && cachedVideosMap && (now - lastVideosFetchTime < VIDEOS_CACHE_TTL_MS)) {
+    return cachedVideosMap;
+  }
+  try {
+    const res = await fetchYouTubeVideos({ limit: 100 });
+    if (res.success && Array.isArray(res.videos) && res.videos.length > 0) {
+      const map = {};
+      for (const v of res.videos) {
+        if (v.videoId) map[v.videoId] = v;
+      }
+      cachedVideosMap = map;
+      lastVideosFetchTime = now;
+      return cachedVideosMap;
+    }
+  } catch (e) {
+    console.warn("⚠️ [CHANNELBOT] Error fetching videos map:", e.message);
+  }
+  return cachedVideosMap || {};
+};
+
+export const resolveVideoDetails = async (videoId) => {
+  if (!videoId) return null;
+  const map = await getVideosMap();
+  if (map && map[videoId]) return map[videoId];
+  try {
+    const searchRes = await fetchYouTubeVideos({ search: videoId, limit: 5 });
+    const found = (searchRes.videos || []).find((v) => v.videoId === videoId);
+    if (found) {
+      if (cachedVideosMap) cachedVideosMap[videoId] = found;
+      return found;
+    }
+  } catch (_e) {}
+  return {
+    videoId,
+    title: `YouTube Video (${videoId})`,
+    thumbnail: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    statistics: null,
+  };
+};
+
+/**
+ * Historical and live data enrichment:
+ * Scans comments from ChannelBot API and enriches all stored UnifiedMessage and Conversation records
+ * with videoId, videoTitle, videoThumbnail, and videoUrl.
+ */
+export const enrichChannelBotData = async () => {
+  try {
+    if (!isChannelBotInConfigured()) return;
+    const [videosMap, commentsRes] = await Promise.all([
+      getVideosMap(true),
+      fetchAllYouTubeComments({ limit: 100, skipDemoFallback: true }),
+    ]);
+
+    const comments = commentsRes.comments || [];
+    if (comments.length === 0) return;
+
+    let enrichedCount = 0;
+    for (const cmt of comments) {
+      const extId = cmt._id || cmt.id || cmt.comment_id;
+      const videoId = cmt.videoId || cmt.video_id;
+      if (!extId || !videoId) continue;
+
+      const video = videosMap[videoId] || {
+        videoId,
+        title: cmt.videoTitle || cmt.video_title || `YouTube Video (${videoId})`,
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+      };
+
+      const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || cmt.name || "YouTube Viewer";
+      const convId = `conv_yt_${String(authorHandle).replace(/[^a-zA-Z0-9_]/g, "_")}`;
+
+      // Update UnifiedMessage metadata
+      await UnifiedMessageModel.updateMany(
+        { externalMessageId: extId },
+        {
+          $set: {
+            "metadata.videoId": videoId,
+            "metadata.videoTitle": video.title,
+            "metadata.videoThumbnail": video.thumbnail,
+            "metadata.videoUrl": video.url,
+            "metadata.statistics": video.statistics || null,
+            "metadata.authorProfileImageUrl": cmt.authorProfileImageUrl || null,
+          },
+        }
+      );
+
+      // Update Conversation metadata
+      await ConversationModel.updateOne(
+        { id: convId },
+        {
+          $set: {
+            "metadata.videoId": videoId,
+            "metadata.videoTitle": video.title,
+            "metadata.videoThumbnail": video.thumbnail,
+            "metadata.videoUrl": video.url,
+            "metadata.statistics": video.statistics || null,
+          },
+        }
+      );
+      enrichedCount++;
+    }
+    console.log(`✅ [CHANNELBOT ENRICH] Successfully enriched ${enrichedCount} YouTube comment(s) with video metadata!`);
+  } catch (err) {
+    console.warn("⚠️ [CHANNELBOT ENRICH] Error:", err.message);
+  }
+};
+
 
 /**
  * 3. Scope: customers:read (Fetch Detailed Customer Profiles with Metrics)
@@ -504,8 +672,11 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
         return;
       }
       console.log("🔄 [CHANNELBOT SYNC] Starting sync cycle — fetching ALL comments across all pages...");
-      // Fetch every comment across all pages (not just page 1)
-      const commentsRes = await fetchAllYouTubeComments({ limit: 100, throttleMs: 400 });
+      // Fetch videos map to pair each comment with its corresponding YouTube video
+      const [videosMap, commentsRes] = await Promise.all([
+        getVideosMap().catch(() => ({})),
+        fetchAllYouTubeComments({ limit: 100, throttleMs: 400 }),
+      ]);
       console.log(`🔄 [CHANNELBOT SYNC] API response: success=${commentsRes.success}, comments=${commentsRes.comments?.length ?? 0}, pages=${commentsRes.pagesRead ?? 1}, usingDemo=${commentsRes.usingDemoFallback ?? false}`);
 
       // Use real comments if available, otherwise fall back to demo data so inbox is never empty
@@ -520,7 +691,13 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
         const authorHandle = cmt.author_handle || cmt.youtubeHandle || cmt.author || cmt.name || "YouTube Viewer";
         const textBody = cmt.text || cmt.comment_text || cmt.message || cmt.lead_source || "New YouTube lead captured";
         const extId = cmt._id || cmt.id || cmt.comment_id || cmt.commentId || cmt.leadId || (cmt.email ? `yt_lead_${cmt.email}` : `yt_lead_${String(cmt.name || authorHandle).replace(/\W/g, "_")}`);
-        const videoTitle = cmt.videoTitle || cmt.video_title || "YouTube Video";
+
+        // Video resolution: match video by videoId or fallback
+        const videoId = cmt.videoId || cmt.video_id || (cmt.metadata && cmt.metadata.videoId) || null;
+        const matchedVideo = (videoId && videosMap && videosMap[videoId]) ? videosMap[videoId] : null;
+        const videoTitle = matchedVideo?.title || cmt.videoTitle || cmt.video_title || (videoId ? `YouTube Video (${videoId})` : "YouTube Video");
+        const videoThumbnail = matchedVideo?.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : "");
+        const videoUrl = matchedVideo?.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : "");
 
         for (const targetWsId of ["ws_default"]) {
           try {
@@ -545,6 +722,14 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
               unreadCount: 1,
               lastMessage: `${videoTitle}: ${textBody}`,
               updatedAt: new Date().toISOString(),
+              metadata: {
+                videoId,
+                videoTitle,
+                videoThumbnail,
+                videoUrl,
+                channelId: cmt.channelId || matchedVideo?.channelId,
+                statistics: matchedVideo?.statistics || null,
+              },
             };
             const conv = await upsertConversation(convDoc);
             console.log(`✅ [CHANNELBOT SYNC] Conversation upserted: ${conv?.id}`);
@@ -564,11 +749,20 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
               },
               direction: "inbound",
               text: textBody,
-              // Only pass valid DB enum values: received/sent/delivered/read/failed
-              // Store the original moderation status (approved/rejected/etc.) in metadata
               status: ["received", "sent", "delivered", "read", "failed"].includes(cmt.status) ? cmt.status : "received",
               receivedAt: cmt.receivedAt || new Date().toISOString(),
-              metadata: { videoTitle, moderationStatus: cmt.status, note: cmt.note, sentiment: cmt.sentiment },
+              metadata: {
+                videoId,
+                videoTitle,
+                videoThumbnail,
+                videoUrl,
+                channelId: cmt.channelId || matchedVideo?.channelId,
+                moderationStatus: cmt.status,
+                note: cmt.note,
+                sentiment: cmt.sentiment,
+                authorProfileImageUrl: cmt.authorProfileImageUrl || null,
+                statistics: matchedVideo?.statistics || null,
+              },
             });
             console.log(`✅ [CHANNELBOT SYNC] Message saved: ${msgDoc?.id} isNew=${isNew}`);
 
@@ -605,8 +799,10 @@ export function startChannelBotAutoSyncScheduler(broadcastFn, intervalMs = 30000
   };
 
 
-  // Immediate initial sync on startup
-  runSync();
+  // Immediate initial sync on startup and enrich existing data with videos
+  runSync().then(() => {
+    enrichChannelBotData().catch((err) => console.warn("⚠️ [CHANNELBOT ENRICH] Initial enrichment error:", err.message));
+  });
 
   // Recurring polling
   setInterval(runSync, intervalMs);
@@ -723,6 +919,9 @@ export const runChannelBotHistoricalBackfill = async ({
           }
         }
 
+        // Fetch videos map to match videoId with video titles & thumbnails
+        const videosMap = await getVideosMap().catch(() => ({}));
+
         // Upsert comments into UnifiedMessage and Conversation
         for (const cmt of comments) {
           backfillProgress.recordsProcessed++;
@@ -732,7 +931,11 @@ export const runChannelBotHistoricalBackfill = async ({
           const extId = cmt._id || cmt.id || cmt.comment_id || cmt.commentId;
           if (!extId) continue;
 
-          const videoTitle = cmt.videoTitle || cmt.video_title || "YouTube Video";
+          const videoId = cmt.videoId || cmt.video_id || (cmt.metadata && cmt.metadata.videoId) || null;
+          const matchedVideo = (videoId && videosMap && videosMap[videoId]) ? videosMap[videoId] : null;
+          const videoTitle = matchedVideo?.title || cmt.videoTitle || cmt.video_title || (videoId ? `YouTube Video (${videoId})` : "YouTube Video");
+          const videoThumbnail = matchedVideo?.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : "");
+          const videoUrl = matchedVideo?.url || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : "");
 
           try {
             const contact = await resolveOrCreateContact({
@@ -752,6 +955,14 @@ export const runChannelBotHistoricalBackfill = async ({
               channel: "ChannelBot.in",
               lastMessage: `${videoTitle}: ${textBody}`,
               updatedAt: cmt.receivedAt || new Date().toISOString(),
+              metadata: {
+                videoId,
+                videoTitle,
+                videoThumbnail,
+                videoUrl,
+                channelId: cmt.channelId || matchedVideo?.channelId,
+                statistics: matchedVideo?.statistics || null,
+              },
             };
             const conv = await upsertConversation(convDoc);
 
@@ -773,10 +984,16 @@ export const runChannelBotHistoricalBackfill = async ({
               status: ["received", "sent", "delivered", "read", "failed"].includes(cmt.status) ? cmt.status : "received",
               receivedAt: cmt.receivedAt || new Date().toISOString(),
               metadata: {
+                videoId,
                 videoTitle,
+                videoThumbnail,
+                videoUrl,
+                channelId: cmt.channelId || matchedVideo?.channelId,
                 moderationStatus: cmt.status,
                 sentiment: cmt.sentiment,
                 note: cmt.note,
+                authorProfileImageUrl: cmt.authorProfileImageUrl || null,
+                statistics: matchedVideo?.statistics || null,
                 isBackfill: true,
                 backfilledAt: new Date().toISOString(),
               },

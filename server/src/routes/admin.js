@@ -37,6 +37,8 @@ import {
 
 import {
   fetchInstaxBotMessages,
+  runInstaxBotHistoricalBackfill,
+  syncInstaxBotContacts,
 } from "../services/instaxbot.js";
 
 import {
@@ -313,11 +315,14 @@ adminRouter.post("/integrations/:platform/sync", async (req, res) => {
         ordersSynced: ordersRes.status === "fulfilled" && ordersRes.value?.orders ? ordersRes.value.orders.length : 0,
       };
     } else if (platform === "instaxbot" || platform === "instagram") {
-      logAdminAction("Triggered InstaxBot Instagram Sync", "admin", "Manual sync triggered via Admin Panel");
-      const igRes = await fetchInstaxBotMessages({ workspaceId: wsId }).catch(() => ({}));
+      logAdminAction("Triggered InstaxBot Instagram Omnichannel Sync", "admin", "Manual sync triggered via Admin Panel");
+      const backfillRes = await runInstaxBotHistoricalBackfill({ workspaceId: wsId }).catch(() => ({}));
+      const contactRes = await syncInstaxBotContacts({ workspaceId: wsId }).catch(() => ({}));
       result = {
         platform: "instaxbot",
-        messagesSynced: igRes.messages?.length || 0,
+        status: "success",
+        messagesSynced: (backfillRes.status?.ordersCount || 0) + (backfillRes.status?.commentsCount || 0) + (backfillRes.status?.chatsCount || 0),
+        contactsSynced: contactRes.syncedCount || 0,
       };
     } else if (platform === "channelbot" || platform === "youtube") {
       logAdminAction("Triggered ChannelBot YouTube Sync", "admin", "Manual sync triggered via Admin Panel");
@@ -364,7 +369,7 @@ adminRouter.get("/users", async (req, res) => {
     const staffList = [
       { id: "usr_owner", name: "Admin Owner", email: "admin@buzzz.com", role: "Owner", status: "Active", lastActive: "Just now" },
       { id: "usr_sarah", name: "Sarah Mitchell", email: "sarah@buzzz.com", role: "Sales Manager", status: "Active", lastActive: "5m ago" },
-      { id: "usr_jordan", name: "Jordan Lee", email: "jordan@buzzz.com", role: "Support Lead", status: "Active", lastActive: "12m ago" },
+      { id: "usr_techvaseegrah", name: "Tech Vaseegrah", email: "techvaseegrah@buzzz.com", role: "Support Lead", status: "Active", lastActive: "12m ago" },
       { id: "usr_ana", name: "Ana Gomez", email: "ana@buzzz.com", role: "Appointment Specialist", status: "Active", lastActive: "1h ago" },
     ];
 

@@ -430,7 +430,7 @@ const DealSchema = new mongoose.Schema(
     stage: { type: String, default: "New Lead", index: true },
     value: { type: Number, default: 0 },
     prob: { type: Number, default: 50 },
-    owner: { type: String, default: "Jordan Lee" },
+    owner: { type: String, default: "Tech Vaseegrah" },
     close: { type: String, default: "" },
     next: { type: String, default: "" },
     source: { type: String, default: "manual" },
@@ -1028,6 +1028,7 @@ export const fetchMessagesByConversationId = async (conversationId) => {
       status: m.status || "received",
       platform: m.platform,
       externalMessageId: m.externalMessageId,
+      metadata: m.metadata || {},
     }));
 
     if (phoneFilter) {
@@ -1071,6 +1072,7 @@ export const fetchMessagesByConversationId = async (conversationId) => {
       platform: m.platform || "whatsapp",
       gowhatsMessageId: m.gowhatsMessageId,
       externalMessageId: m.gowhatsMessageId || m.id,
+      metadata: m.metadata || {},
     }));
 
     // Deduplicate by externalMessageId / gowhatsMessageId / id / text+timestamp
@@ -1289,10 +1291,29 @@ export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
 };
 
 export const deleteInstaxBotConfig = async (workspaceId = "ws_default") => {
+  const payload = {
+    workspaceId,
+    connected: false,
+    disconnected: true,
+    apiKey: null,
+    maskedKey: null,
+    accountName: null,
+    updatedAt: new Date(),
+  };
   if (isDbConnected && mongoose.connection.readyState === 1) {
-    return await InstaxBotAccountModel.deleteOne({ workspaceId });
+    await InstaxBotAccountModel.findOneAndUpdate(
+      { workspaceId },
+      { $set: payload },
+      { upsert: true, new: true }
+    );
+    return { deletedCount: 1 };
   }
-  db.instaxbotAccounts = db.instaxbotAccounts.filter((a) => a.workspaceId !== workspaceId);
+  const idx = db.instaxbotAccounts.findIndex((a) => a.workspaceId === workspaceId);
+  if (idx !== -1) {
+    db.instaxbotAccounts[idx] = { ...db.instaxbotAccounts[idx], ...payload };
+  } else {
+    db.instaxbotAccounts.push(payload);
+  }
   return { deletedCount: 1 };
 };
 
@@ -1494,7 +1515,7 @@ export const createDealRecord = async (dealData) => {
     stage: dealData.stage || "New Lead",
     value: Number(dealData.value) || 0,
     prob: Number(dealData.prob) !== undefined ? Number(dealData.prob) : 50,
-    owner: dealData.owner || "Jordan Lee",
+    owner: dealData.owner || "Tech Vaseegrah",
     close: dealData.close || "",
     next: dealData.next || "",
     source: dealData.source || "manual",
@@ -1688,6 +1709,13 @@ export const saveUnifiedMessage = async (data) => {
       }).lean();
 
       if (existing) {
+        if (payload.metadata?.videoId && (!existing.metadata?.videoId || !existing.metadata?.videoThumbnail)) {
+          await UnifiedMessageModel.updateOne(
+            { _id: existing._id },
+            { $set: { metadata: { ...(existing.metadata || {}), ...payload.metadata } } }
+          );
+          existing.metadata = { ...(existing.metadata || {}), ...payload.metadata };
+        }
         return { doc: existing, isNew: false };
       }
 
@@ -1699,6 +1727,13 @@ export const saveUnifiedMessage = async (data) => {
           platform: payload.platform,
           externalMessageId: payload.externalMessageId,
         }).lean();
+        if (existing && payload.metadata?.videoId && (!existing.metadata?.videoId || !existing.metadata?.videoThumbnail)) {
+          await UnifiedMessageModel.updateOne(
+            { _id: existing._id },
+            { $set: { metadata: { ...(existing.metadata || {}), ...payload.metadata } } }
+          );
+          existing.metadata = { ...(existing.metadata || {}), ...payload.metadata };
+        }
         return { doc: existing || payload, isNew: false };
       }
       throw err;

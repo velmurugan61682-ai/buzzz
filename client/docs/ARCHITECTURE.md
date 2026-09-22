@@ -879,9 +879,9 @@ Required `id_token` claims:
   "iss": "https://auth.mrassistant.ai",
   "aud": "buzzz",
   "sub": "mra_user_5521",
-  "email": "jordan@acme.com",
+  "email": "techvaseegrah@buzzz.com",
   "email_verified": true,
-  "name": "Jordan Lee",
+  "name": "Tech Vaseegrah",
   "mra_account_id": "acct_881",
   "mra_role": "owner",
   "iat": 1755350400, "exp": 1755354000, "nonce": "..."
@@ -904,7 +904,7 @@ POST /v1/provision/workspaces
   "partner_account_ref": "acct_881",
   "name": "Acme Corporation",
   "admin": { "provider_user_id": "mra_user_5521",
-             "email": "jordan@acme.com", "name": "Jordan Lee" },
+             "email": "techvaseegrah@buzzz.com", "name": "Tech Vaseegrah" },
   "plan": "growth",
   "entitlements": [
     { "feature": "inbox",  "limit_value": null },

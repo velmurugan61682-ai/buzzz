@@ -5,11 +5,7 @@
  * Encapsulates credentials, tenant workspace headers, error handling, and retries.
  */
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-    ? "http://localhost:5000/api/v1"
-    : "/api/v1");
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 export class ApiError extends Error {
   constructor(message, status, code, field = null, fields = null) {
@@ -104,6 +100,10 @@ export const api = {
   getConversations: (wsId) => apiRequest("/conversations", { workspaceId: wsId }),
   getMessages: (wsId, convId) => apiRequest(`/conversations/${convId}/messages`, { workspaceId: wsId }),
   sendMessage: (wsId, convId, payload) => apiRequest(`/conversations/${convId}/messages`, { method: "POST", body: payload, workspaceId: wsId }),
+
+  // YouTube / ChannelBot Videos
+  getChannelBotVideos: (wsId, page = 1, limit = 50) => apiRequest(`/channelbot/videos?page=${page}&limit=${limit}`, { workspaceId: wsId }),
+  getChannelBotVideo: (wsId, videoId) => apiRequest(`/channelbot/videos/${videoId}`, { workspaceId: wsId }),
 
   // Appointments
   getAppointments: (wsId) => apiRequest("/appointments", { workspaceId: wsId }),
