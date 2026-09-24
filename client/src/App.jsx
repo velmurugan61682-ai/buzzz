@@ -2781,10 +2781,12 @@ const PROVIDERS = [
     limits: "20 messages per second · template window 24h", scopes: ["messages:send", "messages:read"] },
   { id: "instaxbot", name: "InstaxBot", logo: "instaxbot", cat: "Your ecosystem", auth: "apikey", core: true,
     d: "Instagram comments, DMs, orders, chats transfer, CRM contacts & inventory sync.",
-    caps: { messaging: true, sync: true, webhooks: true, actions: ["Send DM", "Reply to comment", "Read/Write chats", "Read/Write comments", "Transfer chat", "Contacts sync", "Inventory sync", "Templates", "Broadcasts"] },
+    caps: { messaging: true, sync: true, webhooks: true, actions: ["Read/Create/Update orders", "Send DM", "Reply to comment", "Read/Write chats", "Read/Write comments", "Transfer chat", "Contacts sync", "Inventory sync", "Templates", "Broadcasts"] },
     objects: ["order", "comment", "dm", "contact", "product"], events: ["dm.received", "comment.received", "mention.received", "order.created", "chat.transferred"],
     limits: "10 sends per second · 24h messaging window", scopes: [
       "orders.read",
+      "orders.write",
+      "orders.update",
       "messages.send",
       "chats.transfer",
       "contacts.write",
@@ -15117,7 +15119,8 @@ function InboxView() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ workspaceId: "ws_default", limit: 50 }),
           }).catch(() => {}),
-          fetch(`${apiHost}/api/integrations/instaxbot/inbox?limit=100`).catch(() => {}),
+          // Fetch ALL InstaxBot types: comments, chats, orders, calls
+          fetch(`${apiHost}/api/integrations/instaxbot/inbox?limit=100&type=all`).catch(() => {}),
           fetch(`${apiHost}/api/integrations/gowhats/inbox?limit=100`).catch(() => {}),
         ]);
         if (active) {
@@ -15129,6 +15132,7 @@ function InboxView() {
         isSyncing = false;
       }
     };
+
 
     // Initial sync and initial local load
     refreshLocalConversations();
@@ -15191,25 +15195,45 @@ function InboxView() {
       if (filter === "Human" && c.ai) return false;
       if (filter === "Comments") {
         const cChanNorm = resolveChannelKey(c.platform, c.channel, c.id);
-        const isCommentThread = cChanNorm === "channelbot" ||
+        const isCommentThread =
+          // YouTube / ChannelBot comments
+          cChanNorm === "channelbot" ||
           c.channel === "youtube" ||
           c.platform === "channelbot" ||
           (c.id && c.id.startsWith("conv_yt_")) ||
+          Boolean(c.metadata?.videoId) ||
+          // Instagram / InstaxBot comments
           c.type === "comment" ||
-          Boolean(c.metadata?.videoId || c.metadata?.isComment);
+          c.metadata?.lastMessageType === "comment" ||
+          c.metadata?.messageType === "comment" ||
+          c.metadata?.isComment ||
+          (c.id && c.id.startsWith("conv_ig_cmt_"));
         if (!isCommentThread) return false;
       }
       if (filter === "Priority" && !["high", "critical"].includes((c.priority || "").toLowerCase())) return false;
       if (filter === "Waiting" && typeof statusOf === "function" && statusOf(c) !== "Waiting") return false;
       if (filter === "Resolved" && typeof statusOf === "function" && statusOf(c) !== "Resolved") return false;
       if (qy.trim()) {
-        const t = qy.toLowerCase();
-        const chLabel = (CH[c.channel] || {}).label || c.channel || "";
-        const prevText = c.lastMessage || c.preview || c.text || "";
-        const msgTexts = Array.isArray(c.messages) ? c.messages.map((m) => m.text || m.body || "") : [];
-        const hay = [c.customerName || c.name || "", c.phone || "", c.channel, chLabel, prevText, ...msgTexts].join(" ").toLowerCase();
-        if (!hay.includes(t)) return false;
+        // Instagram sub-type filter (set by 💬 Comment / ✉️ Chat / 🛍️ Order tabs)
+        if (qy.startsWith("__igtype:")) {
+          const igType = qy.replace("__igtype:", "").trim();
+          const cType = c.type || c.metadata?.lastMessageType || c.metadata?.messageType || "";
+          const isOrder = cType === "order" || (c.lastMessage || "").includes("InstaxBot Order");
+          const isComment = cType === "comment" || (c.id && c.id.startsWith("conv_ig_cmt_"));
+          const isChat = cType === "chat";
+          if (igType === "comment" && !isComment) return false;
+          if (igType === "chat" && !isChat) return false;
+          if (igType === "order" && !isOrder) return false;
+        } else {
+          const t = qy.toLowerCase();
+          const chLabel = (CH[c.channel] || {}).label || c.channel || "";
+          const prevText = c.lastMessage || c.preview || c.text || "";
+          const msgTexts = Array.isArray(c.messages) ? c.messages.map((m) => m.text || m.body || "") : [];
+          const hay = [c.customerName || c.name || "", c.phone || "", c.channel, chLabel, prevText, ...msgTexts].join(" ").toLowerCase();
+          if (!hay.includes(t)) return false;
+        }
       }
+
       return true;
     } catch (e) {
       console.warn("⚠️ Error matching conversation in InboxView:", e);
@@ -15235,6 +15259,9 @@ function InboxView() {
         c.platform === "channelbot" ||
         (c.id && c.id.startsWith("conv_yt_")) ||
         c.type === "comment" ||
+        c.metadata?.lastMessageType === "comment" ||
+        c.metadata?.messageType === "comment" ||
+        (c.id && c.id.startsWith("conv_ig_cmt_")) ||
         Boolean(c.metadata?.videoId || c.metadata?.isComment);
     }).length,
   };
@@ -15297,6 +15324,54 @@ function InboxView() {
             </div>
           )}
 
+          {/* Instagram sub-type tabs — only visible when Instagram is selected */}
+          {chFilter === "instaxbot" && (() => {
+            const igConvs = convs.filter((c) => resolveChannelKey(c.platform, c.channel, c.id) === "instaxbot");
+            const igComments = igConvs.filter((c) => c.type === "comment" || c.metadata?.lastMessageType === "comment" || c.metadata?.messageType === "comment" || (c.id && c.id.startsWith("conv_ig_cmt_")));
+            const igChats   = igConvs.filter((c) => c.type === "chat"    || c.metadata?.lastMessageType === "chat"    || c.metadata?.messageType === "chat");
+            const igOrders  = igConvs.filter((c) => c.type === "order"   || c.metadata?.lastMessageType === "order"   || c.metadata?.messageType === "order" || ((c.lastMessage || "").includes("InstaxBot Order")));
+            const igSubTypes = [
+              { key: null,      label: "All",      count: igConvs.length,   icon: "📥" },
+              { key: "comment", label: "Comments", count: igComments.length, icon: "💬" },
+              { key: "chat",    label: "Chats",    count: igChats.length,   icon: "✉️" },
+              { key: "order",   label: "Orders",   count: igOrders.length,  icon: "🛍️" },
+            ];
+            const [igSubType, setIgSubType] = [
+              window.__igSubType__ || null,
+              (v) => { window.__igSubType__ = v; setQy(qy); },
+            ];
+            return (
+              <div className="flex gap-1.5 overflow-x-auto bz-noscroll pt-1 pb-0.5">
+                {igSubTypes.map(({ key, label, count, icon }) => {
+                  // We use qy+filter search approach: clicking sets the filter directly
+                  const isActive = filter === "All" && (
+                    key === null
+                      ? !qy.startsWith("__igtype:")
+                      : qy === `__igtype:${key}`
+                  );
+                  return (
+                    <button
+                      key={label}
+                      onClick={() => {
+                        if (key === null) { if (qy.startsWith("__igtype:")) setQy(""); }
+                        else { setQy(`__igtype:${key}`); }
+                      }}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all border shrink-0 ${
+                        isActive
+                          ? "border-pink-500 text-pink-600 dark:text-pink-400 bg-pink-50 dark:bg-pink-950/40"
+                          : `${T.chip} ${T.hover} ${T.border} text-zinc-500 dark:text-zinc-400`
+                      }`}
+                    >
+                      <span>{icon}</span>
+                      <span>{label}</span>
+                      <span className={`text-[9px] px-1 rounded-full font-mono ${isActive ? "bg-pink-500/20 text-pink-600" : "bg-zinc-200/80 dark:bg-zinc-800 text-zinc-500"}`}>{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           <div className="flex gap-1.5 overflow-x-auto bz-noscroll pt-0.5">
             {FILTERS.map((f) => (
               <button key={f} onClick={() => setFilter(f)}
@@ -15316,7 +15391,16 @@ function InboxView() {
             const isWa = chNorm === "gowhats";
             const isYt = chNorm === "channelbot";
             const isEm = chNorm === "email";
-            const isComment = isYt || c.type === "comment" || (c.id && c.id.startsWith("conv_yt_")) || Boolean(c.metadata?.videoId);
+            const isComment = isYt || c.type === "comment" ||
+              c.metadata?.lastMessageType === "comment" ||
+              c.metadata?.messageType === "comment" ||
+              (c.id && (c.id.startsWith("conv_yt_") || c.id.startsWith("conv_ig_cmt_"))) ||
+              Boolean(c.metadata?.videoId || c.metadata?.commentId);
+            const isIgChat = isInsta && (
+              c.type === "chat" ||
+              c.metadata?.lastMessageType === "chat" ||
+              c.metadata?.messageType === "chat"
+            );
             const fallbackName = isInsta ? "Instagram User" : isWa ? "WhatsApp User" : isYt ? "YouTube User" : isEm ? "Email Contact" : "Customer";
             const displayName = k.name || c.customerName || c.name || c.phone || fallbackName;
             const active = selConv === c.id;
@@ -15337,8 +15421,13 @@ function InboxView() {
                     <div className="flex items-center gap-1.5 mt-[3px]">
                       <span className={`text-[11px] leading-tight truncate flex-1 ${c.unread ? T.strong + " font-medium" : T.faint}`}>{previewOf(c)}</span>
                       {isComment && (
-                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 font-medium inline-flex items-center gap-0.5 border border-red-200 dark:border-red-900/60" title="YouTube / Video Comment">
+                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-pink-50 dark:bg-pink-950/60 text-pink-600 dark:text-pink-400 font-medium inline-flex items-center gap-0.5 border border-pink-200 dark:border-pink-900/60" title="Instagram / YouTube Comment">
                           <MessageSquare size={9} /> Comment
+                        </span>
+                      )}
+                      {isIgChat && !isComment && (
+                        <span className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 font-medium inline-flex items-center gap-0.5 border border-purple-200 dark:border-purple-900/60" title="Instagram Direct Message">
+                          <MessageSquare size={9} /> DM
                         </span>
                       )}
                       {c.agent && (
@@ -15754,6 +15843,26 @@ function Thread({ conv, showPanel, setShowPanel }) {
           <div className="flex items-center gap-2 min-w-0">
             <span className="text-[13px] font-semibold leading-none truncate">{displayName}</span>
             <span className="shrink-0 grid place-items-center"><Brand id={conv.channel === "email" ? "gmail" : conv.channel} size={13} /></span>
+            {/* Instagram type badge in header */}
+            {(conv.platform === "instaxbot" || conv.channel === "Instagram") && (() => {
+              const convType = conv.type || conv.metadata?.lastMessageType || conv.metadata?.messageType || "";
+              if (convType === "comment") return (
+                <span className="shrink-0 text-[9px] px-2 py-0.5 rounded-full bg-pink-100 dark:bg-pink-950/60 text-pink-600 dark:text-pink-300 font-bold border border-pink-300 dark:border-pink-800 flex items-center gap-1">
+                  💬 IG Comment
+                </span>
+              );
+              if (convType === "chat") return (
+                <span className="shrink-0 text-[9px] px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 font-bold border border-purple-300 dark:border-purple-800 flex items-center gap-1">
+                  ✉️ IG DM
+                </span>
+              );
+              if (convType === "order") return (
+                <span className="shrink-0 text-[9px] px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-600 dark:text-orange-300 font-bold border border-orange-300 dark:border-orange-800 flex items-center gap-1">
+                  🛍️ IG Order
+                </span>
+              );
+              return null;
+            })()}
           </div>
           <div className="flex items-center gap-2 mt-1">
             <span className={`text-[10px] leading-none ${T.faint}`}>
@@ -15770,6 +15879,7 @@ function Thread({ conv, showPanel, setShowPanel }) {
           </div>
         </div>
         <div className="flex-1" />
+
         {/* status changer */}
         <div className="relative">
           <button onClick={() => setMenu(menu === "status" ? null : "status")} className={`h-7 px-2.5 rounded-full text-[10px] font-semibold border inline-flex items-center gap-1 ${STATUS_STYLES[st]}`}>{st} <ChevronDown size={10} /></button>
@@ -15798,6 +15908,52 @@ function Thread({ conv, showPanel, setShowPanel }) {
           )}
         </div>
       </div>
+
+      {/* Instagram Comment / Chat Context Bar */}
+      {(conv.platform === "instaxbot" || conv.channel === "Instagram") && (() => {
+        const convType = conv.type || conv.metadata?.lastMessageType || conv.metadata?.messageType || "";
+        if (!convType || convType === "order") return null;
+        const handle = conv.metadata?.instagramHandle || conv.phone || "";
+        const commentId = conv.metadata?.commentId || (conv.id && conv.id.startsWith("conv_ig_cmt_") ? conv.id.replace("conv_ig_cmt_", "") : null);
+        const mediaId = conv.metadata?.mediaId || "";
+        if (convType === "comment") {
+          return (
+            <div className="shrink-0 px-4 py-2 border-b flex items-center justify-between text-xs bg-pink-500/10 border-pink-500/20">
+              <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                <span className="font-semibold text-pink-700 dark:text-pink-300 flex items-center gap-1 shrink-0">
+                  💬 Instagram Comment Thread
+                </span>
+                {handle && <span className="text-pink-600/80 dark:text-pink-400/70 font-mono text-[10px]">@{handle}</span>}
+                {commentId && (
+                  <span className="text-[10px] text-pink-600/70 dark:text-pink-400/60 flex items-center gap-1">
+                    Comment ID: <code className="font-mono bg-pink-100 dark:bg-pink-900/40 px-1 rounded">{String(commentId).slice(0, 20)}</code>
+                  </span>
+                )}
+                {mediaId && (
+                  <span className="text-[10px] text-pink-600/70 dark:text-pink-400/60 flex items-center gap-1">
+                    Media: <code className="font-mono bg-pink-100 dark:bg-pink-900/40 px-1 rounded">{String(mediaId).slice(0, 20)}</code>
+                  </span>
+                )}
+                <span className="text-[10px] text-pink-500/60 shrink-0">via @techvaseegrah · InstaxBot</span>
+              </div>
+            </div>
+          );
+        }
+        if (convType === "chat") {
+          return (
+            <div className="shrink-0 px-4 py-2 border-b flex items-center justify-between text-xs bg-purple-500/10 border-purple-500/20">
+              <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                <span className="font-semibold text-purple-700 dark:text-purple-300 flex items-center gap-1 shrink-0">
+                  ✉️ Instagram Direct Message
+                </span>
+                {handle && <span className="text-purple-600/80 dark:text-purple-400/70 font-mono text-[10px]">@{handle}</span>}
+                <span className="text-[10px] text-purple-500/60 shrink-0">via @techvaseegrah · InstaxBot DM</span>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* Ana Smart Appointment Bar */}
       {(() => {
@@ -26852,9 +27008,16 @@ function InstaxBotBackfillWidget() {
   const { T, flash } = useApp();
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
-  const [activeTab, setActiveTab] = useState("sync"); // sync | comment | chat | transfer | inventory | broadcast
+  const [activeTab, setActiveTab] = useState("sync"); // sync | orders | comment | chat | transfer | inventory | broadcast
 
   // Forms state
+  const [orderCustomer, setOrderCustomer] = useState("karthik_v");
+  const [orderProduct, setOrderProduct] = useState("Vaseegrah Organic Handmade Herbal Soap");
+  const [orderAmount, setOrderAmount] = useState(1250);
+  const [orderStatus, setOrderStatus] = useState("CONFIRMED");
+  const [updateOrderId, setUpdateOrderId] = useState("1004");
+  const [updateStatusVal, setUpdateStatusVal] = useState("SHIPPED");
+
   const [commentText, setCommentText] = useState("");
   const [commentTarget, setCommentTarget] = useState("priya_sharma");
   const [chatHandle, setChatHandle] = useState("ananya_r");
@@ -26871,6 +27034,8 @@ function InstaxBotBackfillWidget() {
 
   const SCOPES = [
     { id: "orders.read", label: "orders.read", desc: "Read live orders & deals" },
+    { id: "orders.write", label: "orders.write", desc: "Create new catalog orders" },
+    { id: "orders.update", label: "orders.update", desc: "Update existing order status & tracking" },
     { id: "messages.read", label: "messages.read", desc: "Read comments & chats" },
     { id: "messages.send", label: "messages.send", desc: "Send DMs & comment replies" },
     { id: "chats.transfer", label: "chats.transfer", desc: "Transfer chats to team" },
@@ -26918,7 +27083,7 @@ function InstaxBotBackfillWidget() {
       });
       const data = await res.json();
       if (data.success) {
-        flash("InstaxBot omnichannel sync across all 11 scopes started in background.");
+        flash("InstaxBot omnichannel sync across all 13 scopes started in background.");
         setStatus(data.status);
       } else {
         flash(data.error || "Could not start InstaxBot sync", "err");
@@ -26930,7 +27095,59 @@ function InstaxBotBackfillWidget() {
     }
   };
 
-  // 1. Post comment reply (messages.send)
+  // 1. Create Order (orders.write)
+  const handleCreateOrder = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: orderCustomer,
+          username: orderCustomer,
+          productName: orderProduct,
+          amount: orderAmount,
+          status: orderStatus,
+          account: "@techvaseegrah",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`🛍️ Order #${data.orderId} created & pushed to @techvaseegrah inbox!`);
+        pollStatus();
+      } else {
+        flash(data.error || "Order creation failed", "err");
+      }
+    } catch (err) {
+      flash("Order creation failed", "err");
+    }
+  };
+
+  // 2. Update Order (orders.update)
+  const handleUpdateOrder = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${apiHost}/api/integrations/instaxbot/orders/${encodeURIComponent(updateOrderId)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: updateStatusVal,
+          customerHandle: orderCustomer,
+          account: "@techvaseegrah",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        flash(`📦 Order #${updateOrderId} status updated to ${updateStatusVal}!`);
+      } else {
+        flash(data.error || "Order update failed", "err");
+      }
+    } catch (err) {
+      flash("Order update failed", "err");
+    }
+  };
+
+  // 3. Post comment reply (messages.send)
   const handleSendComment = async (e) => {
     e.preventDefault();
     if (!commentText.trim()) return;
@@ -26953,7 +27170,7 @@ function InstaxBotBackfillWidget() {
     }
   };
 
-  // 2. Send Direct Message / Chat (messages.send)
+  // 4. Send Direct Message / Chat (messages.send)
   const handleSendChat = async (e) => {
     e.preventDefault();
     if (!chatText.trim()) return;
@@ -26976,7 +27193,7 @@ function InstaxBotBackfillWidget() {
     }
   };
 
-  // 3. Transfer Chat (chats.transfer)
+  // 5. Transfer Chat (chats.transfer)
   const handleTransferChat = async (e) => {
     e.preventDefault();
     try {
@@ -26996,7 +27213,7 @@ function InstaxBotBackfillWidget() {
     }
   };
 
-  // 4. Update Inventory (inventory.write)
+  // 6. Update Inventory (inventory.write)
   const handleUpdateStock = async (e) => {
     e.preventDefault();
     try {
@@ -27017,7 +27234,7 @@ function InstaxBotBackfillWidget() {
     }
   };
 
-  // 5. Send Broadcast (broadcasts.send)
+  // 7. Send Broadcast (broadcasts.send)
   const handleSendBroadcast = async (e) => {
     e.preventDefault();
     if (!broadcastMsg.trim()) return;
@@ -27045,14 +27262,17 @@ function InstaxBotBackfillWidget() {
       {/* Header & Primary Sync Trigger */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-bold text-pink-600 dark:text-pink-400">InstaxBot Omnichannel Suite</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
-              11 Scopes Active
+              13 Scopes Active
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-600 dark:text-pink-400 font-bold border border-pink-500/20">
+              Account: @techvaseegrah
             </span>
           </div>
           <p className={`text-[11px] mt-0.5 ${T.sub}`}>
-            Full bidirectional Instagram integration for Comments, DMs, Orders, Inventory, Contacts, Transfers & Broadcasts.
+            Full bidirectional Instagram integration for @techvaseegrah across Orders, Comments, DMs, Inventory, Contacts, Transfers & Broadcasts.
           </p>
         </div>
 
@@ -27066,18 +27286,18 @@ function InstaxBotBackfillWidget() {
           {isRunning ? (
             <>
               <RefreshCw size={12} className="animate-spin" />
-              <span>Syncing 11 Scopes (Page {status?.currentPage || 1})…</span>
+              <span>Syncing 13 Scopes (Page {status?.currentPage || 1})…</span>
             </>
           ) : (
             <>
               <RefreshCw size={12} />
-              <span>Sync All 11 Scopes (Fetch Everything)</span>
+              <span>Sync All 13 Scopes (Fetch All in Inbox)</span>
             </>
           )}
         </button>
       </div>
 
-      {/* 11 Active Scopes Badges Grid */}
+      {/* 13 Active Scopes Badges Grid */}
       <div className="flex flex-wrap gap-1">
         {SCOPES.map((sc) => (
           <span
@@ -27103,7 +27323,7 @@ function InstaxBotBackfillWidget() {
         >
           <div className="flex items-center justify-between font-semibold">
             <span>
-              Status: {status.status === "running" ? "Syncing omnichannel resources…" : status.status === "completed" ? "All 11 Scopes Synchronized" : "Sync Fault"}
+              Status: {status.status === "running" ? "Syncing omnichannel resources for @techvaseegrah…" : status.status === "completed" ? "All 13 Scopes Synchronized" : "Sync Fault"}
             </span>
             {status.completedAt && <span className="text-[10px] font-normal">{new Date(status.completedAt).toLocaleTimeString()}</span>}
           </div>
@@ -27143,6 +27363,7 @@ function InstaxBotBackfillWidget() {
         <div className="flex gap-1 overflow-x-auto pb-1 mb-2 scrollbar-none">
           {[
             { id: "sync", label: "Overview & Sync" },
+            { id: "orders", label: "🛍️ Orders (orders.write/update)" },
             { id: "comment", label: "💬 Reply Comment (messages.send)" },
             { id: "chat", label: "✉️ Send DM / Chat (messages.send)" },
             { id: "transfer", label: "🔀 Transfer Chat (chats.transfer)" },
@@ -27162,6 +27383,107 @@ function InstaxBotBackfillWidget() {
             </button>
           ))}
         </div>
+
+        {/* TAB 0: ORDERS (WRITE & UPDATE) */}
+        {activeTab === "orders" && (
+          <div className="space-y-3 p-2.5 rounded-lg bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+            <form onSubmit={handleCreateOrder} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Create Order & Push to @techvaseegrah Inbox</span>
+                <span className="text-[10px] font-mono text-zinc-500">Scope: orders.write</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1">Customer Handle</label>
+                  <input
+                    type="text"
+                    value={orderCustomer}
+                    onChange={(e) => setOrderCustomer(e.target.value)}
+                    className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                    placeholder="e.g. karthik_v"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1">Product Item</label>
+                  <input
+                    type="text"
+                    value={orderProduct}
+                    onChange={(e) => setOrderProduct(e.target.value)}
+                    className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                    placeholder="e.g. Handmade Leather Bag"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1">Total (INR)</label>
+                  <input
+                    type="number"
+                    value={orderAmount}
+                    onChange={(e) => setOrderAmount(Number(e.target.value))}
+                    className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-zinc-400 block mb-1">Status</label>
+                  <select
+                    value={orderStatus}
+                    onChange={(e) => setOrderStatus(e.target.value)}
+                    className={`w-full h-8 px-2 rounded-md text-xs outline-none ${T.input}`}
+                  >
+                    <option value="CONFIRMED">CONFIRMED</option>
+                    <option value="PAID">PAID</option>
+                    <option value="SHIPPED">SHIPPED</option>
+                  </select>
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="h-7 px-3 rounded-md text-xs font-semibold bg-pink-600 text-white hover:bg-pink-700 transition flex items-center gap-1"
+              >
+                <span>Create Order & Push to Inbox</span>
+              </button>
+            </form>
+
+            <div className="border-t border-zinc-200 dark:border-zinc-800 pt-2">
+              <form onSubmit={handleUpdateOrder} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">Update Existing Order</span>
+                  <span className="text-[10px] font-mono text-zinc-500">Scope: orders.update</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">Order ID</label>
+                    <input
+                      type="text"
+                      value={updateOrderId}
+                      onChange={(e) => setUpdateOrderId(e.target.value)}
+                      className={`w-full h-8 px-2.5 rounded-md text-xs outline-none ${T.input}`}
+                      placeholder="e.g. 1004"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-zinc-400 block mb-1">New Status</label>
+                    <select
+                      value={updateStatusVal}
+                      onChange={(e) => setUpdateStatusVal(e.target.value)}
+                      className={`w-full h-8 px-2 rounded-md text-xs outline-none ${T.input}`}
+                    >
+                      <option value="PROCESSING">PROCESSING</option>
+                      <option value="SHIPPED">SHIPPED</option>
+                      <option value="DELIVERED">DELIVERED</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                    </select>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  className="h-7 px-3 rounded-md text-xs font-semibold bg-orange-600 text-white hover:bg-orange-700 transition flex items-center gap-1"
+                >
+                  <span>Update Order Status</span>
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* TAB 1: REPLY TO COMMENT */}
         {activeTab === "comment" && (

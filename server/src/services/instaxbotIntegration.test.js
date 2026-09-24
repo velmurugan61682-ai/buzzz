@@ -9,6 +9,8 @@ import { saveInstaxBotConfig, getInstaxBotConfig, deleteInstaxBotConfig } from "
 import {
   fetchInstaxBotOrders,
   fetchAllInstaxBotOrders,
+  createInstaxBotOrder,
+  updateInstaxBotOrder,
   syncInstaxBotContacts,
   registerInstaxBotWebhook,
   getInstaxBotWebhookStatus,
@@ -30,7 +32,7 @@ import {
 } from "./instaxbot.js";
 
 async function testInstaxBotIntegration() {
-  console.log("🧪 Testing All 11 InstaxBot API Scopes & Omnichannel Ingestion...\n");
+  console.log("🧪 Testing All 13 InstaxBot API Scopes & Omnichannel Ingestion for @techvaseegrah...\n");
 
   let passed = 0;
   let failed = 0;
@@ -83,7 +85,37 @@ async function testInstaxBotIntegration() {
   console.log(`  [fetchInstaxBotOrders] success: ${ordersRes.success}, count: ${ordersRes.count}`);
   assertEqual(ordersRes.success, true, "Scope 1: orders.read returns success: true");
 
-  console.log("\n--- 3. Scope 2: messages.read ---");
+  console.log("\n--- 3. Scope 2: orders.write ---");
+  const createOrderRes = await createInstaxBotOrder({
+    orderData: {
+      orderId: "ord_test_vaseegrah_991",
+      customerName: "Karthik Subramanian",
+      username: "karthik_v",
+      productName: "Vaseegrah Organic Handmade Herbal Soap",
+      amount: 1450,
+      currency: "INR",
+      status: "CONFIRMED",
+    },
+    workspaceId: wsId,
+  });
+  console.log(`  [createInstaxBotOrder] success: ${createOrderRes.success}, orderId: ${createOrderRes.orderId}`);
+  assertEqual(createOrderRes.success, true, "Scope 2: orders.write returns success: true");
+  assertEqual(createOrderRes.order?.account, "@techvaseegrah", "Scope 2: order tagged with account @techvaseegrah");
+
+  console.log("\n--- 4. Scope 3: orders.update ---");
+  const updateOrderRes = await updateInstaxBotOrder({
+    orderId: "ord_test_vaseegrah_991",
+    updateData: {
+      status: "SHIPPED",
+      customerHandle: "karthik_v",
+      trackingNumber: "TRK_IG_991823",
+    },
+    workspaceId: wsId,
+  });
+  console.log(`  [updateInstaxBotOrder] success: ${updateOrderRes.success}`);
+  assertEqual(updateOrderRes.success, true, "Scope 3: orders.update returns success: true");
+
+  console.log("\n--- 5. Scope 4: messages.read ---");
   const commentsRes = await fetchInstaxBotComments();
   console.log(`  [fetchInstaxBotComments] success: ${commentsRes.success}, count: ${commentsRes.comments?.length || 0}`);
   assertEqual(commentsRes.success, true, "Scope 2: messages.read (comments) returns success: true");

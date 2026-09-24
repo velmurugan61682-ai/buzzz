@@ -8,49 +8,43 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 const key = (process.env.INSTAXBOT_API_KEY || "").trim();
 const baseUrl = (process.env.INSTAXBOT_BASE_URL || "https://app.instaxbot.com").replace(/\/$/, "");
 
-console.log("Base URL:", baseUrl);
-console.log("Key length:", key.length, "Prefix:", key.slice(0, 5));
-
 const endpoints = [
-  "/api/external/v2/orders?limit=1",
-  "/api/external/v2/comments?limit=1",
-  "/api/external/v2/messages?limit=1",
-  "/api/external/v2/conversations?limit=1",
-  "/api/external/v2/dms?limit=1",
-  "/api/external/v2/chats?limit=1",
-  "/api/external/v2/clients?limit=1",
-  "/api/external/v2/templates?limit=1"
+  { path: "/api/external/v2/chats/transfer", method: "POST", body: { senderId: "test_user_1" } },
+  { path: "/api/external/v2/templates", method: "GET" },
+  { path: "/api/external/v2/inventory", method: "GET" },
+  { path: "/api/external/v2/broadcasts", method: "GET" },
+  { path: "/api/external/v2/webhooks", method: "GET" },
+  { path: "/api/external/v2/chats", method: "POST", body: { recipientId: "test", message: "hi" } },
+  { path: "/api/external/v2/chat", method: "GET" },
+  { path: "/api/external/v2/chat/messages", method: "GET" },
+  { path: "/api/external/v2/livechat", method: "GET" },
+  { path: "/api/external/v2/live-chat", method: "GET" },
+  { path: "/api/external/v2/orders", method: "GET" },
 ];
 
 for (const ep of endpoints) {
-  const url = `${baseUrl}${ep}`;
+  const url = `${baseUrl}${ep.path}`;
   try {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(url, {
-      method: "GET",
+    const t = setTimeout(() => controller.abort(), 6000);
+    const options = {
+      method: ep.method || "GET",
       headers: {
         "X-API-KEY": key,
         "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
         "Accept": "application/json",
       },
       signal: controller.signal
-    });
-    clearTimeout(t);
-    const ct = res.headers.get("content-type") || "";
-    const text = await res.text();
-    console.log(`[${res.status}] (${ct.split(";")[0]}) ${ep} -> ${text.slice(0, 160).replace(/\n/g, " ")}`);
-    if (ep.includes("orders") && res.status === 200) {
-      try {
-        const json = JSON.parse(text);
-        const sample = (json.orders && json.orders[0]) || (json.data && json.data[0]);
-        if (sample) {
-          console.log("SAMPLE ORDER FIELDS:", Object.keys(sample));
-          console.log("SAMPLE ORDER RAW:", JSON.stringify(sample, null, 2).slice(0, 500));
-        }
-      } catch (e) {}
+    };
+    if (ep.body) {
+      options.body = JSON.stringify(ep.body);
     }
+    const res = await fetch(url, options);
+    clearTimeout(t);
+    const text = await res.text();
+    console.log(`[${res.status}] (${ep.method} ${ep.path}) -> ${text.slice(0, 160).replace(/\n/g, " ")}`);
   } catch (err) {
-    console.log(`[TIMEOUT/FAIL] ${ep} -> ${err.message}`);
+    console.log(`[FAIL] (${ep.method} ${ep.path}) -> ${err.message}`);
   }
 }

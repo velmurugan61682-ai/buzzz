@@ -61,6 +61,8 @@ import {
   fetchInstaxBotComments,
   sendInstaxBotComment,
   fetchInstaxBotChats,
+  createInstaxBotOrder,
+  updateInstaxBotOrder,
   runInstaxBotHistoricalBackfill,
   getInstaxBotBackfillStatus,
 } from "../services/instaxbot.js";
@@ -2300,7 +2302,7 @@ const handleInstaxBotConnect = async (req, res) => {
       workspaceId: wsId,
       apiKey: cleanKey,
       maskedKey,
-      accountName: `InstaxBot Account (${maskedKey})`,
+      accountName: req.body?.accountName || "@techvaseegrah",
       connected: true,
       disconnected: false,
     });
@@ -2313,7 +2315,7 @@ const handleInstaxBotConnect = async (req, res) => {
     const contactSyncRes = await syncInstaxBotContacts({ workspaceId: wsId, overrideKey: cleanKey });
     console.log(`👥 [INSTAXBOT CONTACT SYNC] Synced ${contactSyncRes.syncedCount || 0} contacts`);
 
-    // 4. Trigger background historical backfill (ingests all 150+ orders into CRM)
+    // 4. Trigger background historical backfill (ingests all orders into CRM)
     runInstaxBotHistoricalBackfill({
       workspaceId: wsId,
       broadcastFn: broadcastSseEvent,
@@ -2321,12 +2323,12 @@ const handleInstaxBotConnect = async (req, res) => {
       limit: 50,
     }).catch((e) => console.warn("⚠️ InstaxBot initial connect backfill notice:", e.message));
 
-    console.log(`✅ InstaxBot connected & verified successfully for workspace ${wsId} (${maskedKey})`);
+    console.log(`✅ InstaxBot connected & verified successfully for workspace ${wsId} (@techvaseegrah, ${maskedKey})`);
 
     res.json({
       success: true,
       connected: true,
-      account: `InstaxBot Account (${maskedKey})`,
+      account: saved.accountName || "@techvaseegrah",
       maskedKey,
       connectedAt: saved.connectedAt || new Date().toISOString(),
       remoteStatus: apiCheck.status || "200_OK",
@@ -2362,7 +2364,7 @@ const handleInstaxBotStatus = async (req, res) => {
         workspaceId: wsId,
         apiKey: envKey,
         maskedKey,
-        accountName: `InstaxBot Account (${maskedKey})`,
+        accountName: "@techvaseegrah",
         connected: true,
         disconnected: false,
       });
@@ -2379,7 +2381,7 @@ const handleInstaxBotStatus = async (req, res) => {
     res.json({
       connected: true,
       state: isLive ? "Connected" : "Connected (Local Mode)",
-      account: config.accountName || `InstaxBot Account (${config.maskedKey})`,
+      account: config.accountName || "@techvaseegrah",
       maskedKey: config.maskedKey,
       connectedAt: config.connectedAt,
       remoteStatus: apiCheck.status || "200_OK",
@@ -2482,6 +2484,37 @@ apiRouter.get("/integrations/instaxbot/orders", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// Scope: orders.write - POST /api/integrations/instaxbot/orders
+apiRouter.post("/integrations/instaxbot/orders", async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+    const result = await createInstaxBotOrder({ orderData: req.body, workspaceId: wsId, overrideKey: config?.apiKey });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Scope: orders.update - PUT/PATCH /api/integrations/instaxbot/orders/:id
+const handleUpdateOrder = async (req, res) => {
+  try {
+    const wsId = getWorkspaceId(req);
+    const config = await getInstaxBotConfig(wsId);
+    const result = await updateInstaxBotOrder({
+      orderId: req.params.id,
+      updateData: req.body,
+      workspaceId: wsId,
+      overrideKey: config?.apiKey,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+apiRouter.put("/integrations/instaxbot/orders/:id", handleUpdateOrder);
+apiRouter.patch("/integrations/instaxbot/orders/:id", handleUpdateOrder);
 
 apiRouter.get("/integrations/instaxbot/templates", async (req, res) => {
   try {
@@ -2757,7 +2790,7 @@ apiRouter.post("/integrations/instaxbot/sync-all", handleInstaxBotSync);
 // INSTAXBOT 11 SCOPES API ENDPOINTS
 // ==============================================================================
 
-// 1. GET /api/integrations/instaxbot/scopes - Inspect active verification of all 11 scopes
+// 1. GET /api/integrations/instaxbot/scopes - Inspect active verification of all 13 scopes
 const handleGetInstaxBotScopes = async (req, res) => {
   const wsId = getWorkspaceId(req);
   const config = await getInstaxBotConfig(wsId);
@@ -2767,9 +2800,14 @@ const handleGetInstaxBotScopes = async (req, res) => {
   res.json({
     success: true,
     maskedKey,
+    account: "@techvaseegrah",
+    accountHandle: "techvaseegrah",
+    accountName: "Tech Vaseegrah (@techvaseegrah)",
     connected: Boolean(apiKey),
     scopes: [
       { id: "orders.read", name: "Read Orders", active: true, status: "verified", description: "Fetch live e-commerce orders, line items, and transaction details" },
+      { id: "orders.write", name: "Create Orders", active: true, status: "verified", description: "Create and push new orders from Instagram interactions into InstaxBot catalog" },
+      { id: "orders.update", name: "Update Orders", active: true, status: "verified", description: "Update existing InstaxBot order statuses, payment confirmations, and tracking" },
       { id: "messages.send", name: "Send Messages", active: true, status: "verified", description: "Send Instagram DMs, replies, and outbound customer messages" },
       { id: "chats.transfer", name: "Transfer Chats", active: true, status: "verified", description: "Reassign and route live Instagram conversations across team agents" },
       { id: "contacts.write", name: "Write Contacts", active: true, status: "verified", description: "Create, tag, and update customer profile attributes on InstaxBot" },
@@ -2793,12 +2831,13 @@ const handleTransferInstaxBotChat = async (req, res) => {
     const wsId = getWorkspaceId(req);
     const config = await getInstaxBotConfig(wsId);
     const apiKey = config?.apiKey || (process.env.INSTAXBOT_API_KEY || "").trim();
-    const { conversationId, targetAgentId, reason } = req.body || {};
+    const { conversationId, targetAgentId, reason, senderId } = req.body || {};
 
     const transferRes = await transferInstaxBotChat({
       conversationId,
       targetAgentId,
       reason,
+      senderId,
       workspaceId: wsId,
       overrideKey: apiKey,
     });
@@ -3032,13 +3071,15 @@ const handleInstaxBotInbox = async (req, res) => {
     // ── 2. Persist helper — upsert contact + conversation + unified message ────
     const persistItem = async ({ type, item, workspaceId }) => {
       try {
-        const senderHandle =
-          item.sender_handle || item.handle || item.username || item.from ||
-          item.senderId || item.sender?.handle || "instagram_user";
-
         const senderName =
-          item.sender_name || item.name || item.sender?.name ||
-          item.author || senderHandle;
+          item.customer_name || item.name || item.sender_name || item.sender?.name ||
+          item.author || (item.orderId ? `Customer #${item.orderId}` : "Instagram Customer");
+
+        const senderHandle =
+          item.username || item.sender_handle || item.handle ||
+          (item.customer_name ? String(item.customer_name).toLowerCase().replace(/\s+/g, "_").replace(/[^\w]/g, "") : null) ||
+          item.from || item.senderId || item.sender?.handle ||
+          (item.orderId ? `guest_${item.orderId}` : "instagram_user");
 
         const textBody =
           item.message || item.text || item.caption || item.body ||
@@ -3050,7 +3091,7 @@ const handleInstaxBotInbox = async (req, res) => {
 
         const receivedAt = item.receivedAt || item.created_at || item.timestamp || new Date().toISOString();
 
-        const phone = item.phone ? String(item.phone).replace(/\D/g, "") : null;
+        const phone = item.phone || item.phone_number ? String(item.phone || item.phone_number).replace(/\D/g, "") : null;
 
         // Resolve or create unified contact
         const contact = await resolveOrCreateContact({
@@ -3084,6 +3125,7 @@ const handleInstaxBotInbox = async (req, res) => {
           metadata: {
             messageType: type,
             instagramHandle: senderHandle,
+            account: "@techvaseegrah",
           },
         };
         const conv = await upsertConversation(convDoc);
@@ -3094,7 +3136,7 @@ const handleInstaxBotInbox = async (req, res) => {
           workspaceId,
           conversationId: conv?.id || convId,
           integrationId: "instaxbot",
-          platform: "instagram",
+          platform: "instaxbot",
           externalMessageId: extId,
           sender: {
             name: contact?.name || senderName,
@@ -3110,6 +3152,7 @@ const handleInstaxBotInbox = async (req, res) => {
           metadata: {
             messageType: type,
             source: "instaxbot",
+            account: "@techvaseegrah",
             instagramHandle: senderHandle,
             rawExtId: extId,
           },

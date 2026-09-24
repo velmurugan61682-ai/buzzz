@@ -287,33 +287,9 @@ const ContactSchema = new mongoose.Schema(
     aiSummary: { type: String, default: "" },
     engagement: { type: Number, default: 50 },
     owner: { type: String, default: "Unassigned" },
-    // Extended source enum to cover all ingest channels
     source: {
       type: String,
       default: "manual",
-      enum: [
-        "google",
-        "whatsapp",
-        "missed_call",
-        "android_sync",
-        "csv",
-        "vcard",
-        "manual",
-        "Manual entry",        // legacy
-        "Google Contacts",     // legacy
-        "GoWhats WhatsApp Contact Sync", // legacy
-        "Android Missed Call Sync",      // legacy
-        "GoWhats WhatsApp Auto-Sync",    // legacy
-        "InstaxBot Instagram DM",        // legacy
-        "InstaxBot Instagram Auto-Sync", // legacy
-        "InstaxBot Contact Sync",        // legacy
-        "GoWhats WhatsApp Chat Sync",
-        "GoWhats WhatsApp Call Sync",
-        "GoWhats WhatsApp Order Sync",
-        "GoWhats Order Sync",
-        "channelbot.in YouTube Ingestion",
-        "Gmail Ingestion",
-      ],
     },
     archived: { type: Boolean, default: false },
     notes: { type: Array, default: [] },
@@ -1236,6 +1212,7 @@ export const getGoogleAccount = async (workspaceId = "ws_default") => {
 
 export const saveInstaxBotConfig = async (data) => {
   const payload = {
+    accountName: "@techvaseegrah",
     ...data,
     workspaceId: data.workspaceId || "ws_default",
     connectedAt: new Date(),
@@ -1264,16 +1241,31 @@ export const saveInstaxBotConfig = async (data) => {
 export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
   if (isDbConnected && mongoose.connection.readyState === 1) {
     const doc = await InstaxBotAccountModel.findOne({ workspaceId }).sort({ updatedAt: -1 }).lean();
-    if (doc) return doc;
+    if (doc) {
+      return {
+        ...doc,
+        accountName: doc.accountName && !doc.accountName.startsWith("InstaxBot Account") ? doc.accountName : "@techvaseegrah",
+      };
+    }
     if (workspaceId === "ws_default") {
       const defaultDoc = await InstaxBotAccountModel.findOne({ workspaceId: "ws_default" }).sort({ updatedAt: -1 }).lean();
-      if (defaultDoc) return defaultDoc;
+      if (defaultDoc) {
+        return {
+          ...defaultDoc,
+          accountName: defaultDoc.accountName && !defaultDoc.accountName.startsWith("InstaxBot Account") ? defaultDoc.accountName : "@techvaseegrah",
+        };
+      }
     } else {
       return null;
     }
   }
   const mem = db.instaxbotAccounts.find((a) => a.workspaceId === workspaceId);
-  if (mem) return mem;
+  if (mem) {
+    return {
+      ...mem,
+      accountName: mem.accountName && !mem.accountName.startsWith("InstaxBot Account") ? mem.accountName : "@techvaseegrah",
+    };
+  }
 
   if ((workspaceId === "ws_default" || !workspaceId) && process.env.INSTAXBOT_API_KEY) {
     const clean = String(process.env.INSTAXBOT_API_KEY).trim();
@@ -1282,7 +1274,7 @@ export const getInstaxBotConfig = async (workspaceId = "ws_default") => {
       workspaceId,
       apiKey: clean,
       maskedKey,
-      accountName: `InstaxBot Account (${maskedKey})`,
+      accountName: "@techvaseegrah",
       status: "connected",
       verifiedAt: new Date().toISOString(),
     };
